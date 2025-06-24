@@ -1,0 +1,188 @@
+# NexusNet Core Configuration
+# This file defines the main configuration for the NexusNet neural network framework
+
+# System Configuration
+system:
+  log_level: "INFO"
+  log_dir: "logs"
+  startup_timeout: 30
+  max_memory_gb: 16
+  enable_gpu: true
+  enable_distributed: false
+
+# Hardware Profiling
+hardware:
+  auto_detect: true
+  cpu_threads: null  # Auto-detect
+  gpu_memory_fraction: 0.8
+  mixed_precision: true
+  quantization_enabled: true
+
+# Core Components
+components:
+  encoders:
+    text:
+      enabled: true
+      model_name: "sentence-transformers/all-MiniLM-L6-v2"
+      max_length: 512
+    vision:
+      enabled: true
+      model_name: "openai/clip-vit-base-patch32"
+      image_size: 224
+    audio:
+      enabled: true
+      model_name: "facebook/wav2vec2-base"
+      sample_rate: 16000
+    video:
+      enabled: false
+      model_name: "microsoft/xclip-base-patch32"
+    table:
+      enabled: true
+      model_name: "microsoft/tapas-base"
+    code:
+      enabled: true
+      model_name: "microsoft/codebert-base"
+
+  compression:
+    tensor_network:
+      enabled: true
+      compression_ratio: 0.1
+      max_tokens: 1000000
+    fractal:
+      enabled: true
+      compression_levels: 3
+
+  attention:
+    dual_track:
+      enabled: true
+      local_window: 512
+      global_summary_tokens: 64
+    quantum_inspired:
+      enabled: true
+      complex_embeddings: true
+
+  dreaming:
+    rnd:
+      enabled: true
+      dream_frequency: 100  # Every 100 iterations
+      imagination_steps: 10
+      evaluation_threshold: 0.7
+
+  evolution:
+    neural_dna:
+      enabled: true
+      mutation_rate: 0.01
+      population_size: 10
+      generations: 5
+
+  memory:
+    selective_decay:
+      enabled: true
+      decay_rate: 0.001
+      importance_threshold: 0.5
+    neural_sleep:
+      enabled: true
+      sleep_frequency: 1000  # Every 1000 iterations
+      consolidation_steps: 50
+
+# Advanced Features
+advanced:
+  immune_system:
+    enabled: true
+    bias_detection_threshold: 0.8
+    self_healing: true
+  
+  meta_reflection:
+    enabled: true
+    reflection_frequency: 500
+    bottleneck_analysis: true
+  
+  adaptive_creativity:
+    enabled: true
+    creativity_threshold: 0.6
+  
+  swarm_intelligence:
+    enabled: false
+    num_agents: 5
+    coordination_method: "consensus"
+
+# Integration Settings
+integration:
+  base_model:
+    auto_attach: true
+    model_path: null  # Will be set at runtime
+    adapter_layers: ["attention", "mlp"]
+  
+  api:
+    host: "0.0.0.0"
+    port: 8000
+    enable_cors: true
+    max_concurrent_requests: 10
+  
+  plugins:
+    enabled: true
+    plugin_dir: "plugins"
+    sandbox_enabled: true
+    max_plugin_memory_mb: 512
+
+# Federated Learning
+federated:
+  enabled: false
+  server_url: null
+  client_id: null
+  encryption_enabled: true
+  differential_privacy: true
+  privacy_budget: 1.0
+
+# MLOps and Monitoring
+mlops:
+  versioning:
+    enabled: true
+    git_integration: true
+    model_registry: "local"
+  
+  monitoring:
+    metrics_enabled: true
+    prometheus_port: 9090
+    grafana_enabled: false
+  
+  ci_cd:
+    auto_testing: true
+    benchmark_on_commit: true
+    rollback_on_failure: true
+
+# Security and Governance
+security:
+  policy_enforcement: true
+  audit_logging: true
+  gdpr_compliance: true
+  hipaa_compliance: false
+  
+governance:
+  human_approval_required: false
+  expert_review_threshold: 0.9
+  immutable_audit_trail: true
+
+# Energy Management
+energy:
+  monitoring_enabled: true
+  power_budget_watts: 300
+  throttling_enabled: true
+  efficiency_optimization: true
+
+# Accessibility
+accessibility:
+  tts_enabled: false
+  asr_enabled: false
+  high_contrast_mode: false
+  localization_enabled: true
+  default_language: "en"
+
+# Development and Debug
+development:
+  debug_mode: false
+  verbose_logging: false
+  profiling_enabled: true
+  benchmark_suite_enabled: true
+  formal_verification: false
+
