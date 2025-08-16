@@ -1,9 +1,11 @@
-.venv/
+# Python cache
 __pycache__/
-.env
-runtime/state/*
-!runtime/state/.gitkeep
-runtime/models/*
-!.gitkeep
+*.pyc
+*.pyo
+*.pyd
+.Python
 build/
+develop-eggs/
 dist/
+eggs/
+*.egg
