@@ -1,7 +1,17 @@
-{
-  "model_dir": "runtime/models",
-  "index_dir": "runtime/state/indexes",
-  "cache_dir": "runtime/state/cache",
-  "logs_dir": "runtime/state/logs",
-  "temp_dir": "runtime/state/temp"
-}
+version: "1.0"
+
+paths:
+  data: "runtime/state"
+  models: "runtime/models"
+  config: "runtime/config"
+  cache: "runtime/cache"
+  logs: "runtime/logs"
+
+api:
+  host: "127.0.0.1"
+  port: 5173
+  cors_origins: ["*"]
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
