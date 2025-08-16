@@ -1,1 +1,11 @@
-
+.venv/
+__pycache__/
+runtime/state/*
+!runtime/state/.gitkeep
+runtime/models/*
+!.gitkeep
+.env
+dist/
+build/
+*.msi
+*.exe

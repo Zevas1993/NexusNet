@@ -1,114 +1,21 @@
-# Core ML/AI Dependencies
-torch>=2.0.0
-transformers>=4.30.0
-numpy>=1.24.0
-scipy>=1.10.0
-scikit-learn>=1.3.0
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+pydantic==2.8.2
+python-dotenv==1.0.1
+orjson==3.10.7
+jinja2==3.1.4
+httpx==0.27.0
 
-# Deep Learning Extensions
-torchvision>=0.15.0
-torchaudio>=2.0.0
-timm>=0.9.0
-diffusers>=0.18.0
+sentence-transformers==2.7.0
+transformers==4.42.4
+torch>=2.2.0
+numpy==1.26.4
+scikit-learn==1.4.2
+hnswlib==0.8.0
+duckdb==1.0.0
+networkx==3.3
+rank_bm25==0.2.2
+ragas==0.1.14
 
-# Quantization and Optimization
-bitsandbytes>=0.41.0
-optimum>=1.9.0
-auto-gptq>=0.4.0
-awq>=0.1.0
-
-# Tensor Operations and Math
-einops>=0.6.0
-tensorboard>=2.13.0
-wandb>=0.15.0
-
-# Multimodal Processing
-opencv-python>=4.8.0
-pillow>=10.0.0
-librosa>=0.10.0
-soundfile>=0.12.0
-
-# Data Processing
-pandas>=2.0.0
-datasets>=2.13.0
-tokenizers>=0.13.0
-
-# Web and API
-fastapi>=0.100.0
-uvicorn>=0.22.0
-gradio>=3.35.0
-streamlit>=1.24.0
-
-# Distributed Computing
-ray>=2.5.0
-dask>=2023.6.0
-
-# Cryptography and Privacy
-cryptography>=41.0.0
-pycryptodome>=3.18.0
-
-# Development and Testing
-pytest>=7.4.0
-black>=23.0.0
-flake8>=6.0.0
-mypy>=1.4.0
-pre-commit>=3.3.0
-
-# Documentation
-sphinx>=7.0.0
-sphinx-rtd-theme>=1.3.0
-
-# Containerization
-docker>=6.1.0
-
-# Utilities
-tqdm>=4.65.0
-rich>=13.4.0
-click>=8.1.0
-pyyaml>=6.0.0
-python-dotenv>=1.0.0
-psutil>=5.9.0
-
-# WASM Support
-wasmtime>=10.0.0
-
-# Federated Learning
-flower>=1.4.0
-syft>=0.8.0
-
-# Quantum Computing (for quantum-inspired features)
-qiskit>=0.43.0
-pennylane>=0.31.0
-
-# Graph Neural Networks
-torch-geometric>=2.3.0
-networkx>=3.1.0
-
-# Time Series
-tslearn>=0.6.0
-
-# Reinforcement Learning
-stable-baselines3>=2.0.0
-gymnasium>=0.28.0
-
-# Audio Processing
-whisper>=1.1.0
-espnet>=202301.0
-
-# Computer Vision
-detectron2>=0.6.0
-segment-anything>=1.0.0
-
-# Natural Language Processing
-spacy>=3.6.0
-nltk>=3.8.0
-sentence-transformers>=2.2.0
-
-# Optimization
-optuna>=3.2.0
-hyperopt>=0.2.7
-
-# Monitoring
-prometheus-client>=0.17.0
-grafana-api>=1.0.3
-
+faiss-cpu>=1.7.4
+colbert-ai>=0.2.19
