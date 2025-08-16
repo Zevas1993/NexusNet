@@ -1,20 +1,145 @@
-<!doctype html><html><head><meta charset="utf-8"/><title>NexusNet</title>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<style>body{font-family:system-ui,sans-serif;max-width:900px;margin:32px auto;padding:0 16px}textarea{width:100%;height:120px;margin:10px 0;padding:10px;border:1px solid #ddd;border-radius:4px}button{padding:12px 24px;background:#007bff;color:white;border:none;border-radius:4px;cursor:pointer;margin:5px}button:hover{background:#0056b3}#chat{border:1px solid #ddd;padding:20px;margin:20px 0;border-radius:8px;min-height:200px;background:#f9f9f9}</style>
-</head><body><h1>🧠 NexusNet</h1><p>Unified AI framework with HiveMind experts, advanced RAG, and federated learning.</p>
-<div id="chat"></div>
-<textarea id="q" placeholder="Ask anything... The HiveMind will route your query to the most relevant experts."></textarea>
-<button id="ask">Query HiveMind</button>
-<button onclick="window.open('/admin', '_blank')">Admin Panel</button>
-<script>
-async function ask(){const q=document.getElementById('q').value.trim();if(!q)return;
-  document.getElementById('chat').innerHTML += '<div><strong>You:</strong> ' + q + '</div>';
-  const r=await fetch('/rag/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:q})});
-  const j=await r.json(); 
-  document.getElementById('chat').innerHTML += '<div><strong>NexusNet:</strong> ' + (j.answer || JSON.stringify(j, null, 2)) + '</div>';
-  document.getElementById('q').value = '';}
-document.getElementById('ask').onclick=ask;
-document.getElementById('q').addEventListener('keypress', function(e) {
-  if (e.key === 'Enter' && e.ctrlKey) ask();
-});
-</script></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexusNet Chat</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: #2563eb;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .chat-container {
+            height: 400px;
+            overflow-y: auto;
+            padding: 20px;
+            border-bottom: 1px solid #e5e5e5;
+        }
+        .message {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 8px;
+        }
+        .user {
+            background: #dbeafe;
+            margin-left: 20%;
+        }
+        .assistant {
+            background: #f3f4f6;
+            margin-right: 20%;
+        }
+        .input-area {
+            padding: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+        }
+        button {
+            padding: 10px 20px;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #1d4ed8;
+        }
+        .admin-link {
+            margin-top: 10px;
+            text-align: center;
+        }
+        .admin-link a {
+            color: #2563eb;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>NexusNet AI</h1>
+            <p>HiveMind AI with 19 Experts • Hybrid RAG • Multi-Modal</p>
+        </div>
+        
+        <div id="chat" class="chat-container">
+            <div class="message assistant">
+                Welcome to NexusNet! I'm powered by a HiveMind of 19 specialized AI experts. How can I help you today?
+            </div>
+        </div>
+        
+        <div class="input-area">
+            <input type="text" id="messageInput" placeholder="Ask me anything..." onkeypress="handleKeyPress(event)">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+        
+        <div class="admin-link">
+            <a href="/admin">Admin Panel</a> | 
+            <a href="/docs">API Docs</a>
+        </div>
+    </div>
+
+    <script>
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            if (!message) return;
+            
+            // Add user message
+            addMessage(message, 'user');
+            input.value = '';
+            
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ message })
+                });
+                
+                const data = await response.json();
+                addMessage(data.response, 'assistant');
+            } catch (error) {
+                addMessage('Error: ' + error.message, 'assistant');
+            }
+        }
+        
+        function addMessage(text, sender) {
+            const chat = document.getElementById('chat');
+            const message = document.createElement('div');
+            message.className = `message ${sender}`;
+            message.textContent = text;
+            chat.appendChild(message);
+            chat.scrollTop = chat.scrollHeight;
+        }
+        
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+    </script>
+</body>
+</html>

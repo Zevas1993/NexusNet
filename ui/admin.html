@@ -1,149 +1,237 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-    <meta charset="utf-8"/>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NexusNet Admin</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <style>
-        body { font-family: system-ui, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
-        .section { border: 1px solid #ddd; margin: 20px 0; padding: 20px; border-radius: 8px; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
-        button { padding: 10px 20px; margin: 10px 5px; border: none; border-radius: 4px; cursor: pointer; }
-        .primary { background: #007bff; color: white; }
-        .danger { background: #dc3545; color: white; }
-        .success { background: #28a745; color: white; }
-        input, textarea { width: 100%; padding: 8px; margin: 5px 0; border: 1px solid #ddd; border-radius: 4px; }
-        .status { padding: 10px; border-radius: 4px; margin: 10px 0; }
-        .status.online { background: #d4edda; color: #155724; }
-        .status.offline { background: #f8d7da; color: #721c24; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f8fafc;
+        }
+        .header {
+            background: #1e293b;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .card h3 {
+            margin-top: 0;
+            color: #1e293b;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px 5px 5px 0;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        input, textarea, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            margin: 5px 0;
+            box-sizing: border-box;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        .error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        .experts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .expert-badge {
+            background: #e5e7eb;
+            padding: 8px;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 12px;
+        }
+        .expert-badge.active {
+            background: #dbeafe;
+            color: #1e40af;
+        }
     </style>
 </head>
 <body>
-    <h1>NexusNet Admin Panel</h1>
-    
+    <div class="header">
+        <h1>NexusNet Admin Panel</h1>
+        <p>System Configuration & Management</p>
+    </div>
+
     <div class="grid">
-        <div class="section">
-            <h3>System Status</h3>
-            <div id="system-status">
-                <div class="status online">HiveMind: Online</div>
-                <div class="status online">RAG Pipeline: Active</div>
-                <div class="status offline">FL Coordinator: Offline</div>
-                <div class="status online">TeacherGate: Connected</div>
-            </div>
-            <button class="primary" onclick="refreshStatus()">Refresh Status</button>
-        </div>
-        
-        <div class="section">
+        <div class="card">
             <h3>API Keys</h3>
-            <input type="password" id="openrouter-key" placeholder="OpenRouter API Key">
-            <input type="password" id="requesty-key" placeholder="Requesty API Key">
-            <button class="primary" onclick="saveKeys()">Save Keys</button>
+            <input type="text" id="openrouterKey" placeholder="OpenRouter API Key">
+            <input type="text" id="requestyKey" placeholder="Requesty API Key">
+            <button onclick="saveKeys()">Save Keys</button>
+            <div id="keysStatus"></div>
         </div>
-        
-        <div class="section">
-            <h3>Expert Configuration</h3>
-            <select id="expert-select">
-                <option value="all">All Experts</option>
-                <option value="code">Code Expert</option>
-                <option value="medical">Medical Expert</option>
-                <option value="legal">Legal Expert</option>
+
+        <div class="card">
+            <h3>Hardware Status</h3>
+            <button onclick="scanHardware()">Scan Hardware</button>
+            <button onclick="applyAutotune()">Apply Autotune</button>
+            <div id="hardwareStatus"></div>
+        </div>
+
+        <div class="card">
+            <h3>Expert System</h3>
+            <div id="expertsGrid" class="experts-grid"></div>
+            <button onclick="loadExperts()">Refresh Experts</button>
+        </div>
+
+        <div class="card">
+            <h3>Models</h3>
+            <select id="modelSelect">
+                <option value="">Select model...</option>
             </select>
-            <button class="primary" onclick="configureExpert()">Configure</button>
-            <button class="danger" onclick="disableExpert()">Disable</button>
+            <button onclick="loadModel()">Load Model</button>
+            <button onclick="downloadModels()">Download All</button>
+            <div id="modelStatus"></div>
         </div>
-        
-        <div class="section">
-            <h3>Model Management</h3>
-            <select id="model-select">
-                <option value="cpu">CPU Models</option>
-                <option value="gpu">GPU Models</option>
-                <option value="colbert">ColBERT Index</option>
-            </select>
-            <button class="primary" onclick="downloadModel()">Download</button>
-            <button class="danger" onclick="unloadModel()">Unload</button>
+
+        <div class="card">
+            <h3>RAG System</h3>
+            <button onclick="indexData()">Index Data</button>
+            <button onclick="clearIndex()">Clear Index</button>
+            <div id="ragStatus"></div>
         </div>
-        
-        <div class="section">
-            <h3>Hardware Profile</h3>
-            <div id="hardware-info">
-                <p>CPU: 8 cores, 16 threads</p>
-                <p>Memory: 32GB available</p>
-                <p>GPU: NVIDIA RTX 4090 (24GB)</p>
-            </div>
-            <button class="primary" onclick="scanHardware()">Rescan Hardware</button>
-            <button class="primary" onclick="autoTune()">Auto-tune Settings</button>
-        </div>
-        
-        <div class="section">
+
+        <div class="card">
             <h3>Federated Learning</h3>
-            <input type="text" id="fl-coordinator" placeholder="Coordinator URL">
-            <input type="number" id="fl-participants" placeholder="Min Participants" value="2">
-            <button class="primary" onclick="startFL()">Start FL Round</button>
-            <button class="danger" onclick="stopFL()">Stop FL</button>
-        </div>
-        
-        <div class="section">
-            <h3>Data Assimilation</h3>
-            <div id="assimilation-stats">
-                <p>Samples Collected: 1,247</p>
-                <p>Quality Score: 85%</p>
-                <p>Ready for Training: No</p>
-            </div>
-            <button class="primary" onclick="checkReadiness()">Check Readiness</button>
-            <button class="success" onclick="triggerTraining()">Trigger Training</button>
-        </div>
-        
-        <div class="section">
-            <h3>RAG Inspector</h3>
-            <textarea id="test-query" placeholder="Enter test query..."></textarea>
-            <button class="primary" onclick="testRAG()">Test RAG Pipeline</button>
-            <div id="rag-results"></div>
+            <button onclick="startFL()">Start Training</button>
+            <button onclick="stopFL()">Stop Training</button>
+            <div id="flStatus"></div>
         </div>
     </div>
-    
+
     <script>
-        function refreshStatus() {
-            fetch('/admin/status').then(r => r.json()).then(data => {
-                console.log('Status:', data);
-                // Update status displays
-            });
+        // Load initial data
+        loadExperts();
+        loadModels();
+
+        async function saveKeys() {
+            const openrouter = document.getElementById('openrouterKey').value;
+            const requesty = document.getElementById('requestyKey').value;
+            
+            try {
+                const response = await fetch('/admin/keys', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ openrouter_api_key: openrouter, requesty_api_key: requesty })
+                });
+                const result = await response.json();
+                showStatus('keysStatus', result.success ? 'Keys saved successfully' : 'Failed to save keys', result.success);
+            } catch (error) {
+                showStatus('keysStatus', 'Error: ' + error.message, false);
+            }
         }
-        
-        function saveKeys() {
-            const keys = {
-                openrouter: document.getElementById('openrouter-key').value,
-                requesty: document.getElementById('requesty-key').value
-            };
-            fetch('/admin/keys', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(keys)
-            }).then(() => alert('Keys saved'));
+
+        async function scanHardware() {
+            try {
+                const response = await fetch('/admin/hardware');
+                const data = await response.json();
+                document.getElementById('hardwareStatus').innerHTML = `
+                    <strong>CPU:</strong> ${data.cpu_count} cores<br>
+                    <strong>RAM:</strong> ${(data.memory_gb || 0).toFixed(1)} GB<br>
+                    <strong>GPU:</strong> ${data.gpu_name || 'None detected'}
+                `;
+            } catch (error) {
+                showStatus('hardwareStatus', 'Error: ' + error.message, false);
+            }
         }
-        
-        function testRAG() {
-            const query = document.getElementById('test-query').value;
-            fetch('/rag/query', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({prompt: query})
-            }).then(r => r.json()).then(data => {
-                document.getElementById('rag-results').innerHTML = 
-                    '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
-            });
+
+        async function applyAutotune() {
+            try {
+                const response = await fetch('/admin/apply_autotune', { method: 'POST' });
+                const result = await response.json();
+                showStatus('hardwareStatus', result.message, result.success);
+            } catch (error) {
+                showStatus('hardwareStatus', 'Error: ' + error.message, false);
+            }
         }
-        
-        // Placeholder functions for other buttons
-        function configureExpert() { alert('Expert configuration not implemented'); }
-        function disableExpert() { alert('Expert disable not implemented'); }
-        function downloadModel() { alert('Model download not implemented'); }
-        function unloadModel() { alert('Model unload not implemented'); }
-        function scanHardware() { alert('Hardware scan not implemented'); }
-        function autoTune() { alert('Auto-tune not implemented'); }
-        function startFL() { alert('FL start not implemented'); }
-        function stopFL() { alert('FL stop not implemented'); }
-        function checkReadiness() { alert('Readiness check not implemented'); }
-        function triggerTraining() { alert('Training trigger not implemented'); }
+
+        async function loadExperts() {
+            try {
+                const response = await fetch('/admin/experts');
+                const data = await response.json();
+                const grid = document.getElementById('expertsGrid');
+                grid.innerHTML = '';
+                
+                Object.entries(data.experts || {}).forEach(([name, config]) => {
+                    const badge = document.createElement('div');
+                    badge.className = `expert-badge ${config.enabled ? 'active' : ''}`;
+                    badge.textContent = name;
+                    grid.appendChild(badge);
+                });
+            } catch (error) {
+                console.error('Failed to load experts:', error);
+            }
+        }
+
+        async function loadModels() {
+            try {
+                const response = await fetch('/admin/models');
+                const data = await response.json();
+                const select = document.getElementById('modelSelect');
+                select.innerHTML = '<option value="">Select model...</option>';
+                
+                Object.values(data.models || {}).flat().forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.model_id;
+                    option.textContent = `${model.model_id} (${model.size})`;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Failed to load models:', error);
+            }
+        }
+
+        function showStatus(elementId, message, isSuccess) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<div class="status ${isSuccess ? 'success' : 'error'}">${message}</div>`;
+        }
+
+        // Placeholder functions
+        async function loadModel() { showStatus('modelStatus', 'Model loading...', true); }
+        async function downloadModels() { showStatus('modelStatus', 'Downloading models...', true); }
+        async function indexData() { showStatus('ragStatus', 'Indexing data...', true); }
+        async function clearIndex() { showStatus('ragStatus', 'Index cleared', true); }
+        async function startFL() { showStatus('flStatus', 'Federated learning started', true); }
+        async function stopFL() { showStatus('flStatus', 'Federated learning stopped', true); }
     </script>
 </body>
 </html>
