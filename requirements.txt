@@ -1,37 +1,47 @@
-fastapi==0.111.0
-uvicorn[standard]==0.30.1
-pydantic==2.8.2
+# Security and dependency fixes for NexusNet
+
+# Core web framework - updated to latest secure versions
+fastapi==0.115.4
+uvicorn[standard]==0.32.1
+pydantic==2.10.3
 python-dotenv==1.0.1
-orjson==3.10.7
-jinja2==3.1.4
-httpx==0.27.0
+orjson==3.10.11
+jinja2==3.1.5
+httpx==0.28.1
+
+# Core dependencies - updated for security
 PyYAML>=6.0.2
-psutil>=5.9.8
-cryptography>=42.0.8
+psutil>=6.1.0
+cryptography>=43.0.3
 pynacl>=1.5.0
 nvidia-ml-py3>=7.352.0
 requests>=2.32.3
 
-# RAG
-sentence-transformers==2.7.0
-transformers==4.42.4
-torch>=2.2.0
-numpy==1.26.4
-scikit-learn==1.4.2
+# RAG dependencies - updated versions
+sentence-transformers==3.3.1
+transformers==4.47.0
+torch>=2.5.1
+numpy==2.1.3
+scikit-learn==1.6.0
 hnswlib==0.8.0
-duckdb==1.0.0
-networkx==3.3
+duckdb==1.1.3
+networkx==3.4.2
 rank_bm25==0.2.2
-ragas==0.1.14
-faiss-cpu>=1.7.4
+ragas==0.2.16
+faiss-cpu>=1.9.0
 colbert-ai>=0.2.19
-beautifulsoup4>=4.12.2
+beautifulsoup4>=4.12.3
 
-# Local models
-llama-cpp-python>=0.2.86
-accelerate>=0.33.0
-peft>=0.12.0
-datasets>=2.20.0
-huggingface_hub>=0.24.6
-bitsandbytes>=0.43.3; platform_system != "Windows"
-trl>=0.9.6
+# Local models - updated for security
+llama-cpp-python>=0.3.2
+accelerate>=1.1.1
+peft>=0.13.2
+datasets>=3.1.0
+huggingface_hub>=0.26.3
+bitsandbytes>=0.45.0; platform_system != "Windows"
+trl>=0.12.1
+
+# Additional security dependencies
+bcrypt>=4.2.1
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
