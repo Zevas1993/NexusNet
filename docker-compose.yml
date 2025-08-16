@@ -7,3 +7,4 @@ services:
     environment:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - REQUESTY_API_KEY=${REQUESTY_API_KEY:-}
+      - VLLM_URL=${VLLM_URL:-http://127.0.0.1:8000/v1}
