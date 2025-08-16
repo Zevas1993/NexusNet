@@ -1,5 +1,16 @@
-$ErrorActionPreference = "Stop"
-function Ensure-Python { if (-not (Get-Command python -ErrorAction SilentlyContinue)) { Write-Host "Installing Python..."; winget install Python.Python.3.11 --accept-source-agreements --accept-package-agreements } }
-Ensure-Python; python -m venv .venv; .\.venv\Scripts\pip install --upgrade pip; .\.venv\Scripts\pip install -r requirements.txt
-try { .\.venv\Scripts\pip install faiss-cpu colbert-ai } catch { Write-Warning "ColBERT deps failed" }
-.\.venv\Scripts\python apps\bootstrap\first_run.py; Start-Process .\.venv\Scripts\python -ArgumentList "-m uvicorn apps.api.main:app --host 0.0.0.0 --port 5173"; Start-Sleep 3; Start-Process "http://127.0.0.1:5173"
+Set-ExecutionPolicy Bypass -Scope Process -Force
+
+# Install Python if not present
+if (!(Get-Command python -ErrorAction SilentlyContinue)) {
+    Write-Host "Installing Python..."
+    Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe" -OutFile "python-installer.exe"
+    Start-Process -Wait -FilePath "python-installer.exe" -ArgumentList "/quiet InstallAllUsers=1 PrependPath=1"
+    Remove-Item "python-installer.exe"
+}
+
+# Install dependencies
+Write-Host "Installing dependencies..."
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+
+Write-Host "Installation complete! Run: python apps/api/main.py"

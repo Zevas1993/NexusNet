@@ -1,9 +1,9 @@
-$ErrorActionPreference = "Stop"
-Write-Host "Setting up NexusNet via WSL..."
-if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) {
-    Write-Host "Installing WSL..."
-    wsl --install --distribution Ubuntu
-    Write-Host "Please reboot and run this script again."
-    exit
-}
-wsl -e bash -c "cd /mnt/c/$(pwd | ForEach-Object { $_ -replace ':', '' -replace '\\', '/' }) && chmod +x install/linux/install.sh && ./install/linux/install.sh"
+Set-ExecutionPolicy Bypass -Scope Process -Force
+
+Write-Host "Setting up WSL for NexusNet..."
+
+# Enable WSL
+wsl --install
+
+Write-Host "Please reboot and run: wsl -d Ubuntu -- bash -c 'cd /mnt/c/path/to/nexusnet && ./install/linux/install.sh'"
+Write-Host "Replace /mnt/c/path/to/nexusnet with your actual path"
