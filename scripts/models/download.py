@@ -1,54 +1,65 @@
-# Model Download Script
-import os, sys, pathlib
-try: import huggingface_hub
-except ImportError: print("pip install huggingface_hub"); sys.exit(1)
+#!/usr/bin/env python3
+"""Download models based on model_map.yaml"""
+import yaml
+import argparse
+import subprocess
+import sys
+from pathlib import Path
 
-def download_model(model_name: str, model_type: str = "transformers"):
-    """Download model to local cache"""
-    cache_dir = pathlib.Path("runtime/models")
-    cache_dir.mkdir(parents=True, exist_ok=True)
+def load_model_map():
+    """Load model configuration"""
+    script_dir = Path(__file__).parent
+    model_map_path = script_dir / "model_map.yaml"
     
-    if model_type == "gguf":
-        # Download GGUF models
-        filename = f"{model_name.split('/')[-1]}.gguf"
-        try:
-            path = huggingface_hub.hf_hub_download(
-                repo_id=model_name,
-                filename=filename,
-                cache_dir=str(cache_dir)
-            )
-            print(f"Downloaded: {path}")
-            return path
-        except Exception as e:
-            print(f"Failed to download {model_name}: {e}")
-            return None
+    with open(model_map_path, 'r') as f:
+        return yaml.safe_load(f)
+
+def download_model(model_info):
+    """Download a single model"""
+    model_id = model_info['model_id']
+    model_type = model_info['type']
+    
+    print(f"Downloading {model_id} ({model_info['size']})...")
+    
+    if model_type == 'transformers':
+        cmd = [sys.executable, '-c', f"from transformers import AutoModel, AutoTokenizer; AutoModel.from_pretrained('{model_id}'); AutoTokenizer.from_pretrained('{model_id}')"]
+    elif model_type == 'sentence_transformers':
+        cmd = [sys.executable, '-c', f"from sentence_transformers import SentenceTransformer; SentenceTransformer('{model_id}')"]
     else:
-        # Download transformers models
-        try:
-            path = huggingface_hub.snapshot_download(
-                repo_id=model_name,
-                cache_dir=str(cache_dir)
-            )
-            print(f"Downloaded: {path}")
-            return path
-        except Exception as e:
-            print(f"Failed to download {model_name}: {e}")
-            return None
+        print(f"Unknown model type: {model_type}")
+        return False
+    
+    try:
+        subprocess.run(cmd, check=True)
+        print(f"✓ Downloaded {model_id}")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"✗ Failed to download {model_id}: {e}")
+        return False
 
-if __name__ == "__main__":
-    import yaml
+def main():
+    parser = argparse.ArgumentParser(description='Download models')
+    parser.add_argument('--only', choices=['chat', 'embedding', 'all'], default='all',
+                       help='Download only specific type of models')
+    args = parser.parse_args()
     
-    # Load model map
-    model_map_path = pathlib.Path("scripts/models/model_map.yaml")
-    if not model_map_path.exists():
-        print("Model map not found")
-        sys.exit(1)
+    models = load_model_map()
     
-    with open(model_map_path) as f:
-        models = yaml.safe_load(f)
+    if args.only == 'all':
+        to_download = []
+        for category in models['models'].values():
+            to_download.extend(category)
+    else:
+        to_download = models['models'][args.only]
     
-    # Download recommended models
-    for category, model_list in models.items():
-        print(f"\nDownloading {category} models...")
-        for model in model_list.get("recommended", []):
-            download_model(model["name"], model.get("type", "transformers"))
+    print(f"Downloading {len(to_download)} models...")
+    
+    success_count = 0
+    for model_info in to_download:
+        if download_model(model_info):
+            success_count += 1
+    
+    print(f"\nDownload complete: {success_count}/{len(to_download)} successful")
+
+if __name__ == '__main__':
+    main()

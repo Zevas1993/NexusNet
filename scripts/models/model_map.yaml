@@ -1,58 +1,17 @@
-# Model Map - Curated list of models for different use cases
-
-embedding_models:
-  recommended:
-    - name: "BAAI/bge-small-en-v1.5"
-      size: "130MB"
-      type: "transformers"
-      description: "Fast and efficient embeddings"
-    - name: "sentence-transformers/all-MiniLM-L6-v2"
-      size: "90MB"
-      type: "transformers"
-      description: "Lightweight sentence embeddings"
-
-language_models:
-  cpu_optimized:
-    - name: "microsoft/DialoGPT-small"
-      size: "350MB"
-      type: "gguf"
-      description: "Small conversational model"
-    - name: "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-      size: "2.2GB"
-      type: "gguf"
-      description: "Tiny but capable chat model"
+# Models available for download
+models:
+  chat:
+    - model_id: microsoft/DialoGPT-medium
+      size: "800MB"
+      type: transformers
+    - model_id: microsoft/DialoGPT-large  
+      size: "1.5GB"
+      type: transformers
   
-  gpu_optimized:
-    - name: "microsoft/DialoGPT-medium"
-      size: "1.4GB"
-      type: "transformers"
-      description: "Medium conversational model"
-    - name: "HuggingFaceH4/zephyr-7b-beta"
-      size: "14GB"
-      type: "transformers"
-      description: "High-quality instruction-following model"
-
-reranking_models:
-  recommended:
-    - name: "cross-encoder/ms-marco-MiniLM-L6-v2"
-      size: "90MB"
-      type: "transformers"
-      description: "Fast reranking model"
-    - name: "cross-encoder/ms-marco-MiniLM-L12-v2"
-      size: "130MB"
-      type: "transformers"
-      description: "Better accuracy reranking"
-
-nli_models:
-  recommended:
-    - name: "microsoft/deberta-v3-base-mnli"
-      size: "440MB"
-      type: "transformers"
-      description: "Natural language inference"
-
-colbert_models:
-  recommended:
-    - name: "colbert-ir/colbertv2.0"
-      size: "440MB"
-      type: "colbert"
-      description: "Late interaction retrieval"
+  embedding:
+    - model_id: sentence-transformers/all-MiniLM-L6-v2
+      size: "80MB"
+      type: sentence_transformers
+    - model_id: sentence-transformers/all-mpnet-base-v2
+      size: "420MB"
+      type: sentence_transformers
