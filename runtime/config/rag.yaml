@@ -1,43 +1,48 @@
 rag:
-  query_transform: { enable: true, enable_hyde: true, n_rewrites: 4, max_chars: 220, budget_max_embeddings: 64 }
-  retrieval:
-    stage1: { vector_k: 30, bm25_k: 30, use_bm25_hybrid: true, rrf_k: 60 }
-    stage2: { reranker: cross_encoder, cross_encoder_model: cross-encoder/ms-marco-MiniLM-L6-v2, topk: 8 }
+  # Chunking strategy
+  chunk_size: 512
+  chunk_overlap: 50
+  chunk_method: "recursive"  # recursive, sentence, paragraph
   
-  agentic:
+  # Retrieval methods
+  retrievers:
+    dense:
+      enabled: true
+      model: "sentence-transformers/all-mpnet-base-v2"
+      top_k: 10
+    
+    sparse:
+      enabled: true
+      method: "bm25"  # bm25, tfidf
+      top_k: 10
+    
+    colbert:
+      enabled: true
+      model: "colbert-ir/colbertv2.0"
+      top_k: 10
+      late_interaction: true
+  
+  # Reranking
+  reranker:
     enabled: true
-    max_steps: 5
-    coverage_threshold: 0.80
-    planner_model: "gpt-4"
-
-models:
-  planner_verifier: { prefer_provider: false, tiny_name: TinyLlama/TinyLlama-1.1B-Chat-v1.0 }
-  embedder: BAAI/bge-small-en-v1.5
-  ais_nli: microsoft/deberta-v3-base-mnli
-  reranker: cross-encoder/ms-marco-MiniLM-L6-v2
-
-late_interaction:
-  enable: true
-  backend: colbert
-  index_dir: runtime/state/colbert_index
-  model: colbert-ir/colbertv2.0
-  doc_maxlen: 180
-  nbits: 2
-  kmeans_niters: 4
-  nprobe: 64
-  topk: 50
-
-temporal:
-  enabled: true
-  recency_lambda: 0.15
-  default_lookback_days: 365
-  enforce_answer_dates: true
-
-fl:
-  enabled: false
-  coordinator_url: http://127.0.0.1:8088
-  eps_budget: 1.0
-  sigma: 0.7
-  clip: 0.2
-
-rag.graph.stop: { coverage_threshold: 0.80, max_steps: 5 }
+    model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    top_k: 5
+  
+  # Fusion method
+  fusion_method: "rrf"  # rrf, weighted_sum, rank_fusion
+  fusion_weights:
+    dense: 0.4
+    sparse: 0.3
+    colbert: 0.3
+  
+  # AIS (Answer-in-Source) verification
+  ais:
+    enabled: true
+    threshold: 0.8
+    model: "nli-deberta-v3-large"
+  
+  # Temporal awareness
+  temporal:
+    enabled: true
+    time_decay: 0.95
+    recent_boost: 1.2

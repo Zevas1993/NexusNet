@@ -1,96 +1,152 @@
-# Expert Configurations
 experts:
-  code:
-    enabled: true
-    confidence_threshold: 0.7
-    max_tokens: 1024
-  
-  cybersecurity:
-    enabled: true
-    confidence_threshold: 0.8
-    max_tokens: 512
-  
-  datascience:
-    enabled: true
-    confidence_threshold: 0.7
-    max_tokens: 1024
-  
-  design:
-    enabled: true
-    confidence_threshold: 0.6
-    max_tokens: 512
-  
-  devops:
-    enabled: true
-    confidence_threshold: 0.7
-    max_tokens: 1024
-  
-  education:
-    enabled: true
-    confidence_threshold: 0.6
-    max_tokens: 512
-  
-  finance:
-    enabled: true
-    confidence_threshold: 0.8
-    max_tokens: 512
-  
   generalist:
     enabled: true
-    confidence_threshold: 0.3  # Lower threshold as fallback
-    max_tokens: 1024
-  
-  legal:
-    enabled: true
-    confidence_threshold: 0.9  # Higher threshold for legal advice
-    max_tokens: 512
-  
-  marketing:
-    enabled: true
+    description: "General purpose AI assistant"
+    specialties: ["general", "conversation", "reasoning"]
+    model_preference: "gpt-4"
+    temperature: 0.7
     confidence_threshold: 0.6
-    max_tokens: 512
   
-  math:
+  code:
     enabled: true
+    description: "Software development and programming"
+    specialties: ["programming", "debugging", "architecture", "algorithms"]
+    model_preference: "claude-3-sonnet"
+    temperature: 0.3
     confidence_threshold: 0.8
-    max_tokens: 1024
-  
-  medical:
-    enabled: true
-    confidence_threshold: 0.9  # Higher threshold for medical info
-    max_tokens: 512
-  
-  operations:
-    enabled: true
-    confidence_threshold: 0.7
-    max_tokens: 512
-  
-  product:
-    enabled: true
-    confidence_threshold: 0.7
-    max_tokens: 512
   
   research:
     enabled: true
+    description: "Research and analysis"
+    specialties: ["research", "analysis", "citations", "academic"]
+    model_preference: "gpt-4"
+    temperature: 0.5
     confidence_threshold: 0.7
-    max_tokens: 1024
   
-  search:
+  math:
     enabled: true
-    confidence_threshold: 0.6
-    max_tokens: 512
-  
-  translation:
-    enabled: true
-    confidence_threshold: 0.7
-    max_tokens: 1024
-  
-  vision:
-    enabled: true
-    confidence_threshold: 0.7
-    max_tokens: 512
+    description: "Mathematics and calculations"
+    specialties: ["mathematics", "statistics", "calculations", "proofs"]
+    model_preference: "claude-3-opus"
+    temperature: 0.2
+    confidence_threshold: 0.9
   
   writing:
     enabled: true
+    description: "Creative and technical writing"
+    specialties: ["writing", "editing", "creativity", "storytelling"]
+    model_preference: "gpt-4"
+    temperature: 0.8
     confidence_threshold: 0.6
-    max_tokens: 1024
+  
+  datascience:
+    enabled: true
+    description: "Data science and analytics"
+    specialties: ["data", "analytics", "visualization", "ml"]
+    model_preference: "claude-3-sonnet"
+    temperature: 0.4
+    confidence_threshold: 0.8
+  
+  cybersecurity:
+    enabled: true
+    description: "Security and privacy"
+    specialties: ["security", "privacy", "encryption", "threats"]
+    model_preference: "gpt-4"
+    temperature: 0.3
+    confidence_threshold: 0.9
+  
+  legal:
+    enabled: true
+    description: "Legal analysis and compliance"
+    specialties: ["legal", "compliance", "contracts", "regulations"]
+    model_preference: "claude-3-opus"
+    temperature: 0.2
+    confidence_threshold: 0.9
+  
+  medical:
+    enabled: true
+    description: "Medical and health information"
+    specialties: ["medical", "health", "diagnosis", "treatment"]
+    model_preference: "gpt-4"
+    temperature: 0.1
+    confidence_threshold: 0.95
+  
+  finance:
+    enabled: true
+    description: "Financial analysis and advice"
+    specialties: ["finance", "investment", "economics", "trading"]
+    model_preference: "claude-3-sonnet"
+    temperature: 0.3
+    confidence_threshold: 0.8
+  
+  education:
+    enabled: true
+    description: "Educational content and tutoring"
+    specialties: ["education", "tutoring", "curriculum", "learning"]
+    model_preference: "gpt-4"
+    temperature: 0.6
+    confidence_threshold: 0.7
+  
+  design:
+    enabled: true
+    description: "Design and user experience"
+    specialties: ["design", "ui", "ux", "graphics", "branding"]
+    model_preference: "claude-3-sonnet"
+    temperature: 0.7
+    confidence_threshold: 0.6
+  
+  marketing:
+    enabled: true
+    description: "Marketing and business strategy"
+    specialties: ["marketing", "strategy", "branding", "sales"]
+    model_preference: "gpt-4"
+    temperature: 0.6
+    confidence_threshold: 0.7
+  
+  operations:
+    enabled: true
+    description: "Operations and process optimization"
+    specialties: ["operations", "process", "optimization", "logistics"]
+    model_preference: "claude-3-sonnet"
+    temperature: 0.4
+    confidence_threshold: 0.8
+  
+  product:
+    enabled: true
+    description: "Product management and development"
+    specialties: ["product", "management", "development", "roadmap"]
+    model_preference: "gpt-4"
+    temperature: 0.5
+    confidence_threshold: 0.7
+  
+  devops:
+    enabled: true
+    description: "DevOps and infrastructure"
+    specialties: ["devops", "infrastructure", "deployment", "monitoring"]
+    model_preference: "claude-3-sonnet"
+    temperature: 0.3
+    confidence_threshold: 0.8
+  
+  vision:
+    enabled: true
+    description: "Computer vision and image analysis"
+    specialties: ["vision", "images", "analysis", "recognition"]
+    model_preference: "gpt-4-vision"
+    temperature: 0.4
+    confidence_threshold: 0.8
+  
+  translation:
+    enabled: true
+    description: "Language translation and localization"
+    specialties: ["translation", "languages", "localization", "culture"]
+    model_preference: "gpt-4"
+    temperature: 0.3
+    confidence_threshold: 0.8
+  
+  search:
+    enabled: true
+    description: "Information retrieval and search"
+    specialties: ["search", "retrieval", "information", "discovery"]
+    model_preference: "claude-3-sonnet"
+    temperature: 0.4
+    confidence_threshold: 0.7

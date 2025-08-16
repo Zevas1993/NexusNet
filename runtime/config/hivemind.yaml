@@ -1,37 +1,31 @@
-# HiveMind Configuration
 hivemind:
-  max_experts_per_query: 5
-  consensus_threshold: 0.6
-  expert_timeout: 30  # seconds
+  consensus_method: "weighted_vote"  # weighted_vote, majority, confidence_based
+  min_experts: 3
+  max_experts: 19
+  voting_weights:
+    confidence: 0.4
+    diversity: 0.3
+    accuracy: 0.3
   
-  routing:
-    strategy: "confidence_based"  # confidence_based, round_robin, weighted
-    fallback_expert: "generalist"
-    min_confidence: 0.3
+  # Expert selection strategy
+  selection_strategy: "dynamic"  # static, dynamic, adaptive
   
-  consensus:
-    enabled: true
-    method: "weighted_average"  # simple_average, weighted_average, voting
-    require_majority: false
+  # Confidence thresholds
+  min_confidence: 0.6
+  consensus_threshold: 0.75
   
-  teacher_gate:
-    enabled: true
-    priority: ["openrouter", "requesty"]
-    fallback_timeout: 10
-    enhance_responses: true
+  # Fallback behavior
+  fallback_to_generalist: true
+  fallback_confidence: 0.5
+
+execution:
+  parallel_processing: true
+  max_concurrent_experts: 5
+  timeout_seconds: 30
   
-  local_models:
-    cpu_backend: "llama_cpp"
-    gpu_backend: "transformers"
-    consensus_enabled: true
-    model_timeout: 60
+  # Response aggregation
+  aggregation_method: "ranked_fusion"  # simple_vote, ranked_fusion, weighted_average
   
-  safety:
-    input_filtering: true
-    output_sanitization: true
-    content_moderation: true
-  
-  performance:
-    parallel_processing: true
-    caching_enabled: true
-    cache_ttl: 3600  # 1 hour
+  # Quality control
+  enable_cross_validation: true
+  cross_validation_threshold: 0.8
