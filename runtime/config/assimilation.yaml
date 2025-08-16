@@ -1,0 +1,15 @@
+{
+  "min_samples": 100,
+  "quality_threshold": 0.7,
+  "batch_size": 1000,
+  "notification": {
+    "enabled": true,
+    "webhook_url": null,
+    "email": null
+  },
+  "auto_training": {
+    "enabled": false,
+    "trigger_threshold": 5000,
+    "model_type": "dpo"
+  }
+}

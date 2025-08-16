@@ -6,6 +6,5 @@ python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
-pip install faiss-cpu colbert-ai
 python apps/bootstrap/first_run.py
 python -m uvicorn apps.api.main:app --host 0.0.0.0 --port 5173
