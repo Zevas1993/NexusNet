@@ -1,0 +1,42 @@
+training:
+  # DPO specific settings
+  dpo:
+    learning_rate: 1e-6
+    batch_size: 1
+    gradient_accumulation_steps: 4
+    num_epochs: 3
+    warmup_steps: 100
+    
+    # Regularization
+    beta: 0.1
+    max_length: 2048
+    max_prompt_length: 1024
+    
+  # Model criteria
+  model_selection:
+    base_models:
+      - "microsoft/DialoGPT-medium"
+      - "microsoft/DialoGPT-large"
+      - "facebook/opt-1.3b"
+    
+    criteria:
+      min_parameters: 100_000_000  # 100M
+      max_parameters: 10_000_000_000  # 10B
+      architecture: ["gpt", "opt", "llama"]
+      
+  # Training quality
+  quality:
+    min_loss_improvement: 0.01
+    patience: 3
+    early_stopping: true
+    
+    # Evaluation
+    eval_steps: 100
+    eval_strategy: "steps"
+    
+  # Resource management  
+  resources:
+    use_gpu: true
+    mixed_precision: "fp16"
+    gradient_checkpointing: true
+    dataloader_num_workers: 4
