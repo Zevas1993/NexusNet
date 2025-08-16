@@ -14,8 +14,8 @@ class ColBERTAdapter:
         self.nprobe = nprobe
         self.ok = False
         try:
-            from colbert import Indexer, Searcher, ColBERTConfig  # noqa
-            from colbert.infra import Run  # noqa
+            from colbert import Indexer, Searcher, ColBERTConfig
+            from colbert.infra import Run
             self.Indexer = Indexer; self.Searcher = Searcher; self.ColBERTConfig = ColBERTConfig; self.Run = Run
             self.ok = True
         except Exception as e:

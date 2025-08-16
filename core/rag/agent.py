@@ -14,6 +14,7 @@ class SelfRAGAgent:
         self.retriever = Retriever(embed_model=self.cfg['models']['embedder'])
         self.indexer = Indexer(self.retriever)
         self.ais = AISVerifier(model_name=self.cfg['models']['ais_nli'])
+    
     async def answer(self, q: str) -> Dict[str, Any]:
         state = {"coverage": 0.0, "evidence": [], "evidence_count": 0}
         scope = parse_scope(q, default_lookback_days=self.cfg.get('temporal',{}).get('default_lookback_days',365))
