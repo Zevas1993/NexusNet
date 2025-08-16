@@ -1,0 +1,96 @@
+# Expert Configurations
+experts:
+  code:
+    enabled: true
+    confidence_threshold: 0.7
+    max_tokens: 1024
+  
+  cybersecurity:
+    enabled: true
+    confidence_threshold: 0.8
+    max_tokens: 512
+  
+  datascience:
+    enabled: true
+    confidence_threshold: 0.7
+    max_tokens: 1024
+  
+  design:
+    enabled: true
+    confidence_threshold: 0.6
+    max_tokens: 512
+  
+  devops:
+    enabled: true
+    confidence_threshold: 0.7
+    max_tokens: 1024
+  
+  education:
+    enabled: true
+    confidence_threshold: 0.6
+    max_tokens: 512
+  
+  finance:
+    enabled: true
+    confidence_threshold: 0.8
+    max_tokens: 512
+  
+  generalist:
+    enabled: true
+    confidence_threshold: 0.3  # Lower threshold as fallback
+    max_tokens: 1024
+  
+  legal:
+    enabled: true
+    confidence_threshold: 0.9  # Higher threshold for legal advice
+    max_tokens: 512
+  
+  marketing:
+    enabled: true
+    confidence_threshold: 0.6
+    max_tokens: 512
+  
+  math:
+    enabled: true
+    confidence_threshold: 0.8
+    max_tokens: 1024
+  
+  medical:
+    enabled: true
+    confidence_threshold: 0.9  # Higher threshold for medical info
+    max_tokens: 512
+  
+  operations:
+    enabled: true
+    confidence_threshold: 0.7
+    max_tokens: 512
+  
+  product:
+    enabled: true
+    confidence_threshold: 0.7
+    max_tokens: 512
+  
+  research:
+    enabled: true
+    confidence_threshold: 0.7
+    max_tokens: 1024
+  
+  search:
+    enabled: true
+    confidence_threshold: 0.6
+    max_tokens: 512
+  
+  translation:
+    enabled: true
+    confidence_threshold: 0.7
+    max_tokens: 1024
+  
+  vision:
+    enabled: true
+    confidence_threshold: 0.7
+    max_tokens: 512
+  
+  writing:
+    enabled: true
+    confidence_threshold: 0.6
+    max_tokens: 1024

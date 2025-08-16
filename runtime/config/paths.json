@@ -1,3 +1,7 @@
 {
-  "model_dir": "runtime/models"
+  "model_dir": "runtime/models",
+  "index_dir": "runtime/state/indexes",
+  "cache_dir": "runtime/state/cache",
+  "logs_dir": "runtime/state/logs",
+  "temp_dir": "runtime/state/temp"
 }
