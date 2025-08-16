@@ -1,15 +1,42 @@
-{
-  "min_samples": 100,
-  "quality_threshold": 0.7,
-  "batch_size": 1000,
-  "notification": {
-    "enabled": true,
-    "webhook_url": null,
-    "email": null
-  },
-  "auto_training": {
-    "enabled": false,
-    "trigger_threshold": 5000,
-    "model_type": "dpo"
-  }
-}
+assimilation:
+  enabled: true
+  
+  # Data collection
+  collection:
+    max_docs_per_batch: 100
+    formats: ["txt", "md", "pdf", "docx", "html"]
+    min_content_length: 50
+    max_content_length: 10000
+  
+  # Processing pipeline
+  processing:
+    chunk_overlap: 0.1
+    quality_threshold: 0.7
+    diversity_threshold: 0.8
+    
+  # Preference generation
+  preferences:
+    method: "pairwise"  # pairwise, ranking, scoring
+    criteria:
+      - accuracy
+      - helpfulness
+      - relevance
+      - clarity
+    
+    # Auto-labeling
+    auto_label: true
+    confidence_threshold: 0.8
+    human_validation: false
+  
+  # Training data output
+  output:
+    format: "dpo"  # dpo, rlhf, sft
+    max_pairs: 10000
+    train_test_split: 0.8
+    
+  # Gate mechanism
+  gate:
+    enabled: true
+    teacher_models: ["gpt-4", "claude-3-opus"]
+    consensus_threshold: 0.9
+    fallback_strategy: "best_single"
