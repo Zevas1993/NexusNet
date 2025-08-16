@@ -9,6 +9,8 @@ PyYAML>=6.0.2
 psutil>=5.9.8
 cryptography>=42.0.8
 pynacl>=1.5.0
+nvidia-ml-py3>=7.352.0
+requests>=2.32.3
 
 # RAG
 sentence-transformers==2.7.0
@@ -32,11 +34,4 @@ peft>=0.12.0
 datasets>=2.20.0
 huggingface_hub>=0.24.6
 bitsandbytes>=0.43.3; platform_system != "Windows"
-
-# Connectors
-gitpython>=3.1.43
-notion-client>=2.2.1
-google-api-python-client>=2.138.0
-google-auth-httplib2>=0.2.0
-google-auth-oauthlib>=1.2.1
-slack_sdk>=3.27.0
+trl>=0.9.6
