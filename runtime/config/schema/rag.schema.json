@@ -1,0 +1,21 @@
+{
+  "type": "object",
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "top_k": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50
+    },
+    "corpus_dir": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "enabled",
+    "top_k",
+    "corpus_dir"
+  ]
+}

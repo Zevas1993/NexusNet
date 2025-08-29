@@ -1,0 +1,12 @@
+
+transformers:
+  model: TinyLlama/TinyLlama-1.1B-Chat-v1.0
+  dtype: float16
+llama_cpp:
+  model_path: models/tiny/tinyllama.gguf
+  n_gpu_layers: 0
+vllm:
+  endpoint: null  # e.g., http://localhost:8000
+policy:
+  prefer_local: true
+  allow_cloud: false

@@ -1,0 +1,4 @@
+name: rzero_reasoning
+domain: general_reasoning
+base_model: ${solver}
+rzero_config: runtime/config/rzero.yaml

@@ -1,17 +1,10 @@
-# Models available for download
-models:
-  chat:
-    - model_id: microsoft/DialoGPT-medium
-      size: "800MB"
-      type: transformers
-    - model_id: microsoft/DialoGPT-large  
-      size: "1.5GB"
-      type: transformers
-  
-  embedding:
-    - model_id: sentence-transformers/all-MiniLM-L6-v2
-      size: "80MB"
-      type: sentence_transformers
-    - model_id: sentence-transformers/all-mpnet-base-v2
-      size: "420MB"
-      type: sentence_transformers
+cpu_gguf:
+  Qwen2.5-3B-Instruct-GGUF/Qwen2.5-3B-Instruct-Q4_K_M.gguf: true
+  Qwen2.5-Coder-7B-Instruct-GGUF/Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf: true
+  DeepSeek-R1-Distill-Qwen-1.5B-GGUF/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf: true
+  Phi-3-mini-4k-instruct-gguf/Phi-3-mini-4k-instruct-q4.gguf: true
+gpu_transformers:
+  Qwen/Qwen2.5-3B-Instruct: true
+  Qwen/Qwen2.5-Coder-7B-Instruct: true
+  deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B: true
+  microsoft/Phi-3-mini-4k-instruct: true

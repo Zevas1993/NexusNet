@@ -1,0 +1,50 @@
+{
+  "title": "NexusNet",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Requests",
+      "targets": [
+        {
+          "expr": "sum(increase(nexusnet_requests_total[5m]))"
+        }
+      ]
+    },
+    {
+      "type": "gauge",
+      "title": "Latency p95",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(nexusnet_latency_seconds_bucket[5m])) by (le))"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Router Pair Counts (pred\u2192used)",
+      "targets": [
+        {
+          "expr": "sum(nexusnet_router_pair_total) by (pred,used)"
+        }
+      ],
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "type": "heatmap",
+      "title": "Router Pairs Heatmap (5m rate)",
+      "targets": [
+        {
+          "expr": "sum(increase(nexusnet_router_pair_total[5m])) by (pred,used)"
+        }
+      ],
+      "options": {
+        "legend": {
+          "show": true
+        }
+      }
+    }
+  ],
+  "schemaVersion": 36
+}

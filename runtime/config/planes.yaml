@@ -1,0 +1,13 @@
+
+planes:
+  - {name: conceptual, token_budget_ratio: 0.10}
+  - {name: temporal, token_budget_ratio: 0.08}
+  - {name: emotional, token_budget_ratio: 0.05}
+  - {name: procedural, token_budget_ratio: 0.10}
+  - {name: imaginal, token_budget_ratio: 0.05}
+  - {name: social, token_budget_ratio: 0.07}
+  - {name: ethical, token_budget_ratio: 0.05}
+  - {name: metacognitive, token_budget_ratio: 0.10}
+  - {name: goal_intent, token_budget_ratio: 0.15}
+  - {name: spatial, token_budget_ratio: 0.10}
+  - {name: predictive, token_budget_ratio: 0.15}

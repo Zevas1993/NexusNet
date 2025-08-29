@@ -1,0 +1,32 @@
+
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>NexusNet — Continue</title>
+  <style>body{font-family:system-ui,Segoe UI,Helvetica,Arial,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;background:#0b0c10;color:#eaeaea}
+  .card{background:#111827;border-radius:14px;padding:24px;max-width:560px;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+  a.button{display:inline-block;padding:10px 16px;border-radius:10px;background:#2563eb;color:#fff;text-decoration:none;margin-top:12px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Welcome back to NexusNet</h1>
+    <p>We’ll re-open your last active session if found. Otherwise you’ll go to the chat lobby.</p>
+    <a class="button" href="#" onclick="go()">Continue</a>
+  </div>
+<script>
+async function go(){
+  try {
+    const j = await (await fetch('/sessions')).json();
+    const sessions = (j.sessions||[]).sort((a,b)=> (b.last_active||0)-(a.last_active||0));
+    const next = sessions.length ? sessions[0].id : null;
+    if(next){ location.href = '/ui/chat.html#'+next; }
+    else { location.href = '/ui/chat.html'; }
+  } catch(e) {
+    location.href = '/ui/chat.html';
+  }
+}
+</script>
+</body>
+</html>

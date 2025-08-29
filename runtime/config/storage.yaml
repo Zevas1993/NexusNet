@@ -1,0 +1,7 @@
+
+prefer:
+  pgvector: true
+  graphiti: true
+
+sessions:
+  ttl_days: 90

@@ -1,48 +1,10 @@
-rag:
-  # Chunking strategy
-  chunk_size: 512
-  chunk_overlap: 50
-  chunk_method: "recursive"  # recursive, sentence, paragraph
-  
-  # Retrieval methods
-  retrievers:
-    dense:
-      enabled: true
-      model: "sentence-transformers/all-mpnet-base-v2"
-      top_k: 10
-    
-    sparse:
-      enabled: true
-      method: "bm25"  # bm25, tfidf
-      top_k: 10
-    
-    colbert:
-      enabled: true
-      model: "colbert-ir/colbertv2.0"
-      top_k: 10
-      late_interaction: true
-  
-  # Reranking
-  reranker:
-    enabled: true
-    model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
-    top_k: 5
-  
-  # Fusion method
-  fusion_method: "rrf"  # rrf, weighted_sum, rank_fusion
-  fusion_weights:
-    dense: 0.4
-    sparse: 0.3
-    colbert: 0.3
-  
-  # AIS (Answer-in-Source) verification
-  ais:
-    enabled: true
-    threshold: 0.8
-    model: "nli-deberta-v3-large"
-  
-  # Temporal awareness
-  temporal:
-    enabled: true
-    time_decay: 0.95
-    recent_boost: 1.2
+
+temporal:
+  engine: duckdb
+  path: data/temporal.duckdb
+retrieval:
+  bm25: true
+  dense: optional  # enabled when embeddings are configured
+schemaforge:
+  enabled: true
+  ais_entailment_gate: true

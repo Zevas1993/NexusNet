@@ -1,0 +1,31 @@
+
+name: docs
+on:
+  push:
+    branches: [ main ]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare
+        run: |
+          mkdir -p public
+          cp -r docs/* public/ || true
+          echo "<meta http-equiv='refresh' content='0; url=index.html'>" > public/404.html
+          # turn .md into simple html
+          for p in $(find public -name "*.md"); do
+            b=${p%.md}.html
+            echo "<!doctype html><meta charset='utf-8'><title>NexusNet Docs</title><style>body{font-family:sans-serif;max-width:900px;margin:40px auto;padding:0 16px}</style>" > $b
+            echo "<article>" >> $b
+            sed 's/^# \(.*\)$/<h1>\1<\/h1>/' $p >> $b
+            echo "</article>" >> $b
+            rm $p
+          done
+      - name: Deploy
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public

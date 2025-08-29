@@ -1,0 +1,22 @@
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nexusnet"
+version = "0.5.1a"
+description = "NexusNet Neural Core AI Brain"
+authors = [{name="NexusNet Team"}]
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = []
+
+[project.scripts]
+nexusnet-api = "nexusnet.cli.api:main"
+nexusnet-bootstrap = "nexusnet.cli.bootstrap:main"
+nexusnet-qes = "nexusnet.cli.qes:main"
+nexusnet-router-train = "nexusnet.cli.router_train:main"
+
+nexusnet-config = "nexusnet.cli.config:main"

@@ -1,0 +1,10 @@
+{
+  "dashboard": "placeholder",
+  "panels": [
+    "tokens",
+    "latency",
+    "errors",
+    "rag_hits",
+    "qar_trials"
+  ]
+}

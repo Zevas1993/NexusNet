@@ -1,0 +1,5 @@
+
+vram_high_watermark_pct: 92
+cpu_temp_c_max: 88
+gpu_temp_c_max: 84
+action: "throttle"   # throttle | pause | noop

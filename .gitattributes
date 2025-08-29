@@ -1,6 +1,1 @@
-# Treat all files as text by default
 * text=auto
-
-# Windows line endings
-*.bat text eol=crlf
-*.ps1 text eol=crlf

@@ -1,0 +1,121 @@
+
+<!doctype html><meta charset="utf-8"/>
+<title>NexusNet Router Confusion</title>
+<style>body{font-family:sans-serif;padding:20px} table{border-collapse:collapse} td,th{border:1px solid #ccc;padding:6px} th{background:#eee}</style>
+<h1>Router Confusion Matrix</h1><button id="exportBtn">Export PNG</button>
+<p>Predicted (rows) vs Used (columns)</p>
+<div style='display:flex;gap:24px;align-items:flex-start'>
+<div id="out">Loading…</div>
+<svg id="svgMatrix" width="700" height="520" style="border:1px solid #ccc"></svg>
+<canvas id="heat" width="640" height="480" style="border:1px solid #ccc"></canvas>
+</div>
+<script>
+async function load(){
+  const r = await fetch('/admin/router/confusion');
+  const j = await r.json();
+  const preds = Object.keys(j.matrix).sort();
+  const cols = new Set();
+  preds.forEach(p => Object.keys(j.matrix[p]).forEach(u => cols.add(u)));
+  const useds = Array.from(cols).sort();
+  let html = `<p>Total samples: ${j.total}</p><table><tr><th>Predicted \ Used</th>`+useds.map(u=>`<th>${u}</th>`).join('')+`</tr>`;
+  for(const p of preds){
+    html += `<tr><th>${p}</th>`;
+    for(const u of useds){
+      html += `<td>${j.matrix[p][u]||0}</td>`;
+    }
+    html += `</tr>`;
+  }
+  html += `</table>`;
+  document.getElementById('out').innerHTML = html;
+  drawHeat(preds, useds, j.matrix);
+  drawSVGMatrix(preds, useds, j.matrix);
+}
+load();
+
+function drawHeat(preds, useds, matrix){
+  const cv = document.getElementById('heat'); const ctx = cv.getContext('2d');
+  const W=cv.width, H=cv.height; const pad=80;
+  const cellW=(W-pad-20)/Math.max(1, useds.length);
+  const cellH=(H-pad-20)/Math.max(1, preds.length);
+  // find max
+  let max=1;
+  preds.forEach(p=> useds.forEach(u=> { max = Math.max(max, (matrix[p]&&matrix[p][u])||0); }));
+  // axes labels
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#000'; ctx.font='12px sans-serif';
+  useds.forEach((u,i)=>{ ctx.save(); ctx.translate(pad + i*cellW + cellW/2, pad-10); ctx.rotate(-Math.PI/4); ctx.fillText(u,0,0); ctx.restore(); });
+  preds.forEach((p,j)=>{ ctx.fillText(p, 5, pad + j*cellH + cellH/2); });
+  // grid
+  preds.forEach((p,j)=>{
+    useds.forEach((u,i)=>{
+      const v=(matrix[p]&&matrix[p][u])||0;
+      const t=v/max;
+      const r=Math.floor(255*t), g=50, b=Math.floor(255*(1-t));
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillRect(pad + i*cellW, pad + j*cellH, cellW-2, cellH-2);
+      ctx.fillStyle='rgba(255,255,255,0.9)';
+      ctx.fillText(String(v), pad + i*cellW + 4, pad + j*cellH + 14);
+    });
+  });
+}
+
+function drawSVGMatrix(preds, useds, matrix){
+  const svg = document.getElementById('svgMatrix');
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const W=+svg.getAttribute('width'), H=+svg.getAttribute('height'), pad=90;
+  const cellW=(W-pad-20)/Math.max(1, useds.length);
+  const cellH=(H-pad-20)/Math.max(1, preds.length);
+  // max value
+  let max=1;
+  preds.forEach(p=> useds.forEach(u=> { max = Math.max(max, (matrix[p]&&matrix[p][u])||0); }));
+  // axes labels
+  useds.forEach((u,i)=>{
+    const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('x', pad + i*cellW + cellW/2); t.setAttribute('y', pad-10);
+    t.setAttribute('transform', `rotate(-45 ${pad + i*cellW + cellW/2} ${pad-10})`);
+    t.setAttribute('font-size','12'); t.textContent = u; svg.appendChild(t);
+  });
+  preds.forEach((p,j)=>{
+    const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('x', 8); t.setAttribute('y', pad + j*cellH + cellH/2);
+    t.setAttribute('font-size','12'); t.textContent = p; svg.appendChild(t);
+  });
+  // cells
+  preds.forEach((p,j)=>{
+    useds.forEach((u,i)=>{
+      const v=(matrix[p]&&matrix[p][u])||0, t=v/max;
+      const r=Math.floor(255*t), g=60, b=Math.floor(255*(1-t));
+      const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      rect.setAttribute('x', pad + i*cellW); rect.setAttribute('y', pad + j*cellH);
+      rect.setAttribute('width', cellW-2); rect.setAttribute('height', cellH-2);
+      rect.setAttribute('fill', `rgb(${r},${g},${b})`);
+      svg.appendChild(rect);
+      const label = document.createElementNS('http://www.w3.org/2000/svg','text');
+      label.setAttribute('x', pad + i*cellW + 4); label.setAttribute('y', pad + j*cellH + 14);
+      label.setAttribute('fill', '#fff'); label.setAttribute('font-size','11'); label.textContent = String(v);
+      svg.appendChild(label);
+    });
+  });
+  // legend
+  for(let i=0;i<100;i+=5){
+    const t=i/100, r=Math.floor(255*t), g=60, b=Math.floor(255*(1-t));
+    const rect=document.createElementNS('http://www.w3.org/2000/svg','rect');
+    rect.setAttribute('x', W-20); rect.setAttribute('y', pad + (H-pad-40)*(i/100));
+    rect.setAttribute('width', 12); rect.setAttribute('height', (H-pad-40)/20);
+    rect.setAttribute('fill', `rgb(${r},${g},${b})`);
+    svg.appendChild(rect);
+  }
+}
+document.getElementById('exportBtn').onclick = () => {
+  const svg = document.getElementById('svgMatrix');
+  const xml = new XMLSerializer().serializeToString(svg);
+  const svg64 = btoa(unescape(encodeURIComponent(xml)));
+  const img = new Image();
+  img.onload = function() {
+    const c = document.createElement('canvas'); c.width = svg.width.baseVal.value; c.height = svg.height.baseVal.value;
+    const ctx = c.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height); ctx.drawImage(img,0,0);
+    const a = document.createElement('a'); a.download='router_confusion.png'; a.href=c.toDataURL('image/png'); a.click();
+  };
+  img.src = 'data:image/svg+xml;base64,' + svg64;
+};
+</script>

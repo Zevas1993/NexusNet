@@ -1,0 +1,95 @@
+
+<!doctype html>
+<html><head><meta charset="utf-8"><title>NexusNet 3D</title></head>
+<body style="margin:0;overflow:hidden;background:#000;">
+<canvas id="c"></canvas>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js">
+function formatTopK(arr){
+  try{
+    return (arr||[]).map(pair => {
+      const name = Array.isArray(pair)? pair[0] : (pair.capsule||pair.name||String(pair));
+      const prob = Array.isArray(pair)? pair[1] : (pair.prob||pair.p||0);
+      const pct = (typeof prob==='number')? (prob*100).toFixed(2)+'%' : String(prob);
+      return name+':'+pct;
+    }).join('  ');
+  }catch(e){ return JSON.stringify(arr||[]); }
+}
+</script>
+<script>
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+function resize(){ const w=window.innerWidth,h=window.innerHeight; renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
+window.addEventListener('resize', resize);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, 2, 0.1, 2000);
+camera.position.set(0,0,120);
+const light = new THREE.PointLight(0xffffff, 1.2); light.position.set(0,50,80); scene.add(light);
+const coreGeo = new THREE.SphereGeometry(10, 32, 16);
+const coreMat = new THREE.MeshPhongMaterial({color:0x00eaff, emissive:0x002244});
+const core = new THREE.Mesh(coreGeo, coreMat); scene.add(core);
+const N=19, nodes=[];
+for(let i=0;i<N;i++){
+  const phi = Math.acos(1 - 2*(i+0.5)/N), theta = Math.PI*(1+Math.sqrt(5))*i;
+  const r=55, x=r*Math.cos(theta)*Math.sin(phi), y=r*Math.sin(theta)*Math.sin(phi), z=r*Math.cos(phi);
+  const m = new THREE.Mesh(new THREE.SphereGeometry(4,24,12), new THREE.MeshPhongMaterial({color:0xff00aa, emissive:0x220011}));
+  m.position.set(x,y,z); scene.add(m); nodes.push(m);
+  const g = new THREE.BufferGeometry().setFromPoints([ new THREE.Vector3(x,y,z), new THREE.Vector3(0,0,0)]);
+  scene.add(new THREE.Line(g, new THREE.LineBasicMaterial({color:0x6666ff})));
+}
+function animate(t){ core.rotation.y += 0.002; nodes.forEach((n,i)=>{ n.rotation.y += 0.01; }); renderer.render(scene,camera); requestAnimationFrame(animate); }
+resize(); animate();
+
+function formatTopK(arr){
+  try{
+    return (arr||[]).map(pair => {
+      const name = Array.isArray(pair)? pair[0] : (pair.capsule||pair.name||String(pair));
+      const prob = Array.isArray(pair)? pair[1] : (pair.prob||pair.p||0);
+      const pct = (typeof prob==='number')? (prob*100).toFixed(2)+'%' : String(prob);
+      return name+':'+pct;
+    }).join('  ');
+  }catch(e){ return JSON.stringify(arr||[]); }
+}
+</script>
+<div id="toast" style="position:fixed;top:10px;right:10px;background:rgba(0,0,0,0.6);color:#fff;padding:8px 12px;border-radius:8px;display:none;font:14px monospace"></div>
+<div id="hud" style="position:fixed;top:10px;left:10px;color:#0ff;
+background:rgba(0,0,0,0.4);padding:8px 12px;border-radius:8px;font:14px monospace">
+EBT: n/a | Capsule: n/a | Engine: n/a
+</div>
+<script>
+const hud = document.getElementById('hud');
+try {
+  const WS = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/telemetry';
+  const ws = new WebSocket(WS);
+  ws.onmessage = (ev)=>{
+  try{
+    const d = JSON.parse(ev.data);
+    if(d.type==='policy'){
+      const t = document.getElementById('toast');
+      t.textContent = 'Policy updated: ' + JSON.stringify(d.payload && d.payload.policy || {});
+      t.style.display = 'block'; setTimeout(()=>t.style.display='none', 3500);
+      return;
+    }
+  }catch(e){}
+
+    try{
+      const d = JSON.parse(ev.data);
+      if(d.type==='chat'){
+        hud.textContent = `EBT: ${d.ebt?.toFixed?.(3) ?? d.ebt} (Δ ${d.ebt_delta?.toFixed?.(3) ?? 'n/a'}) | Capsule: ${d.capsule ?? 'n/a'} | Engine: ${d.engine ?? 'n/a'} | Why: ${(d.why && (d.why.lr_choice||d.why.capsule_used||d.why.policy_engine)) ?? 'heuristics'} | TopK: ${formatTopK(d.router_topk||[])}`;
+        core.material.emissiveIntensity = Math.max(0.2, 1.5 - Math.min(2.0, (d.ebt||0)));
+      }
+    }catch(e){}
+  };
+} catch(e){}
+
+function formatTopK(arr){
+  try{
+    return (arr||[]).map(pair => {
+      const name = Array.isArray(pair)? pair[0] : (pair.capsule||pair.name||String(pair));
+      const prob = Array.isArray(pair)? pair[1] : (pair.prob||pair.p||0);
+      const pct = (typeof prob==='number')? (prob*100).toFixed(2)+'%' : String(prob);
+      return name+':'+pct;
+    }).join('  ');
+  }catch(e){ return JSON.stringify(arr||[]); }
+}
+</script>
+</body></html>

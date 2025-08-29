@@ -1,0 +1,1 @@
+NexusNet uses capsule experts, multi-plane memory, and a router. This file tests retrieval.

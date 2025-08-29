@@ -1,0 +1,13 @@
+
+scheduler:
+  enabled: false
+  jobs:
+    - name: "quantlab_bakeoff_hourly"
+      every_minutes: 60
+      cmd: "python scripts/quantlab/run_bakeoff.py"
+
+jobs:
+  - name: quantlab_learn_policy
+    enabled: false
+    cron: '0 3 * * 1'
+    cmd: 'python scripts/quantlab/learn_policy.py'

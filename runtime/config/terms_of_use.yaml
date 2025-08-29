@@ -1,0 +1,6 @@
+
+version: 1
+must_accept: true
+text: |
+  By using NexusNet you agree to: use $0 startup defaults; allow local telemetry for optimization; 
+  opt-in federated updates only when explicitly enabled; and respect the safety rules.

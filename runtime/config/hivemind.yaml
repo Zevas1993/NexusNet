@@ -1,31 +1,45 @@
-hivemind:
-  consensus_method: "weighted_vote"  # weighted_vote, majority, confidence_based
-  min_experts: 3
-  max_experts: 19
-  voting_weights:
-    confidence: 0.4
-    diversity: 0.3
-    accuracy: 0.3
-  
-  # Expert selection strategy
-  selection_strategy: "dynamic"  # static, dynamic, adaptive
-  
-  # Confidence thresholds
-  min_confidence: 0.6
-  consensus_threshold: 0.75
-  
-  # Fallback behavior
-  fallback_to_generalist: true
-  fallback_confidence: 0.5
-
-execution:
-  parallel_processing: true
-  max_concurrent_experts: 5
-  timeout_seconds: 30
-  
-  # Response aggregation
-  aggregation_method: "ranked_fusion"  # simple_vote, ranked_fusion, weighted_average
-  
-  # Quality control
-  enable_cross_validation: true
-  cross_validation_threshold: 0.8
+nodes:
+  - generalist
+  - search
+  - research
+  - code
+  - math
+  - data_science
+  - devops
+  - cybersecurity
+  - legal
+  - medical
+  - finance
+  - translation
+  - writing
+  - education
+  - design
+  - marketing
+  - product
+  - operations
+  - vision
+edges:
+  generalist: [search, research, writing]
+  search: [research, generalist]
+  research: [writing, generalist, education]
+  code: [devops, data_science]
+  math: [data_science]
+  data_science: [math, code]
+  devops: [operations, product]
+  cybersecurity: [devops, operations]
+  legal: [finance, operations]
+  medical: [research, education]
+  finance: [product, operations]
+  translation: [writing, education]
+  writing: [design, marketing]
+  education: [writing, generalist]
+  design: [product, marketing]
+  marketing: [product, operations]
+  product: [operations, code]
+  operations: [product, devops]
+  vision: [research, design]
+arbitration:
+  max_steps: 3
+  vote: 'consensus'
+  coverage_floor: 0.75
+  use_llm_judge: true

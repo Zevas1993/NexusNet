@@ -1,0 +1,6 @@
+
+coordinator:
+  cadence_minutes: 60
+  dp_noise: 0.0
+client:
+  vector_size: 16

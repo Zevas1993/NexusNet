@@ -1,0 +1,12 @@
+
+goals:
+  - reduce_latency
+  - reduce_memory
+  - preserve_quality
+signals:
+  - name: token_usage
+  - name: latency_ms
+  - name: ooms
+actions:
+  - transformers.dtype: [float16, bfloat16, float32]
+  - llama_cpp.n_gpu_layers: [0, 8, 20]

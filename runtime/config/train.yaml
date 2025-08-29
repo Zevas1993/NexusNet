@@ -1,0 +1,9 @@
+
+dpo:
+  enabled: false
+  lora_r: 8
+  lora_alpha: 16
+  lr: 1e-4
+  epochs: 1
+  batch_size: 1
+datasets: []

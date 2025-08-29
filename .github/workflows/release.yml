@@ -1,0 +1,27 @@
+
+name: release
+on:
+  push:
+    tags: ["v*"]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - run: |
+          pip install -U pip pip-licenses
+          pip-licenses --format=markdown > THIRD_PARTY_LICENSES.md || true
+      - name: Tar docs
+        run: |
+          mkdir -p dist
+          tar -czf dist/docs.tar.gz docs || true
+      - name: Upload
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            THIRD_PARTY_LICENSES.md
+            dist/docs.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

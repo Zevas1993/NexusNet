@@ -1,57 +1,21 @@
-import llama_cpp
-from typing import Dict, Any, Optional
 
-class LlamaCppClient:
-    def __init__(self, model_path: str, n_ctx: int = 2048, n_gpu_layers: int = 0):
-        self.model_path = model_path
-        self.model = None
-        self.n_ctx = n_ctx
-        self.n_gpu_layers = n_gpu_layers
-        self._load_model()
-    
-    def _load_model(self):
-        """Load the GGUF model"""
+from __future__ import annotations
+from core.engines.token_counters import count_text
+from services.metrics import begin_stream, tick_stream, end_stream
+
+class LlamaCppChat:
+    def __init__(self, model_path: str, n_ctx: int = 4096, n_threads: int | None = None):
         try:
-            self.model = llama_cpp.Llama(
-                model_path=self.model_path,
-                n_ctx=self.n_ctx,
-                n_gpu_layers=self.n_gpu_layers,
-                verbose=False
-            )
+            from llama_cpp import Llama  # type: ignore
         except Exception as e:
-            print(f"Failed to load model: {e}")
-            self.model = None
-    
-    def generate(self, prompt: str, max_tokens: int = 512, temperature: float = 0.7) -> Dict[str, Any]:
-        """Generate text using llama.cpp"""
-        if not self.model:
-            return {
-                "error": "Model not loaded",
-                "text": "",
-                "model": "llama_cpp"
-            }
-        
-        try:
-            response = self.model(
-                prompt,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                stop=["</s>", "\n\nUser:", "\n\nAssistant:"],
-                echo=False
-            )
-            
-            return {
-                "text": response["choices"][0]["text"],
-                "model": "llama_cpp",
-                "tokens_used": response["usage"]["total_tokens"]
-            }
-        except Exception as e:
-            return {
-                "error": str(e),
-                "text": "",
-                "model": "llama_cpp"
-            }
-    
-    def is_ready(self) -> bool:
-        """Check if model is ready"""
-        return self.model is not None
+            raise RuntimeError("llama_cpp is not installed") from e
+        self.llm = Llama(model_path=model_path, n_ctx=n_ctx, n_threads=n_threads or 0)
+
+    def chat(self, messages, max_tokens: int = 256, temperature: float = 0.2) -> str:
+        prompt = "\n".join(f"{m['role']}: {m['content']}" for m in messages) + "\nassistant:"
+        begin_stream()
+        out = self.llm.create_completion(prompt, max_tokens=max_tokens, temperature=temperature)
+        text = (out.get("choices") or [{}])[0].get("text", "")
+        tick_stream(count_text(text))
+        end_stream(0)
+        return text.strip()

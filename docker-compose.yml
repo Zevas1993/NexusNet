@@ -1,10 +1,9 @@
 services:
   nexusnet:
-    build: ./docker
-    ports: ["5173:5173"]
+    build: .
+    ports:
+      - "8000:8000"
     volumes:
-      - ./runtime:/app/runtime
+      - ./data:/app/data
     environment:
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-      - REQUESTY_API_KEY=${REQUESTY_API_KEY:-}
-      - VLLM_URL=${VLLM_URL:-http://127.0.0.1:8000/v1}
+      - UVICORN_WORKERS=1
