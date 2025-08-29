@@ -1,96 +1,18 @@
-"""Hardware auto-tuning for optimal performance"""
-from typing import Dict, Any
-from .scan import scan_hardware, get_optimal_settings
-from core.config import save_config, load_config
-import json
-
-def apply_autotune() -> Dict[str, Any]:
-    """Apply automatic hardware optimization"""
-    try:
-        # Scan current hardware
-        hardware = scan_hardware()
-        optimal_settings = get_optimal_settings()
-        
-        # Update configurations
-        results = {
-            "hardware_detected": hardware,
-            "applied_settings": optimal_settings,
-            "success": True,
-            "message": "Auto-tuning applied successfully"
-        }
-        
-        # Update RAG configuration
-        rag_config = load_config("rag")
-        if optimal_settings.get("use_gpu"):
-            rag_config["retrievers"]["colbert"]["enabled"] = True
-            rag_config["retrievers"]["colbert"]["batch_size"] = optimal_settings.get("gpu_batch_size", 8)
-        else:
-            # Disable intensive operations on CPU-only systems
-            rag_config["retrievers"]["colbert"]["enabled"] = False
-        
-        save_config("rag", rag_config)
-        
-        # Update expert configuration
-        expert_config = load_config("experts")
-        memory_gb = hardware["memory"].get("total_gb", 4)
-        
-        # Adjust expert settings based on available memory
-        if memory_gb < 8:
-            # Disable resource-intensive experts on low-memory systems
-            for expert_name in ["vision", "datascience"]:
-                if expert_name in expert_config:
-                    expert_config[expert_name]["enabled"] = False
-                    results["applied_settings"][f"{expert_name}_disabled"] = "Low memory"
-        
-        save_config("experts", expert_config)
-        
-        # Update HiveMind configuration
-        hivemind_config = load_config("hivemind")
-        cpu_cores = hardware["cpu"].get("cores_logical", 1)
-        hivemind_config["execution"]["max_concurrent_experts"] = min(cpu_cores, 5)
-        save_config("hivemind", hivemind_config)
-        
-        return results
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "message": "Auto-tuning failed"
-        }
-
-def get_autotune_recommendations() -> Dict[str, Any]:
-    """Get recommendations without applying them"""
-    hardware = scan_hardware()
-    optimal_settings = get_optimal_settings()
-    
-    recommendations = {
-        "hardware_summary": {
-            "cpu_cores": hardware["cpu"].get("cores_logical", "Unknown"),
-            "memory_gb": hardware["memory"].get("total_gb", "Unknown"),
-            "gpu_available": hardware["gpu"]["cuda_available"],
-            "gpu_count": len(hardware["gpu"]["gpus"])
-        },
-        "recommended_settings": optimal_settings,
-        "performance_notes": []
-    }
-    
-    # Add performance notes
-    memory_gb = hardware["memory"].get("total_gb", 0)
-    if memory_gb < 8:
-        recommendations["performance_notes"].append(
-            "Low memory detected. Consider upgrading RAM for better performance."
-        )
-    
-    if not hardware["gpu"]["cuda_available"]:
-        recommendations["performance_notes"].append(
-            "No CUDA GPU detected. Some features will run on CPU only."
-        )
-    
-    cpu_cores = hardware["cpu"].get("cores_logical", 1)
-    if cpu_cores < 4:
-        recommendations["performance_notes"].append(
-            "Limited CPU cores. Parallel processing will be restricted."
-        )
-    
-    return recommendations
+import json, pathlib
+from .scan import scan_hardware
+def apply_autotune():
+    hw = scan_hardware()
+    out = {"cpu_threads": None, "gguf_ctx": None, "transformers_bits": None, "vllm": {}, "colbert": {}}
+    cores = hw.get("cpu_logical", 8) or 8
+    out["cpu_threads"] = max(2, int(cores*0.7))
+    ram = hw.get("mem_total_gb", 16)
+    out["gguf_ctx"] = 4096 if ram >= 32 else 2048
+    out["transformers_bits"] = 8 if (hw.get("gpus") or []) else 16
+    if hw.get("gpus"):
+        vram = hw["gpus"][0]["vram_gb"]
+        out["vllm"] = {"tensor_parallel_size": 1, "max_num_seqs": 64 if vram>=40 else 16}
+        out["colbert"] = {"nprobe": 128 if vram>=40 else 64}
+    path = pathlib.Path("runtime/state/autotune.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(out, indent=2), encoding="utf-8")
+    return out

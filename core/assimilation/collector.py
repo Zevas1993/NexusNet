@@ -1,20 +1,5 @@
-import json, hashlib, datetime as dt
-from typing import Dict, List
+import json, pathlib, time
+BASE=pathlib.Path('runtime/state/assimilation'); BASE.mkdir(parents=True,exist_ok=True)
 
-class AssimCollector:
-    def __init__(self):
-        self.buffer: List[Dict] = []
-    
-    def ingest(self, source: str, data: Dict):
-        entry = {
-            'timestamp': dt.datetime.utcnow().isoformat(),
-            'source': source,
-            'content_hash': hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()[:16],
-            'data': data
-        }
-        self.buffer.append(entry)
-    
-    def dump_batch(self) -> List[Dict]:
-        batch = self.buffer.copy()
-        self.buffer.clear()
-        return batch
+def log_interaction(expert,prompt,answer,meta=None):
+    t=int(time.time()*1000); p=BASE/f"{t}-{expert}.json"; p.write_text(json.dumps({'expert':expert,'prompt':prompt,'answer':answer,'meta':meta or {}}, ensure_ascii=False, indent=2), encoding='utf-8'); return str(p)

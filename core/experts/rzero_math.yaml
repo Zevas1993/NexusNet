@@ -1,0 +1,4 @@
+name: rzero_math
+domain: math_reasoning
+base_model: ${solver}
+rzero_config: runtime/config/rzero.yaml

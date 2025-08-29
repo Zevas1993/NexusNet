@@ -1,46 +1,24 @@
-import httpx, json
-from typing import Dict, Any, Optional
+
+from __future__ import annotations
+import os, anyio, httpx
+from core.engines.token_counters import count_text
+from services.metrics import begin_stream, tick_stream, end_stream
 
 class VLLMClient:
-    def __init__(self, base_url: str = "http://127.0.0.1:8000/v1"):
-        self.base_url = base_url
-        self.client = httpx.AsyncClient()
-    
-    async def generate(self, prompt: str, max_tokens: int = 512, temperature: float = 0.7) -> Dict[str, Any]:
-        """Generate text using vLLM server"""
-        payload = {
-            "model": "default",  # vLLM server model
-            "prompt": prompt,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "stream": False
-        }
-        
-        try:
-            response = await self.client.post(
-                f"{self.base_url}/completions",
-                json=payload,
-                timeout=30.0
-            )
-            response.raise_for_status()
-            result = response.json()
-            
-            return {
-                "text": result["choices"][0]["text"],
-                "model": "vllm",
-                "tokens_used": result.get("usage", {}).get("total_tokens", 0)
-            }
-        except Exception as e:
-            return {
-                "error": str(e),
-                "text": "",
-                "model": "vllm"
-            }
-    
-    async def check_health(self) -> bool:
-        """Check if vLLM server is healthy"""
-        try:
-            response = await self.client.get(f"{self.base_url}/models")
-            return response.status_code == 200
-        except:
-            return False
+    def __init__(self, base: str | None = None, model: str | None = None):
+        self.base = (base or os.getenv("VLLM_URL") or "http://127.0.0.1:8000/v1").rstrip("/")
+        self.model = model or os.getenv("VLLM_MODEL") or "auto"
+
+    def chat(self, messages, **kw) -> str:
+        async def _go():
+            async with httpx.AsyncClient(timeout=60) as c:
+                payload = {"model": self.model, "messages": messages}
+                payload.update(kw or {})
+                r = await c.post(f"{self.base}/chat/completions", json=payload)
+                r.raise_for_status()
+                return r.json()["choices"][0]["message"]["content"]
+        begin_stream()
+        text = anyio.run(_go)
+        tick_stream(count_text(text))
+        end_stream(0)
+        return text

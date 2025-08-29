@@ -1,0 +1,29 @@
+
+enabled: true
+interval_hours: 24
+budget: 
+  max_trials_per_interval: 6
+  sandbox_tokens: 25000
+objectives:
+  - name: "throughput_tps"
+    weight: 0.35
+  - name: "latency_p95_ms"
+    weight: 0.25
+  - name: "quality_proxy"  # proxy via small eval set
+    weight: 0.30
+  - name: "memory_footprint_mb"
+    weight: 0.10
+search_space:
+  quant:
+    - name: "bitsandbytes_int8"
+    - name: "bitsandbytes_int4"
+    - name: "gguf_q4_k_m"
+    - name: "gguf_q5_k_m"
+    - name: "fp16"
+  sched:
+    - "greedy"
+    - "random"
+safety:
+  min_quality_proxy: 0.60
+  max_latency_p95_ms: 2500
+persist_dir: "runtime/qes"

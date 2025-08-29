@@ -1,0 +1,22 @@
+{
+  "sessions": [
+    {
+      "id": "demo-1",
+      "title": "Welcome to NexusNet",
+      "messages": [
+        {
+          "role": "system",
+          "content": "You are NexusNet demo assistant."
+        },
+        {
+          "role": "user",
+          "content": "What is NexusNet?"
+        },
+        {
+          "role": "assistant",
+          "content": "NexusNet is a hive-mind cognition engine with capsule experts and multi-plane memory. This is a demo conversation."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+
+teacher_gate:
+  enabled: false
+  budget_usd_per_day: 0.50
+  models:
+    - openrouter/*   # placeholder

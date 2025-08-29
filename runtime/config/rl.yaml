@@ -1,0 +1,5 @@
+
+prompts:
+  - "Summarize temporal RAG in one paragraph."
+  - "Suggest an improvement to the router."
+  - "Draft a safe-mode escalation policy."

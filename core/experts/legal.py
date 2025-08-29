@@ -1,32 +1,7 @@
 from .base import ExpertBase
-from typing import Dict, Any
-
-class LegalExpert(ExpertBase):
-    def __init__(self):
-        super().__init__(
-            name="Legal",
-            description="Legal advice, compliance, contracts, and regulatory matters",
-            triggers=["legal", "law", "contract", "compliance", "regulation", "rights", "liability", "terms"]
-        )
-    
-    async def process(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        response = f"[Legal Expert] Reviewing legal considerations: {query[:100]}..."
-        
-        disclaimers = [
-            "This is general information only, not legal advice",
-            "Consult with a qualified attorney for specific legal matters"
-        ]
-        
-        guidance = []
-        if "contract" in query.lower():
-            guidance.append("Ensure all terms are clearly defined and mutually agreed upon")
-        if "compliance" in query.lower():
-            guidance.append("Stay updated with relevant regulations in your jurisdiction")
-        
-        return {
-            "response": response,
-            "guidance": guidance,
-            "disclaimers": disclaimers,
-            "expert": self.name,
-            "confidence": self.can_handle(query)
-        }
+class Legal(ExpertBase):
+    name="legal"; triggers=['legal', 'contract', 'law', 'compliance']
+    async def answer(self, prompt:str, call):
+        sys=f"You are a legal expert. Be precise and cite as [1],[2] if evidence is provided."
+        msgs=[{"role":"system","content":sys},{"role":"user","content":prompt}]
+        return await call(msgs, max_tokens=512, temperature=0.2)

@@ -1,0 +1,21 @@
+
+default_expert: conversationalist
+keyword_map:
+  coder: ["code", "function", "python", "bug", "compile"]
+  strategist: ["strategy", "roadmap", "plan"]
+  analyst: ["analyze", "metrics", "stats", "dataset"]
+  researcher: ["paper", "source", "citation", "study"]
+  critique: ["critique", "review", "feedback"]
+  toolsmith: ["tool", "plugin", "script"]
+  security: ["vuln", "threat", "security", "encrypt"]
+  memory_weaver: ["remember", "recall", "memory"]
+  meta_reasoner: ["reflect", "think about", "reason"]
+  router: ["route", "expert"]
+  linguist: ["translate", "grammar", "language"]
+  vision: ["image", "vision", "photo"]
+  audio: ["audio", "speech", "sound"]
+  simulation: ["simulate", "what if", "forecast"]
+  builder: ["build", "deploy", "compile"]
+  instructor: ["teach", "learn", "tutorial"]
+  intent_mapper: ["intent", "goal"]
+  critic_historian: ["history", "timeline", "chronicle"]

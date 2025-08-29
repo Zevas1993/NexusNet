@@ -1,0 +1,7 @@
+enabled: false
+per_capsule:
+  code: ["qwen2.5-coder", "deepseek-coder"]
+  math: ["qwen2.5-math"]
+defaults:
+  max_items: 100
+  difficulty: ["easy","medium","hard"]

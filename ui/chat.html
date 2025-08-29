@@ -1,0 +1,432 @@
+
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>NexusNet Chat (Demo)</title>
+<style>.chip{display:inline-block;padding:2px 6px;border-radius:9999px;background:#1f2937;margin:2px;font-size:12px}</style><style>
+  body{font-family:system-ui,Segoe UI,Helvetica,Arial,sans-serif;margin:0;background:#0b0c10;color:#eaeaea}
+  header{background:#111827;padding:12px 16px;display:flex;align-items:center;gap:12px;position:sticky;top:0}
+  main{display:grid;grid-template-columns:300px 1fr;gap:12px;padding:12px}
+  .card{background:#111827;border-radius:12px;padding:12px}
+  .msgs{height:60vh;overflow:auto;padding:8px;border-radius:10px;background:#0f172a}
+  .msg{margin-bottom:10px}
+  .msg .role{font-weight:600;color:#93c5fd}
+  .row{display:flex;gap:8px;align-items:center}
+  input,select,button,textarea{border-radius:10px;border:1px solid #374151;background:#0b0c10;color:#eaeaea;padding:8px}
+  textarea{width:100%;height:90px}
+  button{background:#2563eb}
+  .pill{padding:4px 8px;border-radius:9999px;background:#1f2937;color:#93c5fd;font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <div style="font-weight:800">NexusNet</div>
+  <div id="engine" class="pill">engine: (loading)</div>
+  <a href="/ui/first_run.html" class="pill">First-Run Wizard</a>
+  <a href="/docs/index.html" class="pill">Docs</a>
+
+  <button class="pill" onclick="toggleDemo()">Demo Mode On/Off</button>
+  <a href="/ui/first_run.html" class="pill">First-Run Wizard</a>
+  <a href="/docs/index.html" class="pill">Docs</a>
+</header>
+<main>
+  <div class="card">
+    <div class="row" style="justify-content:space-between"><button onclick="newSession()">New</button><button onclick="renameSession()">Rename</button><button onclick="deleteSession()">Delete</button>
+      <div style="font-weight:700">Sessions</div>
+      <button onclick="seed()">Seed Demo</button>
+    </div>
+    <div id="sessions"></div>
+    <div class="row"><input id="sessionSearch" placeholder="Search sessions..." oninput="filterSessions(this.value)"/><button onclick="pinSession()">★ Pin</button></div>
+    <div class="row"><button onclick="exportSessions()">Export</button><input type="file" id="importFile" onchange="importSessions(event)"/></div>
+  </div>
+  <div class="card">
+    <div class="row" style="gap:12px">
+      <select id="capsule">
+        <option>generalist</option><option>code</option><option>math</option>
+        <option>legal</option><option>medical</option><option>finance</option>
+        <option>translation</option><option>datascience</option><option>cybersecurity</option>
+        <option>devops</option><option>search</option><option>writing</option>
+        <option>education</option><option>design</option><option>marketing</option>
+        <option>product</option><option>operations</option><option>research</option><option>vision</option>
+      </select>
+      <select id="engineSel" onchange="setEngine()">
+        <option value="transformers">transformers</option>
+        <option value="ollama">ollama</option>
+        <option value="vllm">vllm</option>
+        <option value="tgi">tgi</option>
+      </select>
+      <span id="status" class="pill">status: ...</span><label style="margin-left:8px">As‑of <input type="date" id="asOfDate" oninput="setAsOf(this.value)"></label> <label style="margin-left:8px">RAG <input type="range" id="ragWin" min="1" max="20" value="5" oninput="updateRag(this.value)"><span id="ragVal">5</span></label><label style="margin-left:8px">Stream <input type="checkbox" id="stream"></label>
+    </div>
+    <div id="msgs" class="msgs"></div>
+    <div id="prov" class="card" style="margin-top:8px"><div style="font-weight:700">Provenance</div><div id="provList" class="muted">—</div></div>
+    <div style="margin-top:8px">
+      <textarea id="prompt" placeholder="Type your message..."></textarea>
+      <div class="row" style="justify-content:flex-end">
+        <button onclick="send()">Send</button>
+      </div>
+    </div>
+  </div>
+</main>
+<script>
+async function jget(p){const r=await fetch(p);return r.json()}
+async function jpost(p,b){const r=await fetch(p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)});return r.json()}
+
+async function loadStatus(){
+  const s=await jget('/connectors');
+  document.getElementById('engine').textContent='engine: '+s.default;
+  document.getElementById('engineSel').value=s.default;
+  document.getElementById('status').textContent='status: '+Object.entries(s.status).map(([k,v])=>k+':' + (v.available?'✓':'·')).join(' ')
+}
+
+async function setEngine(){
+  const eng=document.getElementById('engineSel').value;
+  const j=await jpost('/connectors/select',{engine:eng});
+  await loadStatus(); if(sid){ await jpost('/sessions/'+sid+'/settings', {engine: document.getElementById('engineSel').value, capsule: document.getElementById('capsule').value}); }
+}
+
+let sid='demo-1';
+async function seed(){
+  const r=await jget('/demo/seed');
+  await listSessions();
+  if(r.ok){ loadSession('demo-1'); }
+}
+
+async function listSessions(){
+  const j=await jget('/sessions');
+  const box=document.getElementById('sessions'); box.innerHTML='';
+  j.sessions.forEach(s=>{
+    const a=document.createElement('div');
+    a.className='row'; a.style.cursor='pointer';
+    a.textContent=s.title || s.id;
+    a.onclick=()=>loadSession(s.id);
+    box.appendChild(a);
+  });
+}
+
+async function loadSession(id){
+  sid=id; const j=await jget('/sessions/'+id);
+  const box=document.getElementById('msgs'); box.innerHTML='';
+  (j.messages||[]).forEach(m=>addMsg(m.role,m.content));
+}
+
+function addMsg(role,content){
+  const box=document.getElementById('msgs');
+  const div=document.createElement('div'); div.className='msg';
+  const r=document.createElement('div'); r.className='role'; r.textContent=role;
+  const c=document.createElement('div'); c.textContent=content;
+  div.appendChild(r); div.appendChild(c); box.appendChild(div); box.scrollTop=1000000;
+}
+
+async function send(){
+  const t=document.getElementById('prompt'); const capsule=document.getElementById('capsule').value;
+  const prompt=t.value.trim(); if(!prompt) return;
+  addMsg('user', prompt);
+  t.value='';
+  const j=const resp=await jpost('/chat2',{prompt, capsule, sid}); addMsg('assistant', resp.text || '[no text]'); showProv(resp.ctx||[]);
+  addMsg('assistant', j.text || '[no text]');
+  // save session best-effort
+  const msgs=[...document.querySelectorAll('.msg')].map(n=>({role:n.querySelector('.role').textContent, content:n.lastChild.textContent}));
+  await jpost('/sessions/'+sid, {id:sid, title:sid, messages:msgs});
+}
+
+(async function init(){
+  await loadStatus(); if(sid){ await jpost('/sessions/'+sid+'/settings', {engine: document.getElementById('engineSel').value, capsule: document.getElementById('capsule').value}); }
+  await listSessions();
+})();
+
+// hash sid support
+function sidFromHash(){ const h=location.hash.replace(/^#/,''); return h||'demo-1'; }
+window.addEventListener('hashchange', ()=>{ loadSession(sidFromHash()); });
+
+// override init to honor last-active sid if present
+(async function init(){ await loadStatus(); if(sid){ await jpost('/sessions/'+sid+'/settings', {engine: document.getElementById('engineSel').value, capsule: document.getElementById('capsule').value}); } await listSessions(); const h=sidFromHash(); sid=h; await loadSession(sid); })();
+
+<script>
+function showProv(ctx){
+  const box=document.getElementById('provList');
+  if(!ctx || !ctx.length){ box.textContent='—'; return; }
+  box.innerHTML='';
+  ctx.forEach(c=>{
+    const div=document.createElement('div');
+    const src=(c.source||c.path||'').toString();
+    const valwin=c.validity || c.window || '';
+    div.textContent = (src?src:'[mem]') + (valwin?('  ['+valwin+']'):'') ;
+    box.appendChild(div);
+  });
+}
+
+// session as_of
+async function setAsOf(val){
+  if(!sid) return;
+  try {
+    const ts = val ? Math.floor(new Date(val).getTime()/1000) : null;
+    await jpost('/sessions/'+sid+'/settings', {as_of: ts});
+  } catch(e){ console.error(e); }
+}
+
+async function renderMiniTimeline(entity, target){
+  try{
+    const j=await jget('/temporal/timeline?entity='+encodeURIComponent(entity)+'&buckets=12');
+    const bars=document.createElement('span'); bars.style.display='inline-flex'; bars.style.verticalAlign='middle';
+    (j.timeline||[]).forEach(b=>{
+      const d=document.createElement('span'); d.style.display='inline-block'; d.style.height='8px';
+      d.style.width=Math.max(2, b.count*6)+'px'; d.style.background='#64748b'; d.style.margin='0 1px'; bars.appendChild(d);
+    });
+    target.appendChild(bars);
+  }catch(e){}
+}
+
+async function getSessionAsOf(){
+  try{ const j= await jget('/sessions/'+sid); return (j.settings||{}).as_of || null; }catch(e){ return null; }
+}
+</script>
+
+
+
+
+</body>
+</html>
+
+<script>
+async function toggleDemo(){ const j=await jget('/demo/toggle?on=1'); alert('DEMO_MODE='+j.DEMO_MODE); }
+async function newSession(){ const id='chat-'+Date.now(); sid=id; await jpost('/sessions/'+sid,{id:sid,title:sid,messages:[]}); await listSessions(); loadSession(sid); }
+async function renameSession(){ const nid=prompt('New ID for session', sid); if(!nid) return; const j=await jpost('/sessions/'+sid+'/rename',{id:nid}); if(j.ok){ sid=nid; await listSessions(); loadSession(sid);} else { alert(JSON.stringify(j)); } }
+async function deleteSession(){ if(!confirm('Delete '+sid+'?')) return; await fetch('/sessions/'+sid,{method:'DELETE'}); await listSessions(); }
+async function exportSessions(){ const j=await jget('/sessions/export'); const blob=new Blob([JSON.stringify(j)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='nexusnet-sessions.json'; a.click(); URL.revokeObjectURL(url); }
+async function importSessions(e){ const f=e.target.files[0]; if(!f) return; const txt=await f.text(); const j=JSON.parse(txt); const r=await jpost('/sessions/import', j); alert('Imported '+r.count+' sessions'); await listSessions(); }
+
+async function send(){
+  const t=document.getElementById('prompt'); const capsule=document.getElementById('capsule').value;
+  const prompt=t.value.trim(); if(!prompt) return;
+  addMsg('user', prompt); t.value='';
+  const streaming=document.getElementById('stream').checked;
+  if(streaming){
+    const resp = await fetch('/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'}, body: JSON.stringify({prompt, capsule})});
+    const reader = resp.body.getReader(); const dec = new TextDecoder();
+    let acc=''; while(true){ const {value,done} = await reader.read(); if(done) break; acc += dec.decode(value,{stream:true}); const parts=acc.split("\n\n"); for(let i=0;i<parts.length-1;i++){ const line=parts[i]; if(line.startsWith('data: ')){ const tok=line.slice(6); if(tok==='[END]') break; appendToken(tok); } } acc = parts[parts.length-1]; }
+    finalizeAssistant();
+  } else {
+    const j=const resp=await jpost('/chat2',{prompt, capsule, sid}); addMsg('assistant', resp.text || '[no text]'); showProv(resp.ctx||[]); addMsg('assistant', j.text || '[no text]');
+  }
+  await persist();
+}
+let currentAssistantDiv=null;
+function appendToken(tok){
+  if(!currentAssistantDiv){ addMsg('assistant', ''); currentAssistantDiv=document.querySelector('#msgs .msg:last-child div:last-child'); }
+  currentAssistantDiv.textContent += (currentAssistantDiv.textContent ? ' ' : '') + tok;
+}
+function finalizeAssistant(){ currentAssistantDiv=null; }
+async function persist(){
+  const msgs=[...document.querySelectorAll('.msg')].map(n=>({role:n.querySelector('.role').textContent, content:n.lastChild.textContent}));
+  await jpost('/sessions/'+sid, {id:sid, title:sid, messages:msgs});
+  await jget('/sessions/'+sid+'/summary'); // update memory summary
+}
+
+// hash sid support
+function sidFromHash(){ const h=location.hash.replace(/^#/,''); return h||'demo-1'; }
+window.addEventListener('hashchange', ()=>{ loadSession(sidFromHash()); });
+
+// override init to honor last-active sid if present
+(async function init(){ await loadStatus(); if(sid){ await jpost('/sessions/'+sid+'/settings', {engine: document.getElementById('engineSel').value, capsule: document.getElementById('capsule').value}); } await listSessions(); const h=sidFromHash(); sid=h; await loadSession(sid); })();
+
+<script>
+function showProv(ctx){
+  const box=document.getElementById('provList');
+  if(!ctx || !ctx.length){ box.textContent='—'; return; }
+  box.innerHTML='';
+  ctx.forEach(c=>{
+    const div=document.createElement('div');
+    const src=(c.source||c.path||'').toString();
+    const valwin=c.validity || c.window || '';
+    div.textContent = (src?src:'[mem]') + (valwin?('  ['+valwin+']'):'') ;
+    box.appendChild(div);
+  });
+}
+
+// session as_of
+async function setAsOf(val){
+  if(!sid) return;
+  try {
+    const ts = val ? Math.floor(new Date(val).getTime()/1000) : null;
+    await jpost('/sessions/'+sid+'/settings', {as_of: ts});
+  } catch(e){ console.error(e); }
+}
+
+async function renderMiniTimeline(entity, target){
+  try{
+    const j=await jget('/temporal/timeline?entity='+encodeURIComponent(entity)+'&buckets=12');
+    const bars=document.createElement('span'); bars.style.display='inline-flex'; bars.style.verticalAlign='middle';
+    (j.timeline||[]).forEach(b=>{
+      const d=document.createElement('span'); d.style.display='inline-block'; d.style.height='8px';
+      d.style.width=Math.max(2, b.count*6)+'px'; d.style.background='#64748b'; d.style.margin='0 1px'; bars.appendChild(d);
+    });
+    target.appendChild(bars);
+  }catch(e){}
+}
+
+async function getSessionAsOf(){
+  try{ const j= await jget('/sessions/'+sid); return (j.settings||{}).as_of || null; }catch(e){ return null; }
+}
+</script>
+
+
+
+
+
+<script>
+function filterSessions(q){
+  q=(q||'').toLowerCase();
+  [...document.querySelectorAll('#sessions .row')].forEach(n=>{
+    n.style.display = n.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+async function pinSession(){
+  if(!sid) return;
+  await jpost('/sessions/'+sid+'/settings', {pinned: true});
+  await listSessions();
+}
+async function updateRag(v){
+  document.getElementById('ragVal').textContent=v;
+  if(sid){ await jpost('/sessions/'+sid+'/settings', {rag:{window: parseInt(v)}}); }
+}
+
+<script>
+function showProv(ctx){
+  const box=document.getElementById('provList');
+  if(!ctx || !ctx.length){ box.textContent='—'; return; }
+  box.innerHTML='';
+  ctx.forEach(c=>{
+    const div=document.createElement('div');
+    const src=(c.source||c.path||'').toString();
+    const valwin=c.validity || c.window || '';
+    div.textContent = (src?src:'[mem]') + (valwin?('  ['+valwin+']'):'') ;
+    box.appendChild(div);
+  });
+}
+
+// session as_of
+async function setAsOf(val){
+  if(!sid) return;
+  try {
+    const ts = val ? Math.floor(new Date(val).getTime()/1000) : null;
+    await jpost('/sessions/'+sid+'/settings', {as_of: ts});
+  } catch(e){ console.error(e); }
+}
+
+async function renderMiniTimeline(entity, target){
+  try{
+    const j=await jget('/temporal/timeline?entity='+encodeURIComponent(entity)+'&buckets=12');
+    const bars=document.createElement('span'); bars.style.display='inline-flex'; bars.style.verticalAlign='middle';
+    (j.timeline||[]).forEach(b=>{
+      const d=document.createElement('span'); d.style.display='inline-block'; d.style.height='8px';
+      d.style.width=Math.max(2, b.count*6)+'px'; d.style.background='#64748b'; d.style.margin='0 1px'; bars.appendChild(d);
+    });
+    target.appendChild(bars);
+  }catch(e){}
+}
+
+async function getSessionAsOf(){
+  try{ const j= await jget('/sessions/'+sid); return (j.settings||{}).as_of || null; }catch(e){ return null; }
+}
+</script>
+
+
+
+
+
+<div id="timeline" class="card" style="margin:8px 12px">
+  <div style="font-weight:700">Timeline</div>
+  <div class="row">
+    <input id="tlEntity" placeholder="Entity (e.g., OpenAI)" />
+    <button onclick="loadTimeline()">Show</button>
+  </div>
+  <div id="tlBars" style="margin-top:8px"></div>
+</div>
+<script>
+async function loadTimeline(){
+  const e=document.getElementById('tlEntity').value||'';
+  if(!e) return;
+  const j=await jget('/temporal/timeline?entity='+encodeURIComponent(e)+'&buckets=12');
+  const bars=document.getElementById('tlBars'); bars.innerHTML='';
+  (j.timeline||[]).forEach(b=>{
+    const span=document.createElement('div');
+    span.style.height='10px'; span.style.margin='3px 0';
+    const w=Math.max(2, b.count*10);
+    span.style.width=w+'px'; span.style.background='#2563eb';
+    bars.appendChild(span);
+  });
+}
+
+// session as_of
+async function setAsOf(val){
+  if(!sid) return;
+  try {
+    const ts = val ? Math.floor(new Date(val).getTime()/1000) : null;
+    await jpost('/sessions/'+sid+'/settings', {as_of: ts});
+  } catch(e){ console.error(e); }
+}
+
+async function renderMiniTimeline(entity, target){
+  try{
+    const j=await jget('/temporal/timeline?entity='+encodeURIComponent(entity)+'&buckets=12');
+    const bars=document.createElement('span'); bars.style.display='inline-flex'; bars.style.verticalAlign='middle';
+    (j.timeline||[]).forEach(b=>{
+      const d=document.createElement('span'); d.style.display='inline-block'; d.style.height='8px';
+      d.style.width=Math.max(2, b.count*6)+'px'; d.style.background='#64748b'; d.style.margin='0 1px'; bars.appendChild(d);
+    });
+    target.appendChild(bars);
+  }catch(e){}
+}
+
+async function getSessionAsOf(){
+  try{ const j= await jget('/sessions/'+sid); return (j.settings||{}).as_of || null; }catch(e){ return null; }
+}
+</script>
+
+
+
+
+<div id="nsWrap" class="card" style="margin:8px 12px">
+  <div style="font-weight:700">Namespaces</div>
+  <div id="nsBox" class="row"></div>
+</div>
+<script>
+async function loadNS(){
+  const j=await jget('/temporal/namespaces');
+  const box=document.getElementById('nsBox'); box.innerHTML='';
+  (j.namespaces||[]).forEach(n=>{
+    const id='ns_'+n;
+    const span=document.createElement('label'); span.style.marginRight='10px';
+    span.innerHTML=`<input type="checkbox" id="${id}" onchange="toggleNS('${n}', this.checked)"/> ${n}`;
+    box.appendChild(span);
+  });
+}
+async function toggleNS(n, on){
+  if(!sid) return;
+  const s=await jget('/sessions/'+sid);
+  let arr=(s.settings && s.settings.namespaces) || ['global'];
+  if(on && !arr.includes(n)) arr.push(n);
+  if(!on) arr=arr.filter(x=>x!==n);
+  await jpost('/sessions/'+sid+'/settings', {namespaces: arr});
+}
+loadNS();
+
+async function renderMiniTimeline(entity, target){
+  try{
+    const j=await jget('/temporal/timeline?entity='+encodeURIComponent(entity)+'&buckets=12');
+    const bars=document.createElement('span'); bars.style.display='inline-flex'; bars.style.verticalAlign='middle';
+    (j.timeline||[]).forEach(b=>{
+      const d=document.createElement('span'); d.style.display='inline-block'; d.style.height='8px';
+      d.style.width=Math.max(2, b.count*6)+'px'; d.style.background='#64748b'; d.style.margin='0 1px'; bars.appendChild(d);
+    });
+    target.appendChild(bars);
+  }catch(e){}
+}
+
+async function getSessionAsOf(){
+  try{ const j= await jget('/sessions/'+sid); return (j.settings||{}).as_of || null; }catch(e){ return null; }
+}
+</script>
+
+

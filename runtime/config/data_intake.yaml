@@ -1,0 +1,7 @@
+web:
+  enabled: false
+  allowlist: []
+  rate_limit_per_host_per_min: 20
+licenses:
+  allow: ["MIT","Apache-2.0","CC-BY","Unlicense"]
+  deny: ["Non-Commercial","All Rights Reserved"]

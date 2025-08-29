@@ -1,0 +1,29 @@
+
+version: "3.8"
+services:
+  api:
+    build: ..
+    command: python -m apps.api.main
+    ports: ["8000:8000"]
+    volumes: ["..:/app"]
+  pg:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: nexusnet
+      POSTGRES_PASSWORD: nexusnet
+      POSTGRES_DB: nexusnet
+    ports: ["5432:5432"]
+
+
+watcher:
+  build: ..
+  command: python scripts/rag/watch_ingest.py
+  volumes: ["..:/app"]
+  depends_on: ["api"]
+
+
+healthcheck:
+  test: ["CMD", "wget", "-qO-", "http://localhost:8000/metrics"]
+  interval: 10s
+  timeout: 3s
+  retries: 10

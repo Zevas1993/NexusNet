@@ -1,0 +1,11 @@
+
+weights:
+  semantic: 0.6   # α
+  freshness: 0.2  # β
+  provenance: 0.2 # γ
+  consistency: 0.0 # δ (reserved)
+validity_default_days: 3650
+
+namespaces:
+  enabled: true
+  default_merge: ['global']

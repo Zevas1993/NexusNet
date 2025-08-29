@@ -1,0 +1,7 @@
+
+name: Bug report
+description: Report a bug
+body:
+  - type: textarea
+    attributes: {label: Steps to reproduce}
+    validations: {required: true}

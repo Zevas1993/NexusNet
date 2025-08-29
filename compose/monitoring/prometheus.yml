@@ -1,0 +1,9 @@
+
+global:
+  scrape_interval: 10s
+scrape_configs:
+  - job_name: "nexusnet"
+    static_configs:
+      - targets: ["host.docker.internal:8000"]
+        labels: { instance: "dev" }
+    metrics_path: "/_metrics/metrics"

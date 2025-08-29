@@ -1,19 +1,16 @@
-from typing import Dict, Any
-
-class ReadinessGate:
-    def __init__(self, min_samples=100, quality_threshold=0.7):
-        self.min_samples = min_samples
-        self.quality_threshold = quality_threshold
-    
-    def assess(self, batch: list[Dict[str, Any]]) -> Dict[str, Any]:
-        if len(batch) < self.min_samples:
-            return {'ready': False, 'reason': 'insufficient_data', 'count': len(batch)}
-        
-        # Simple quality check (can be enhanced)
-        valid_count = sum(1 for item in batch if item.get('data', {}).get('text', '').strip())
-        quality = valid_count / len(batch) if batch else 0.0
-        
-        if quality < self.quality_threshold:
-            return {'ready': False, 'reason': 'low_quality', 'quality': quality}
-        
-        return {'ready': True, 'quality': quality, 'count': len(batch)}
+import httpx, pathlib
+from core.config import cfg_assim
+def readiness(metrics: dict, interactions: int) -> bool:
+    thr = cfg_assim().get("thresholds",{})
+    return interactions >= thr.get("min_interactions_per_expert",50) and metrics.get("ais_coverage",0.0) >= thr.get("min_ais_coverage",0.8) and metrics.get("citation_rate",0.0) >= thr.get("min_citation_rate",0.8)
+async def poll_leaderboards() -> dict:
+    out={}
+    for lb in cfg_assim().get("leaderboards",[]):
+        try:
+            async with httpx.AsyncClient(timeout=5) as c:
+                r=await c.get(lb['url']); out[lb['name']]=r.status_code
+        except Exception:
+            out[lb['name']]='unreachable'
+    return out
+def notify(msg: str):
+    pathlib.Path("runtime/state/notify.log").write_text(msg, encoding="utf-8")

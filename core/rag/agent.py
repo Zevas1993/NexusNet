@@ -1,22 +1,19 @@
-from typing import Dict, Any, List
-from core.config import config
+from typing import Dict, Any
 from .query_transform import QueryTransforms
 from .retriever import Retriever
 from .indexer import Indexer
 from .verify_ais import AISVerifier
 from .temporal import parse_scope
-
+from core.config import cfg_rag
 class SelfRAGAgent:
     def __init__(self):
-        self.cfg = config()
+        self.cfg = cfg_rag()
         qt_cfg = self.cfg['rag']['query_transform']
         self.qt = QueryTransforms(n_rewrites=qt_cfg['n_rewrites'], enable_hyde=qt_cfg['enable_hyde'], max_embeddings=qt_cfg['budget_max_embeddings'])
         self.retriever = Retriever(embed_model=self.cfg['models']['embedder'])
         self.indexer = Indexer(self.retriever)
         self.ais = AISVerifier(model_name=self.cfg['models']['ais_nli'])
-    
     async def answer(self, q: str) -> Dict[str, Any]:
-        state = {"coverage": 0.0, "evidence": [], "evidence_count": 0}
         scope = parse_scope(q, default_lookback_days=self.cfg.get('temporal',{}).get('default_lookback_days',365))
         expanded = await self.qt.expand(q); queries = expanded['queries']
         cand = self.retriever.retrieve(queries,

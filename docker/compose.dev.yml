@@ -1,0 +1,9 @@
+
+services:
+  nexusnet:
+    build: ..
+    ports: ["8000:8000"]
+    environment:
+      RAG_LITE: "1"
+    volumes:
+      - ..:/app

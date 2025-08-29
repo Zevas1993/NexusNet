@@ -1,0 +1,5 @@
+peft>=0.11.1
+datasets>=2.20.0
+trl>=0.9.6
+bitsandbytes; platform_system != "Windows"
+deepspeed; platform_system != "Windows"

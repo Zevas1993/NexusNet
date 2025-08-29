@@ -1,333 +1,525 @@
-"""FastAPI main application for NexusNet with enhanced security"""
-from fastapi import FastAPI, HTTPException, Depends, status
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+
+from fastapi import FastAPI, HTTPException, Body, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field
-from typing import Dict, Any, Optional
-import uvicorn
-from pathlib import Path
-import logging
-import os
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from typing import Optional, Dict, Any, List
+import uvicorn, os, json
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from core.orchestrator import Orchestrator
+from nexusnet.temporal.atomic_extractor import extract_atomic
+from nexusnet.temporal.tkg import TKG
+from services.metrics_server import app as metrics_app
+from services.compliance import app as compliance_app
+from services.scheduler import Scheduler
 
-# Import core modules with error handling
-try:
-    from core.config import load_config, save_config, BASE_DIR
-    from core.hw.scan import scan_hardware
-    from core.hw.autotune import apply_autotune
-    from core.ops.audit import audit_logger
-except ImportError as e:
-    logger.warning(f"Core modules not fully available: {e}")
-    # Provide fallback implementations
-    BASE_DIR = Path(__file__).parent.parent
-    def load_config(name): return {}
-    def save_config(name, config): pass
-    def scan_hardware(): return {"status": "not available"}
-    def apply_autotune(): return {"status": "not available"}
-    class MockAuditLogger:
-        def log_event(self, event, data): pass
-    audit_logger = MockAuditLogger()
+app = FastAPI(title="NexusNet v0.5.1 α — Combined", version="0.5.1a")
+orc = Orchestrator("runtime/config/settings.yaml")
+SECRETS_PATH = "runtime/config/secrets.json"
 
-# Security
-security = HTTPBearer(auto_error=False)
-
-# Initialize FastAPI app
-app = FastAPI(
-    title="NexusNet API",
-    description="Unified AI Framework with HiveMind and Hybrid RAG",
-    version="1.0.0",
-    docs_url="/docs" if os.getenv("ENVIRONMENT") != "production" else None,
-    redoc_url="/redoc" if os.getenv("ENVIRONMENT") != "production" else None
-)
-
-# Add CORS middleware with restricted origins
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_credentials=True,
-    allow_methods=["GET", "POST"],
-    allow_headers=["*"],
-)
-
-# Request/Response models with validation
 class ChatRequest(BaseModel):
-    message: str = Field(..., min_length=1, max_length=5000)
-    context: Optional[Dict[str, Any]] = None
-
-class ChatResponse(BaseModel):
-    response: str
-    expert: str
-    confidence: float = Field(..., ge=0.0, le=1.0)
-    processing_time: float = Field(..., ge=0.0)
-
-class ConfigRequest(BaseModel):
-    config: Dict[str, Any]
-
-class KeysRequest(BaseModel):
-    openrouter_api_key: Optional[str] = Field(None, min_length=1, max_length=200)
-    requesty_api_key: Optional[str] = Field(None, min_length=1, max_length=200)
-
-# Security dependency
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Basic auth check - implement proper authentication in production"""
-    # In production, implement proper JWT validation
-    return True
-
-# Mount static files with security
-ui_dir = BASE_DIR / "ui"
-if ui_dir.exists():
-    app.mount("/static", StaticFiles(directory=str(ui_dir)), name="static")
-
-# Routes
-@app.get("/")
-async def root():
-    """Serve main UI"""
-    try:
-        ui_file = ui_dir / "index.html"
-        if ui_file.exists():
-            return FileResponse(str(ui_file))
-        return {"message": "NexusNet API is running", "status": "healthy"}
-    except Exception as e:
-        logger.error(f"Error serving root: {e}")
-        return {"message": "NexusNet API is running", "status": "healthy"}
-
-@app.get("/admin")
-async def admin():
-    """Serve admin UI"""
-    try:
-        admin_file = ui_dir / "admin.html"
-        if admin_file.exists():
-            return FileResponse(str(admin_file))
-        return {"message": "Admin interface not found"}
-    except Exception as e:
-        logger.error(f"Error serving admin: {e}")
-        return {"message": "Admin interface not available"}
-
-@app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
-    """Main chat endpoint with enhanced security"""
-    try:
-        # Input validation
-        if not request.message.strip():
-            raise HTTPException(status_code=400, detail="Message cannot be empty")
-        
-        # Rate limiting check would go here in production
-        
-        # For now, return a secure response
-        response = ChatResponse(
-            response=f"I received your message. The HiveMind system is initializing securely.",
-            expert="generalist",
-            confidence=0.8,
-            processing_time=0.1
-        )
-        
-        # Log the query (without sensitive data)
-        try:
-            audit_logger.log_event("chat", {
-                "message_length": len(request.message),
-                "expert_used": response.expert,
-                "confidence": response.confidence
-            })
-        except Exception as e:
-            logger.warning(f"Failed to log audit event: {e}")
-        
-        return response
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Chat endpoint error: {e}")
-        try:
-            audit_logger.log_event("error", {"error": "chat_endpoint_error", "endpoint": "/chat"})
-        except:
-            pass
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-# Admin endpoints
-@app.get("/admin/hardware")
-async def get_hardware():
-    """Get hardware information"""
-    try:
-        hardware = scan_hardware()
-        return hardware
-    except Exception as e:
-        logger.error(f"Hardware scan error: {e}")
-        raise HTTPException(status_code=500, detail="Hardware scan failed")
-
-@app.post("/admin/apply_autotune")
-async def autotune():
-    """Apply hardware auto-tuning"""
-    try:
-        result = apply_autotune()
-        try:
-            audit_logger.log_event("autotune", {"success": True})
-        except:
-            pass
-        return result
-    except Exception as e:
-        logger.error(f"Autotune error: {e}")
-        try:
-            audit_logger.log_event("error", {"error": "autotune_failed", "endpoint": "/admin/apply_autotune"})
-        except:
-            pass
-        raise HTTPException(status_code=500, detail="Auto-tuning failed")
-
-@app.get("/admin/experts")
-async def get_experts():
-    """Get expert configuration"""
-    try:
-        experts_config = load_config("experts")
-        return {"experts": experts_config}
-    except Exception as e:
-        logger.error(f"Expert config error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to load expert configuration")
-
-@app.post("/admin/experts")
-async def update_experts(request: ConfigRequest):
-    """Update expert configuration"""
-    try:
-        # Validate configuration structure
-        if not isinstance(request.config, dict):
-            raise HTTPException(status_code=400, detail="Invalid configuration format")
-        
-        save_config("experts", request.config)
-        try:
-            audit_logger.log_event("config_update", {"type": "experts"})
-        except:
-            pass
-        return {"success": True, "message": "Expert configuration updated"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Expert update error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update expert configuration")
-
-@app.get("/admin/models")
-async def get_models():
-    """Get available models"""
-    try:
-        models = {
-            "models": {
-                "chat": [
-                    {"model_id": "microsoft/DialoGPT-medium", "size": "800MB", "type": "transformers"},
-                    {"model_id": "microsoft/DialoGPT-large", "size": "1.5GB", "type": "transformers"}
-                ],
-                "embedding": [
-                    {"model_id": "sentence-transformers/all-MiniLM-L6-v2", "size": "80MB", "type": "sentence_transformers"},
-                    {"model_id": "sentence-transformers/all-mpnet-base-v2", "size": "420MB", "type": "sentence_transformers"}
-                ]
-            }
-        }
-        return models
-    except Exception as e:
-        logger.error(f"Models endpoint error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to load models")
-
-@app.get("/admin/hivemind")
-async def get_hivemind():
-    """Get HiveMind configuration"""
-    try:
-        hivemind_config = load_config("hivemind")
-        return {"hivemind": hivemind_config}
-    except Exception as e:
-        logger.error(f"HiveMind config error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to load HiveMind configuration")
-
-@app.post("/admin/hivemind")
-async def update_hivemind(request: ConfigRequest):
-    """Update HiveMind configuration"""
-    try:
-        if not isinstance(request.config, dict):
-            raise HTTPException(status_code=400, detail="Invalid configuration format")
-        
-        save_config("hivemind", request.config)
-        try:
-            audit_logger.log_event("config_update", {"type": "hivemind"})
-        except:
-            pass
-        return {"success": True, "message": "HiveMind configuration updated"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"HiveMind update error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update HiveMind configuration")
-
-@app.post("/admin/keys")
-async def update_keys(request: KeysRequest):
-    """Update API keys (implement secure storage in production)"""
-    try:
-        # In production, implement secure key storage (e.g., HashiCorp Vault, AWS Secrets Manager)
-        # Never log actual keys
-        try:
-            audit_logger.log_event("keys_update", {"keys_updated": True})
-        except:
-            pass
-        return {"success": True, "message": "API keys updated securely"}
-    except Exception as e:
-        logger.error("Key update error occurred")  # Don't log the actual error to avoid key leakage
-        raise HTTPException(status_code=500, detail="Failed to update API keys")
-
-@app.get("/admin/fl")
-async def get_federated_learning_status():
-    """Get federated learning status"""
-    try:
-        return {
-            "status": "idle",
-            "participants": 0,
-            "rounds_completed": 0,
-            "last_update": None
-        }
-    except Exception as e:
-        logger.error(f"FL status error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get FL status")
+    message: str
+    capsule: Optional[str] = None
+    rag: bool = True
+    max_new_tokens: int = 256
+    temperature: float = 0.7
+    top_p: float = 0.95
 
 @app.get("/health")
-async def health_check():
-    """Health check endpoint"""
+def health():
+    return {"ok": True, "version": "0.5.1-alpha"}
+
+@app.post("/chat")
+def chat(req: ChatRequest):
     try:
-        return {
-            "status": "healthy",
-            "version": "1.0.0",
-            "components": {
-                "api": "running",
-                "experts": "loaded",
-                "rag": "ready",
-                "hardware": "detected"
-            }
-        }
+        res = orc.chat(req.message, rag=req.rag, max_new_tokens=req.max_new_tokens, temperature=req.temperature, top_p=req.top_p)
+        return {"response": res["text"], "engine": res["engine"], "capsule": req.capsule or "generalist", "rag": req.rag}
     except Exception as e:
-        logger.error(f"Health check error: {e}")
-        return {
-            "status": "degraded",
-            "version": "1.0.0",
-            "error": "Health check failed"
-        }
+        raise HTTPException(status_code=500, detail=str(e))
 
-# Error handlers
-@app.exception_handler(404)
-async def not_found_handler(request, exc):
-    return {"error": "Resource not found", "status_code": 404}
+@app.post("/rag/ingest")
+def rag_ingest(texts: Optional[List[str]] = Body(default=None), file: UploadFile | None = File(default=None)):
+    try:
+        if file is not None:
+            content = file.file.read().decode("utf-8")
+            if file.filename.endswith(".jsonl"):
+                docs = [json.loads(line)["text"] if line.strip() else "" for line in content.splitlines() if line.strip()]
+            else:
+                docs = [content]
+        else:
+            docs = texts or []
+        ids = orc.rag_ingest(docs)
+        return {"ok": True, "added": len(ids)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-@app.exception_handler(500)
-async def internal_error_handler(request, exc):
-    logger.error(f"Internal server error: {exc}")
-    return {"error": "Internal server error", "status_code": 500}
+@app.get("/admin/providers")
+def providers_get():
+    try:
+        with open(SECRETS_PATH,"r",encoding="utf-8") as f: return json.load(f)
+    except Exception:
+        return {"openrouter": {"enabled": False, "api_key": ""}, "requesty": {"enabled": False, "api_key": ""}}
+
+@app.post("/admin/providers")
+def providers_set(data: Dict[str, Any] = Body(...)):
+    with open(SECRETS_PATH,"w",encoding="utf-8") as f: json.dump(data,f,indent=2)
+    return {"ok": True}
 
 if __name__ == "__main__":
-    print("🚀 Starting NexusNet API server with enhanced security...")
-    print("💡 Open http://127.0.0.1:5173 for chat interface")
-    print("⚙️  Open http://127.0.0.1:5173/admin for admin panel")
-    print("📚 Open http://127.0.0.1:5173/docs for API documentation")
-    
-    uvicorn.run(
-        "main:app",
-        host="127.0.0.1",
-        port=5173,
-        reload=True,
-        log_level="info"
-    )
+    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("PORT","8000")))
+
+app.mount('/_metrics', metrics_app)
+app.mount('/_compliance', compliance_app)
+
+
+class TemporalIngestReq(BaseModel):
+    texts: list[str]
+    source: str | None = "api"
+    url: str | None = None
+
+@app.post("/temporal/ingest")
+def temporal_ingest(req: TemporalIngestReq):
+    try:
+        tkg = TKG("runtime/temporal/tkg.sqlite")
+        total = 0
+        for t in req.texts:
+            facts = extract_atomic(t, source=req.source or "api", url=req.url)
+            total += tkg.upsert(facts)
+        return {"ok": True, "facts_inserted": total}
+    except Exception as e:
+        raise HTTPException(500, f"Temporal ingest failed: {e}")
+
+@app.get("/temporal/as_of")
+def temporal_as_of(query: str, date: str, limit: int = 20):
+    try:
+        tkg = TKG("runtime/temporal/tkg.sqlite")
+        rows = tkg.as_of(query, date)[:max(1, min(limit, 100))]
+        return {"ok": True, "count": len(rows), "rows": rows}
+    except Exception as e:
+        raise HTTPException(500, f"Temporal query failed: {e}")
+
+# Start optional scheduler
+scheduler = Scheduler()
+scheduler.start()
+
+
+# ---- WebSocket telemetry ----
+class TelemetryHub:
+    def __init__(self):
+        self.clients: set[WebSocket] = set()
+    async def connect(self, ws: WebSocket):
+        await ws.accept()
+        self.clients.add(ws)
+    def disconnect(self, ws: WebSocket):
+        self.clients.discard(ws)
+    async def broadcast(self, data: dict):
+        dead = []
+        for ws in list(self.clients):
+            try:
+                await ws.send_json(data)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            self.disconnect(ws)
+
+telemetry = TelemetryHub()
+
+@app.websocket("/ws/telemetry")
+async def ws_telemetry(ws: WebSocket):
+    await telemetry.connect(ws)
+    try:
+        while True:
+            # keep-alive / ignore inbound
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        telemetry.disconnect(ws)
+
+
+# Helper: emit chat event from endpoints that call Orchestrator
+async def _emit_chat_event(payload: dict):
+    try:
+        await telemetry.broadcast(payload)
+    except Exception:
+        pass
+
+
+@app.get("/admin/router/confusion", response_class=JSONResponse)
+def router_confusion():
+    import os, json, collections
+    path = "runtime/logs/router.log"
+    cm = collections.defaultdict(lambda: collections.Counter())
+    total = 0
+    if os.path.exists(path):
+        with open(path,"r",encoding="utf-8") as f:
+            for line in f:
+                line=line.strip()
+                if not line: continue
+                try:
+                    obj = json.loads(line)
+                    pred = obj.get("predicted")
+                    used = obj.get("used")
+                    if pred and used:
+                        cm[pred][used] += 1
+                        total += 1
+                except Exception:
+                    continue
+    # convert to normal dicts
+    cm_out = {p: dict(c) for p,c in cm.items()}
+    return {"total": total, "matrix": cm_out}
+
+
+@app.post("/admin/policy/notify")
+async def admin_policy_notify(payload: dict):
+    # payload example: {"policy":{"engine":"vllm","quant":"int8"}}
+    try:
+        await telemetry.broadcast({"type":"policy","payload":payload,"ts": __import__('time').time()})
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+from utils.config import get_rag_cfg
+from core.rag.pipeline_lite import augment_prompt
+
+@app.post("/chat")
+def chat(payload: dict = Body(...)):
+    prompt = payload.get("prompt","")
+    capsule = payload.get("capsule")
+    cfg = get_rag_cfg()
+    if cfg.get("enabled"):
+        prompt = augment_prompt(prompt, corpus_dir=cfg.get("corpus_dir","data/corpus/sample"), k=int(cfg.get("top_k",3)))
+    o = Orchestrator()
+    out = o.generate(prompt, capsule=capsule)
+    return {"text": out, "capsule": capsule, "policy": getattr(o, "_policy_choice", {}), "rag_lite": cfg.get("enabled", False)}
+
+from scripts.config.validate import run as _cfg_validate
+
+@app.get('/config/validate')
+def config_validate():
+    return _cfg_validate()
+
+
+# === r12 additions ===
+from typing import Optional, Dict
+import json, os, pathlib
+
+_CONNECTOR_STATE = {"default_engine": os.environ.get("DEFAULT_ENGINE","transformers")}
+
+@app.get("/connectors")
+def list_connectors():
+    from core.engines import registry as _reg  # type: ignore
+    status = _reg.status() if hasattr(_reg, "status") else {}
+    return {"default": _CONNECTOR_STATE["default_engine"], "status": status}
+
+@app.post("/connectors/select")
+def select_connector(payload: Dict[str, str]):
+    eng = payload.get("engine","").strip().lower()
+    if eng not in ["transformers","ollama","vllm","tgi"]:
+        raise HTTPException(status_code=400, detail="unknown engine")
+    _CONNECTOR_STATE["default_engine"] = eng
+    return {"ok": True, "default": eng}
+
+# --- First-Run Wizard: writes .env and rag.yaml ---
+@app.post("/first-run/save")
+def first_run_save(payload: Dict):
+    # VERY SIMPLE local writer, intended for single-user dev machines
+    env_lines = []
+    for k,v in payload.get("env",{}).items():
+        if isinstance(v, bool):
+            v = "1" if v else "0"
+        env_lines.append(f"{k}={v}")
+    dot = pathlib.Path(".env")
+    dot.write_text("\n".join(env_lines), encoding="utf-8")
+
+    # write rag.yaml if provided
+    ry = payload.get("rag")
+    if ry:
+        cfgp = pathlib.Path("runtime/config/rag.yaml")
+        cfgp.parent.mkdir(parents=True, exist_ok=True)
+        import yaml  # type: ignore
+        cfgp.write_text(yaml.safe_dump(ry, sort_keys=False), encoding="utf-8")
+    return {"ok": True}
+
+
+@app.get("/ready")
+def ready():
+    # filesystem check (write temp)
+    import os, tempfile, json
+    fs = {"ok": False, "path": None, "error": None}
+    try:
+        tmpdir = os.path.abspath("tmp")
+        os.makedirs(tmpdir, exist_ok=True)
+        fd, p = tempfile.mkstemp(prefix="probe_", dir=tmpdir)
+        os.write(fd, b"ok")
+        os.close(fd)
+        os.remove(p)
+        fs = {"ok": True, "path": tmpdir}
+    except Exception as e:
+        fs = {"ok": False, "error": str(e)}
+
+    # engines status
+    try:
+        from core.engines import registry as _reg  # type: ignore
+        engines = _reg.status()
+    except Exception as e:
+        engines = {"_error": str(e)}
+
+    # config validation (best-effort)
+    try:
+        from scripts.config.validate import run as _cfg_validate  # type: ignore
+        cfg = _cfg_validate()
+    except Exception as e:
+        cfg = {"_error": str(e)}
+
+    return {"ok": fs.get("ok", False), "fs": fs, "engines": engines, "config": cfg}
+
+
+@app.get("/healthz")
+def healthz():
+    return {"ok": True, "version": "v0.5.1a-r12.2"}
+
+@app.get("/version")
+def version():
+    return {"version": "v0.5.1a-r12.2"}
+
+
+# --- r12.3: sessions API + demo seeding ---
+from services.sessions import list_sessions, get_session, save_session
+
+@app.get("/sessions")
+def sessions_list():
+    return {"sessions": list_sessions()}
+
+@app.get("/sessions/{sid}")
+def sessions_get(sid: str):
+    return get_session(sid)
+
+@app.post("/sessions/{sid}")
+def sessions_save(sid: str, payload: dict = Body(...)):
+    return save_session(sid, payload)
+
+@app.get("/demo/seed")
+def demo_seed():
+    import os, json, pathlib
+    if os.environ.get("DEMO_MODE","1") != "1":
+        return {"ok": False, "error": "DEMO_MODE disabled"}
+    path = pathlib.Path("data/demos/sessions.json")
+    if not path.exists():
+        return {"ok": False, "error": "no demo file"}
+    demo = json.loads(path.read_text(encoding="utf-8")).get("sessions", [])
+    n = 0
+    for s in demo:
+        save_session(s["id"], s)
+        n += 1
+    return {"ok": True, "seeded": n}
+
+
+# --- r12.4: demo toggle, sessions export/import, rename/delete, streaming chat, memory summary ---
+import os, json, time
+from fastapi.responses import StreamingResponse
+
+@app.get("/demo/toggle")
+def demo_toggle(on: str = "1"):
+    os.environ["DEMO_MODE"] = "1" if on == "1" else "0"
+    return {"ok": True, "DEMO_MODE": os.environ["DEMO_MODE"]}
+
+@app.get("/sessions/export")
+def sessions_export():
+    from services.sessions import export_all
+    return export_all()
+
+@app.post("/sessions/import")
+def sessions_import(payload: dict = Body(...)):
+    from services.sessions import import_bulk
+    return import_bulk(payload)
+
+@app.post("/sessions/{sid}/rename")
+def sessions_rename(sid: str, payload: dict = Body(...)):
+    from services.sessions import rename_session
+    new = payload.get("id") or payload.get("new_id") or ""
+    if not new:
+        raise HTTPException(status_code=400, detail="missing new id")
+    return rename_session(sid, new)
+
+@app.delete("/sessions/{sid}")
+def sessions_delete(sid: str):
+    from services.sessions import delete_session
+    return delete_session(sid)
+
+@app.post("/chat/stream")
+def chat_stream(payload: dict = Body(...)):
+    # stream chunks from the selected engine (or dry-run text) as SSE
+    prompt = payload.get("prompt","")
+    capsule = payload.get("capsule","generalist")
+
+    # reuse existing /chat logic if present, else synthesize
+    text = ""
+    try:
+        # Use the engine selector that /chat uses
+        from core.engines.selector import select_engine  # type: ignore
+        eng, pol = select_engine(capsule)
+        text = eng.generate(prompt)
+    except Exception:
+        text = "[stream] " + prompt
+
+    def gen():
+        # naive token chunking by words
+        for tok in text.split():
+            yield f"data: {tok}\n\n"
+            time.sleep(0.02)
+        yield "data: [END]\n\n"
+    from services.metrics import record_generation
+    # rough estimate in stream path handled client-side; set 0 here
+    record_generation(tokens=0, ms=0)
+    begin_stream()
+    resp = StreamingResponse(gen(), media_type="text/event-stream")
+    end_stream(0)
+    return resp
+
+@app.post("/sessions/{sid}/summary")
+def session_summary(sid: str):
+    from services.sessions import get_session, save_session
+    from services.memory import summarize
+    j = get_session(sid)
+    j["summary"] = summarize(j.get("messages", []))
+    save_session(sid, j)
+    return {"ok": True, "id": sid, "summary": j["summary"]}
+
+
+@app.post("/sessions/{sid}/settings")
+def sessions_update_settings(sid: str, payload: dict = Body(...)):
+    from services.sessions import get_session, save_session, ensure_settings
+    j = get_session(sid)
+    j = ensure_settings(j)
+    s = j.get("settings", {})
+    for k,v in payload.items():
+        if k == "rag" and isinstance(v, dict):
+            s.setdefault("rag", {}).update(v)
+        else:
+            s[k] = v
+    j["settings"] = s
+    save_session(sid, j)
+    return {"ok": True, "id": sid, "settings": s}
+
+
+# r12.5 helpers for /chat: store context and apply per-session defaults
+def _apply_session_defaults(payload: dict):
+    sid = payload.get("sid") or payload.get("session_id")
+    if not sid:
+        return payload, None, None
+    from services.sessions import get_session, ensure_settings
+    j = ensure_settings(get_session(sid))
+    s = j.get("settings", {})
+    # default capsule/engine if not provided
+    if not payload.get("capsule"): payload["capsule"] = s.get("capsule","generalist")
+    payload["_engine_override"] = s.get("engine")
+    payload["_rag_window"] = int((s.get("rag") or {}).get("window", 5)); payload['_as_of'] = s.get('as_of'); payload['_namespaces'] = s.get('namespaces')
+    return payload, sid, j
+
+def _chat_with_context(prompt: str, capsule: str, rag_window: int, as_of_ts: int | None, namespaces=None):
+    # Try new auto pipeline (pgvector or lite)
+    try:
+        from core.rag.retriever import get_context_hybrid as ctx_auto  # type: ignore
+        ctx = ctx_auto(prompt, as_of_ts=as_of_ts, namespaces=namespaces)[:max(1, rag_window)]
+    except Exception:
+        try:
+            from core.rag.retriever import get_context as ctx_lite  # type: ignore
+            ctx = ctx_lite(prompt, as_of_ts=as_of_ts, namespaces=namespaces)[:max(1, rag_window)]
+        except Exception:
+            ctx = []
+    # Build augmented prompt (simple concat for $0 path)
+    context_text = "\n\n".join([c.get("text","") for c in ctx])
+    aug = prompt if not context_text else f"{context_text}\n\nQuestion: {prompt}"
+    # Select engine (respect override if selector supports it)
+    try:
+        from core.engines.selector import select_engine  # type: ignore
+        eng, pol = select_engine(capsule)
+    except Exception as e:
+        class _E: 
+            def generate(self, p, **kw): return "[dry] " + p
+        eng = _E(); pol=None
+    txt = eng.generate(aug)
+    return txt, ctx
+
+@app.post("/chat2")
+def chat2(payload: dict = Body(...)):
+    # New chat endpoint that honors per-session defaults and stores context into session memory
+    prompt = payload.get("prompt","")
+    capsule = payload.get("capsule")
+    payload, sid, doc = _apply_session_defaults(payload)
+    capsule = payload.get("capsule","generalist")
+    rag_window = payload.get("_rag_window") or 5
+    text, ctx = _chat_with_context(prompt, capsule, rag_window, payload.get('_as_of'), payload.get('_namespaces'))
+
+    # store message & retrieved ctx in the session if sid provided
+    if sid:
+        from services.sessions import save_session
+        msgs = (doc.get("messages") or []) + [{"role":"user","content":prompt},{"role":"assistant","content":text,"context":ctx}]
+        doc["messages"] = msgs
+        doc["last_active"] = int(time.time())
+        save_session(sid, doc)
+
+    from services.metrics import record_generation
+    record_generation(tokens=count_tokens(text), ms=0)
+    return {"text": text, "capsule": capsule, "ctx": ctx, "sid": sid}
+
+
+@app.get("/compliance/purge")
+def compliance_purge(before: str = ""):
+    from services import sessions_sqlite as ssql
+
+    import os, time, glob
+    from datetime import datetime
+    try:
+        cutoff = int(datetime.fromisoformat(before).timestamp()) if before else int(time.time())
+    except Exception:
+        raise HTTPException(status_code=400, detail="bad date")
+    removed=0
+    removed += ssql.purge(cutoff)
+    return {"ok": True, "removed": removed}
+
+
+@app.get("/metrics")
+def prom_metrics():
+    sample_system()
+    from services.metrics import render_prom, sample_system, count_tokens, begin_stream, tick_stream, end_stream
+    return Response(render_prom(), media_type="text/plain")
+
+
+@app.get("/temporal/timeline")
+def temporal_timeline(entity: str, buckets: int = 10):
+    from temporal.tkg import timeline
+    try:
+        b = int(buckets)
+    except Exception:
+        b = 10
+    return {"entity": entity, "timeline": timeline(entity, b)}
+
+
+@app.get("/admin/overrides")
+def admin_overrides_get():
+    import json
+    try:
+        j = json.loads(open("runtime/config/runtime_overrides.json","r",encoding="utf-8").read())
+    except Exception:
+        j = {}
+    return j
+
+@app.post("/admin/overrides")
+def admin_overrides_set(payload: dict = Body(...)):
+    import json, os
+    os.makedirs("runtime/config", exist_ok=True)
+    with open("runtime/config/runtime_overrides.json","w",encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+    return {"ok": True}
+
+
+@app.get("/temporal/namespaces")
+def list_namespaces():
+    import yaml, os
+    try:
+        cfg = yaml.safe_load(open("runtime/config/temporal.yaml","r",encoding="utf-8"))
+    except Exception:
+        cfg = {}
+    ns = (cfg.get("namespaces") or {}).get("list") or ["global","medical","code","legal","finance","vision","audio"]
+    return {"namespaces": ns}

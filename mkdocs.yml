@@ -1,0 +1,7 @@
+site_name: NexusNet Docs
+nav:
+  - Home: index.md
+
+  - Engines: engines_setup.md
+  - RAG Backends: rag_backends.md
+  - Quickstart: quickstart.md

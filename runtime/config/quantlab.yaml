@@ -1,0 +1,15 @@
+
+bakeoff:
+  enabled: false
+  prompt: "Summarize the purpose of NexusNet in two sentences."
+  candidates:
+    - name: "transformers-int8"
+      engine: "transformers"
+      quant: "int8"
+    - name: "transformers-fp16"
+      engine: "transformers"
+      quant: "fp16"
+    - name: "llama-cpp-gguf"
+      engine: "llama_cpp"
+      quant: "gguf"
+  results_path: "runtime/quantlab/bench.json"

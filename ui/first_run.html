@@ -1,0 +1,97 @@
+
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>NexusNet First-Run Wizard</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Helvetica,Arial,sans-serif;margin:20px;max-width:900px}
+    .card{border:1px solid #ddd;border-radius:12px;padding:16px;margin-bottom:16px}
+    label{display:block;margin:6px 0 2px}
+    input[type=text]{width:100%;padding:8px;border:1px solid #ccc;border-radius:8px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    button{padding:10px 16px;border:0;border-radius:10px;background:#111;color:#fff;cursor:pointer}
+    .muted{color:#666}
+    .row{display:flex;gap:12px;align-items:center}
+    .ok{color:#0a0}
+  </style>
+</head>
+<body>
+<h1>First-Run Wizard</h1>
+<p class="muted">Set engine URLs, toggle live mode, and create a basic RAG config. This edits <code>.env</code> and <code>runtime/config/rag.yaml</code> locally.</p>
+
+<div class="card">
+  <h3>Engines</h3>
+  <div class="grid">
+    <div>
+      <label>Ollama Base URL</label>
+      <input id="ollama" type="text" placeholder="http://127.0.0.1:11434"/>
+      <label>Ollama Model</label>
+      <input id="ollama_model" type="text" placeholder="llama3.1"/>
+    </div>
+    <div>
+      <label>vLLM Base URL</label>
+      <input id="vllm" type="text" placeholder="http://127.0.0.1:8001"/>
+      <label>vLLM Model</label>
+      <input id="vllm_model" type="text" placeholder="local"/>
+    </div>
+  </div>
+  <div class="grid">
+    <div>
+      <label>TGI Base URL</label>
+      <input id="tgi" type="text" placeholder="http://127.0.0.1:8080"/>
+    </div>
+    <div>
+      <label>LIVE_ENGINES</label>
+      <input id="live" type="text" placeholder="0"/>
+      <small class="muted">Set to 1 to enable real HTTP calls.</small>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>RAG</h3>
+  <div class="grid">
+    <div>
+      <label>Enabled</label>
+      <input id="rag_enabled" type="text" placeholder="true"/>
+    </div>
+    <div>
+      <label>Top-K</label>
+      <input id="rag_topk" type="text" placeholder="5"/>
+    </div>
+  </div>
+  <label>Corpus directory</label>
+  <input id="rag_corpus" type="text" placeholder="data/corpus/sample"/>
+</div>
+
+<div class="row">
+  <button onclick="save()">Save</button>
+  <span id="out"></span>
+</div>
+
+<script>
+async function save(){
+  const payload = {
+    env: {
+      OLLAMA_BASE_URL: document.getElementById('ollama').value,
+      OLLAMA_MODEL: document.getElementById('ollama_model').value,
+      VLLM_BASE_URL: document.getElementById('vllm').value,
+      VLLM_MODEL: document.getElementById('vllm_model').value,
+      TGI_BASE_URL: document.getElementById('tgi').value,
+      LIVE_ENGINES: document.getElementById('live').value || "0"
+    },
+    rag: {
+      enabled: (document.getElementById('rag_enabled').value || 'true') === 'true',
+      top_k: parseInt(document.getElementById('rag_topk').value || '5'),
+      corpus_dir: document.getElementById('rag_corpus').value || 'data/corpus/sample'
+    }
+  };
+  const res = await fetch('/first-run/save', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+  const j = await res.json();
+  const out = document.getElementById('out');
+  if(j.ok){ out.textContent = 'Saved ✓'; out.className='ok'; } else { out.textContent = JSON.stringify(j); }
+}
+</script>
+</body>
+</html>

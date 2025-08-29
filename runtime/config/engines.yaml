@@ -1,0 +1,19 @@
+
+# Policy weights (higher means more preferred)
+weights:
+  latency: 0.40
+  cost: 0.30
+  capability: 0.25
+  gpu: 0.05
+# Static capabilities baseline (0..1); can be tuned per deployment
+capabilities:
+  transformers: 0.7
+  ollama: 0.6
+  vllm: 0.9
+  tgi: 0.85
+# Cost scores (0..1, lower API cost => higher score). Local engines default 1.0
+cost:
+  transformers: 1.0
+  ollama: 1.0
+  vllm: 0.9
+  tgi: 0.8

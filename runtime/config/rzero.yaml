@@ -1,0 +1,12 @@
+
+experiment: default
+n_candidates: 128
+k_samples: 6
+informative_band: [2,4]
+max_len: 512
+grpo_lr: 1.0e-6
+grpo_kl_coef: 0.02
+repetition_bleu_threshold: 0.85
+repetition_penalty_strength: 0.2
+format_required_tags: ["<question>", "</question>", "<answer>", "</answer>"]
+out_dir: "data/rzero"

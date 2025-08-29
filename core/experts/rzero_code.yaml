@@ -1,0 +1,4 @@
+name: rzero_code
+domain: code_generation
+base_model: ${solver}
+rzero_config: runtime/config/rzero.yaml

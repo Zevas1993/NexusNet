@@ -1,26 +1,7 @@
 from .base import ExpertBase
-from typing import Dict, Any
-
-class DesignExpert(ExpertBase):
-    def __init__(self):
-        super().__init__(
-            name="Design",
-            description="UI/UX design, visual design, user experience, and design systems",
-            triggers=["design", "ui", "ux", "interface", "user experience", "visual", "layout", "prototype"]
-        )
-    
-    async def process(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        response = f"[Design Expert] Analyzing design requirements: {query[:100]}..."
-        
-        principles = []
-        if "user" in query.lower():
-            principles.append("Focus on user-centered design principles")
-        if "interface" in query.lower():
-            principles.append("Ensure consistency and intuitive navigation")
-        
-        return {
-            "response": response,
-            "principles": principles,
-            "expert": self.name,
-            "confidence": self.can_handle(query)
-        }
+class Design(ExpertBase):
+    name="design"; triggers=['design', 'ux', 'ui', 'layout', 'color']
+    async def answer(self, prompt:str, call):
+        sys=f"You are a design/UX expert. Be precise and cite as [1],[2] if evidence is provided."
+        msgs=[{"role":"system","content":sys},{"role":"user","content":prompt}]
+        return await call(msgs, max_tokens=512, temperature=0.2)

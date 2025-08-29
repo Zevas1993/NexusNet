@@ -1,46 +1,28 @@
-from typing import Dict, Any
-from core.providers.openrouter import OpenRouterClient
-from core.providers.requesty import RequestyClient
-from core.config import env_var
-
+import time, os
+from core.providers.openrouter import OpenRouterAdapter
+from core.providers.requesty import RequestyAdapter
 class TeacherGate:
-    def __init__(self):
-        self.openrouter = None
-        self.requesty = None
-        
-        # Initialize providers if API keys are available
-        or_key = env_var('OPENROUTER_API_KEY')
-        if or_key:
-            self.openrouter = OpenRouterClient(or_key)
-        
-        req_key = env_var('REQUESTY_API_KEY')
-        if req_key:
-            self.requesty = RequestyClient(req_key)
-    
-    async def get_teacher_response(self, query: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
-        """Get response from teacher models for guidance"""
-        if not self.openrouter and not self.requesty:
-            return {"error": "No teacher providers available", "text": ""}
-        
-        # Try OpenRouter first, then Requesty
-        if self.openrouter:
+    def __init__(self, budget_per_hour_cents=50, max_calls_per_query=2, prov_cfg=None):
+        self.budget_cents = budget_per_hour_cents; self.max_calls = max_calls_per_query
+        self.usage = {'cents': 0.0, 'ts': time.time()}; self.adapters = []
+        prov_cfg = prov_cfg or {}
+        if prov_cfg.get('openrouter',{}).get('enabled',True) and os.getenv('OPENROUTER_API_KEY'):
+            self.adapters.append(OpenRouterAdapter(model=prov_cfg.get('openrouter',{}).get('model','openrouter/auto')))
+        if prov_cfg.get('requesty',{}).get('enabled',True) and os.getenv('REQUESTY_API_KEY'):
+            self.adapters.append(RequestyAdapter(model=prov_cfg.get('requesty',{}).get('model','gpt-4o-mini')))
+    def _under_budget(self):
+        now=time.time()
+        if now - self.usage['ts'] > 3600: self.usage={'cents':0.0,'ts':now}
+        return self.usage['cents'] < self.budget_cents
+    def should_consult(self, signal) -> bool:
+        if not self.adapters or not self._under_budget(): return False
+        if signal.get('calls',0) >= self.max_calls: return False
+        return signal.get('coverage',0.0) < 0.8 or signal.get('hard',True)
+    async def complete(self, prompt: str, **kw):
+        for a in self.adapters:
             try:
-                response = await self.openrouter.generate(query)
-                if not response.get('error'):
-                    return {**response, "provider": "openrouter"}
-            except Exception as e:
-                pass
-        
-        if self.requesty:
-            try:
-                response = await self.requesty.generate(query)
-                if not response.get('error'):
-                    return {**response, "provider": "requesty"}
-            except Exception as e:
-                pass
-        
-        return {"error": "All teacher providers failed", "text": ""}
-    
-    def is_available(self) -> bool:
-        """Check if any teacher providers are available"""
-        return self.openrouter is not None or self.requesty is not None
+                out = await a.complete_async([{'role':'user','content':prompt}], **kw)
+                self.usage['cents'] += 2
+                return out.strip()
+            except Exception: continue
+        return None

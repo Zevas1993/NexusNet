@@ -1,0 +1,8 @@
+{
+  "safety_enabled": true,
+  "temporal_weights": {
+    "semantic": 0.6,
+    "freshness": 0.2,
+    "provenance": 0.2
+  }
+}

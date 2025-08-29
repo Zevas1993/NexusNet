@@ -1,0 +1,12 @@
+
+edges:
+  - type: aligns_with
+    weight: 0.7
+  - type: predicts
+    weight: 0.8
+  - type: contradicts
+    weight: -0.9
+  - type: depends_on
+    weight: 0.5
+  - type: derived_from
+    weight: 0.6
