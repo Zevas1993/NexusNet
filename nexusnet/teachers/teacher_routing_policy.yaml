@@ -1,0 +1,51 @@
+schema_version: 1
+canon_status: LOCKED CANON
+default_registry_layer: v2026_live
+required_routing_roles: [Domain Professor, Skeptical Examiner, Efficiency Coach]
+routing_dimensions: [domain, budget_class, output_form, risk_tier, local_vs_remote_availability, modality, coding_tool_need, thinking_vs_nonthinking_need, hardware_device_constraints]
+budget_classes: [FASTPATH, STANDARD, DEEP, EDGE_CONSTRAINED, LONG_CONTEXT]
+output_forms: [TOOL_CALL_STRICT_JSON, STRUCTURED_PLAN, SHORT_ANSWER, LONGFORM, CODE_PATCH, RETRIEVAL_QUERY, EVAL_JUDGE]
+registry_selection_modes:
+  historical: {registry_layer: historical, selection_strategy: best_ensemble_per_role, one_teacher_per_role: false}
+  v2026_live: {registry_layer: v2026_live, selection_strategy: primary_secondary_pairs}
+composition_modes:
+  primary_only: {include_secondary: false, include_efficiency_coach: false}
+  primary_secondary: {include_secondary: true, include_efficiency_coach: false}
+  primary_secondary_lfm2: {include_secondary: true, include_efficiency_coach: true}
+arbitration_triggers: [high_risk, teacher_disagreement, remote_escalation, low_confidence, long_context_instability, tool_chain_failure, security_sensitive]
+fallback_chains:
+  local_first: [primary_local, secondary_local, bounded_efficiency_local, remote_secondary]
+  mixed_local_then_remote: [primary_local, secondary_local, remote_secondary, remote_frontier]
+  remote_allowed: [primary_local, primary_remote, secondary_remote]
+lfm2:
+  canon_status: STRONG ACCEPTED DIRECTION
+  teacher_name: LFM2
+  teacher_id: lfm2
+  allowed_lanes: [router_fastpath, toolsmith, memory_budgeting, security_tool_protocol, edge_constrained_execution, long_context_efficiency_support]
+  disallowed_primary_domains: [frontier_math, deep_proofs, large_refactor_coding, novel_research_synthesis]
+  guardrails:
+    - LFM2 cannot remove a required step
+    - LFM2 cannot remove a required safety warning in high-risk cases
+    - LFM2 cannot break grounded final answer requirements
+    - LFM2 cannot override correctness or safety in HIGH risk settings
+domain_defaults:
+  coder: {composition_mode: primary_secondary, default_budget_class: DEEP, output_forms: [CODE_PATCH, TOOL_CALL_STRICT_JSON], lfm2_lane: null}
+  strategist: {composition_mode: primary_secondary, default_budget_class: DEEP, output_forms: [STRUCTURED_PLAN, LONGFORM], lfm2_lane: null}
+  analyst: {composition_mode: primary_secondary, default_budget_class: DEEP, output_forms: [LONGFORM, EVAL_JUDGE], lfm2_lane: null}
+  researcher: {composition_mode: primary_secondary, default_budget_class: LONG_CONTEXT, output_forms: [LONGFORM, RETRIEVAL_QUERY], lfm2_lane: null}
+  critique: {composition_mode: primary_secondary, default_budget_class: DEEP, output_forms: [EVAL_JUDGE, LONGFORM], lfm2_lane: null}
+  conversationalist: {composition_mode: primary_secondary, default_budget_class: STANDARD, output_forms: [SHORT_ANSWER, LONGFORM], lfm2_lane: null}
+  toolsmith: {composition_mode: primary_secondary_lfm2, default_budget_class: STANDARD, output_forms: [TOOL_CALL_STRICT_JSON, STRUCTURED_PLAN], lfm2_lane: toolsmith}
+  security: {composition_mode: primary_secondary_lfm2, default_budget_class: DEEP, output_forms: [EVAL_JUDGE, CODE_PATCH], lfm2_lane: security_tool_protocol}
+  memory-weaver: {composition_mode: primary_secondary_lfm2, default_budget_class: LONG_CONTEXT, output_forms: [STRUCTURED_PLAN, RETRIEVAL_QUERY], lfm2_lane: memory_budgeting}
+  meta-reasoner: {composition_mode: primary_secondary, default_budget_class: DEEP, output_forms: [LONGFORM, EVAL_JUDGE], lfm2_lane: null}
+  router: {composition_mode: primary_secondary_lfm2, default_budget_class: FASTPATH, output_forms: [STRUCTURED_PLAN, TOOL_CALL_STRICT_JSON], lfm2_lane: router_fastpath}
+  linguist: {composition_mode: primary_secondary, default_budget_class: STANDARD, output_forms: [SHORT_ANSWER, LONGFORM], lfm2_lane: null}
+  vision: {composition_mode: primary_secondary, default_budget_class: STANDARD, output_forms: [LONGFORM, RETRIEVAL_QUERY], lfm2_lane: null}
+  audio: {composition_mode: primary_secondary, default_budget_class: STANDARD, output_forms: [SHORT_ANSWER, STRUCTURED_PLAN], lfm2_lane: null}
+  simulation: {composition_mode: primary_secondary, default_budget_class: DEEP, output_forms: [LONGFORM, STRUCTURED_PLAN], lfm2_lane: null}
+  builder: {composition_mode: primary_secondary, default_budget_class: DEEP, output_forms: [CODE_PATCH, STRUCTURED_PLAN], lfm2_lane: null}
+  instructor: {composition_mode: primary_secondary, default_budget_class: STANDARD, output_forms: [LONGFORM, SHORT_ANSWER], lfm2_lane: null}
+  intent-mapper: {composition_mode: primary_secondary, default_budget_class: FASTPATH, output_forms: [SHORT_ANSWER, STRUCTURED_PLAN], lfm2_lane: null}
+  critic-historian: {composition_mode: primary_secondary, default_budget_class: LONG_CONTEXT, output_forms: [LONGFORM, EVAL_JUDGE], lfm2_lane: null}
+  curriculum-architect: {composition_mode: primary_secondary_lfm2, default_budget_class: DEEP, output_forms: [STRUCTURED_PLAN, LONGFORM], lfm2_lane: toolsmith}

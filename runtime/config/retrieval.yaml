@@ -1,0 +1,81 @@
+enabled: true
+policy_mode_default: lexical+graph-memory-temporal-rerank
+stage1:
+  top_k: 12
+  sources:
+    lexical: true
+    graph: true
+    memory: true
+    temporal: true
+    pgvector: false
+  fusion:
+    lexical_weight: 1.0
+    graph_weight: 1.15
+    memory_weight: 0.95
+    temporal_weight: 1.0
+    rrf_k: 60
+stage2:
+  rerank_top_k: 6
+  provider: cross-encoder/ms-marco-MiniLM-L6-v2
+  device: cpu
+  enabled: true
+  fallback_provider: heuristic-cross-encoder
+telemetry:
+  persist_candidate_lists: true
+  persist_latency_delta: true
+  persist_quality_delta: true
+evals:
+  benchmark_cases:
+    - retrieval-groundedness
+    - retrieval-relevance
+    - retrieval-latency
+operationalization:
+  default_top_k: 6
+  benchmark_family_id: retrieval-rerank-operational
+  threshold_set_id: retrieval-rerank-v2026-r1
+  corpora:
+    - corpus_id: brain-first-governance
+      documents:
+        - source: rerank-bench::brain-first
+          title: Brain First Retrieval
+          text: NexusNet is brain-first, preserves retrieval provenance, and keeps reranking as a stage-two top-k operation.
+        - source: rerank-bench::gateway
+          title: Gateway Safety
+          text: Gateway approvals, ask fallback, deny-by-default ambiguity handling, and read-only operator visibility remain local-first.
+        - source: rerank-bench::vision
+          title: Edge Vision
+          text: LFM2.5-VL-450M inspired edge vision keeps structured outputs, grounding boxes, multilingual prompting, and safe-mode suitability visible.
+      query_families:
+        - family_id: provenance
+          label: Provenance And Brain-First
+          cases:
+            - case_id: provenance-brain-first
+              query: brain first retrieval provenance top k reranking
+              expected_sources: [rerank-bench::brain-first]
+              expected_terms: [brain-first, provenance]
+            - case_id: provenance-stage-two
+              query: stage two reranker over top k candidates
+              expected_sources: [rerank-bench::brain-first]
+              expected_terms: [stage-two, top-k]
+        - family_id: gateway-safety
+          label: Gateway Safety
+          cases:
+            - case_id: gateway-approvals
+              query: gateway approvals ask fallback and deny by default
+              expected_sources: [rerank-bench::gateway]
+              expected_terms: [ask fallback, deny-by-default]
+        - family_id: edge-vision
+          label: Edge Vision
+          cases:
+            - case_id: edge-vision-safe-mode
+              query: edge vision safe mode grounding boxes multilingual
+              expected_sources: [rerank-bench::vision]
+              expected_terms: [grounding, multilingual]
+  thresholds:
+    min_case_count: 4
+    min_pass_rate: 0.75
+    min_relevance_delta: 0.0
+    min_groundedness_delta: 0.0
+    min_provenance_delta: 0.0
+    max_latency_delta_ms: 250.0
+    min_provider_coverage: 1.0

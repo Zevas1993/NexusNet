@@ -1,190 +1,243 @@
-# NexusNet v0.5.1a (r22)
+# NexusNet Neural Core AI Brain
 
-**Enterprise-grade AI Orchestration Platform** - Advanced multi-engine inference with intelligent expert routing, temporal knowledge graphs, and federated learning capabilities.
+A modular AI command system for context, planning, execution, documentation, and continuous project evolution.
 
-NexusNet is a production-ready AI platform architected for enterprise AI operations, featuring sophisticated multi-vendor ecosystem integration, advanced knowledge management systems, and comprehensive security frameworks. The platform orchestrates 11 different inference backends with intelligent selection, supports 19 domain-specific expert capsules, and enables scalable deployment with Docker/Kubernetes.
+---
 
-## 🚀 Key Capabilities
+## 🧠 Architecture Overview
 
-### Multi-Engine Inference Orchestra
-- **11 Backend Integrations**: Transformers, VLLM, Ollama, TGI, LMStudio, llama.cpp, TextGenWebUI
-- **Intelligent Engine Selection**: Canarying, latency optimization, session stickiness, automated failover
-- **Hardware-Aware Auto-tuning**: CPU affinity, vRAM management, threading strategies
+![NexusNet Architecture](assets/nexusnet-architecture.png)
 
-### 🤖 Expert System Intelligence
-- **19 Domain Specialists**: Code, Cybersecurity, Finance, Medical, Legal, Product, Design, Research, Translation, Vision, Audio, and more
-- **Ensemble Teacher Models**: 20+ specialized models per expert recommending quality improvements
-- **Dynamic Routing Engine**: Pattern-based + heuristic expert selection with automatic fallback
+---
 
-### 🧠 Advanced Knowledge Management
-- **Temporal Intelligence**: Time-based knowledge graphs with entity resolution and version control
-- **Multi-Modal RAG**: Hybrid retrieval (BM25 + semantic) with multi-stage pipeline, reranking, and entailment verification
-- **PostgreSQL Vector Integration**: Enterprise-grade vector storage with similarity search and metadata management
+NexusNet is the neural wrapper/core.
+Nexus is the surrounding platform and host layer around that core.
 
-### 🔒 Enterprise-Ready Architecture
-- **Production API Framework**: 45,000+ lines FastAPI with session management, admin interfaces, and WebSocket telemetry
-- **Security & Governance**: PII redaction, differential privacy, audit logging, terms-of-use enforcement
-- **Federated Learning**: Secure aggregation with cryptographic integrity and client privacy
-- **Deployment Ready**: Docker orchestration, Kubernetes support, configuration management
+This repository is now organized around that split.
 
-## 📋 Installation
+## What Exists Now
 
-### Quick Start (Linux/macOS)
-```bash
-git clone https://github.com/Zevas1993/NexusNet.git
-cd NexusNet
-bash scripts/bootstrap.sh
-bash scripts/start_api.sh
-# API available at: http://localhost:8000
-# Documentation: http://localhost:8000/docs
+Phase 1 establishes a runnable local-first NexusNet foundation:
+
+- canonical `nexusnet/` package for the neural wrapper/core
+- attached-model adapters and canonical `NexusBrain.generate()` path
+- startup, model-load, inference, and benchmark telemetry logs
+- brain memory cortex for episodic, semantic, benchmark, curriculum, dream, architecture, and optimization records
+- benchmark harness for student-vs-teacher style evaluation scaffolding
+- recursive dreaming engine with shadow-only dream episodes
+- meta-reflection engine over recent traces and critiques
+- curriculum engine with staged assessments and transcript records
+- distillation dataset export from traces, dreams, and curriculum outputs
+
+The host platform around it currently includes:
+
+- canonical `nexus/` package for the platform spine
+- canonical FastAPI app at `nexus.api.app:create_app`
+- compatibility shims in `app/main.py` and `apps/api/main.py`
+- operator kernel for perceive -> plan -> act -> reflect
+- AO and agent registries
+- model registry with capability cards and alias routing
+- runtime registry with mock, Ollama, OpenAI-compatible, LM Studio, vLLM, llama.cpp, and transformers adapters
+- hybrid local storage: SQLite plus filesystem artifacts
+- working, episodic, semantic, and procedural memory
+- retrieval ingest/query with source traceability and optional pgvector augmentation
+- critique, governance, audit, approval, dream-shadow, curriculum, and foundry skeletons
+- CLI and web ops shell surfaces over the same service layer
+
+## Project Split
+
+### Nexus
+The platform and operating layer:
+
+- orchestration around the core
+- agents and AOs
+- tools and permissions
+- memory and retrieval
+- runtime and model management
+- diagnostics, governance, and evaluation
+- local UI, CLI, and API surfaces
+
+### NexusNet
+The neural wrapper/core and cognitive substrate:
+
+- attached model ingestion and normalization
+- canonical wrapped inference path
+- memory formation and compression
+- telemetry and reflection
+- benchmark harness
+- distillation/student scaffolding
+- routed expert architecture
+- specialist capsules
+- distillation and adaptation lineages
+- dream-driven scenario generation
+- promotion-gated native component evolution
+
+`nexusnet/` is now the active home of the brain itself, while also preserving the long-horizon path toward more native internal student components.
+
+## Canonical Entry Points
+
+- API app: `nexus.api.app:create_app`
+- CLI: `nexus`
+- Legacy API shims:
+  - `app/main.py`
+  - `apps/api/main.py`
+
+The canonical API surface for Phase 1 includes:
+
+- `GET /health`
+- `GET /status`
+- `GET /version`
+- `POST /chat`
+- `POST /retrieval/ingest`
+- `POST /retrieval/query`
+- `GET /ops/models`
+- `GET /ops/runtimes`
+- `GET /ops/tools`
+- `GET /ops/traces/{trace_id}`
+- `GET /ops/memory/{session_id}`
+- `GET /ops/experiments`
+- `POST /ops/approvals`
+- `GET /ops/audit`
+- `GET /ops/doctor`
+- `GET /ops/manifest`
+- `GET /ops/brain`
+- `GET /ops/brain/reflection`
+- `POST /ops/brain/dream`
+- `GET /ops/brain/curriculum`
+- `POST /ops/brain/curriculum/assess`
+- `POST /ops/brain/distill-dataset`
+
+## Canonical Package Layout
+
+```text
+nexusnet/
+  core/         NexusBrain and canonical wrapped generate path
+  adapters/     Attached-model adapter contracts and registry bridges
+  memory/       Neural memory cortex and compression helpers
+  telemetry/    Startup/model/inference/benchmark telemetry
+  benchmarks/   Benchmark harness and scored runs
+  dreaming/     Recursive neural dreaming engine
+  reflection/   Meta-reflection and failure analysis
+  curriculum/   Ivy-League-style staged assessment engine
+  distillation/ Distillation dataset export scaffolding
+  schemas.py    Brain contracts and trace schemas
+
+nexus/
+  api/          FastAPI app and route surface
+  cli/          Local CLI entry points
+  operator/     Central execution kernel routing into NexusNet
+  ao/           Assistant operator contracts and registry
+  agents/       Worker contracts and registry
+  models/       Model registry and capability cards
+  runtimes/     Runtime adapter contract and backend registry
+  memory/       Host-side memory services backing NexusNet
+  retrieval/    Ingest, chunk, rank, and source-traceable retrieval
+  critique/     Post-execution critique and failure taxonomy
+  governance/   Audit, approval, promotion, rollback metadata
+  experiments/  Experiment lineage and comparison records
+  curriculum/   Registrar skeleton
+  dreaming/     Shadow-pool dream storage
+  foundry/      Dataset refinery and native-component scaffolding
+  tools/        Tool manifests and permission metadata
+  web/          Web-shell integration points
+  schemas.py    Shared typed contracts
+  services.py   Canonical service bootstrap
 ```
 
-### Windows Installation
+## Storage Model
+
+Primary system-of-record:
+
+- SQLite under `runtime/state/nexus.db`
+
+Filesystem artifacts:
+
+- retrieval ingest artifacts
+- benchmark outputs
+- dream episodes
+- foundry dataset outputs
+- audit exports and rollback bundles
+
+## Local Quickstart
+
+Recommended Python for active development: Python 3.13.
+
 ```powershell
-git clone https://github.com/Zevas1993/NexusNet.git; cd NexusNet
-.\scripts\bootstrap.ps1
-.\scripts\start_api.ps1
-# API available at: http://localhost:8000
+python -m venv .venv
+. .venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+pip install -e .
+nexus doctor
+nexusnet-brain wake
+nexusnet-brain reflect
+nexusnet-brain curriculum-assess --phase foundation --model mock/default
+python -m uvicorn nexus.api.app:app --reload
 ```
 
-### Docker Deployment
-```bash
-# Full containerized deployment
-docker compose up --build
+Then open:
 
-# Production configuration
-docker compose -f docker/compose.full.yml up -d
+- API: `http://localhost:8000`
+- Docs: `http://localhost:8000/docs`
+- UI shell: `http://localhost:8000/ui/`
 
-# API access at: http://localhost:8000
-```
+## Validation
 
-## 🔧 Configuration System
+Phase 1 foundation validation currently includes:
 
-NexusNet features a comprehensive configuration framework with 60+ YAML files enabling extensive customization:
+- canonical API smoke coverage
+- operator, memory, retrieval, and governance tests
+- compatibility-path tests for legacy selectors and shims
 
-### Core Infrastructure
-- **`runtime/config/settings.yaml`**: Engine order, safety policies, feature toggles
-- **`runtime/config/experts.yaml`**: 19 expert configurations with teacher model assignments
-- **`runtime/config/rag.yaml`**: Knowledge graph settings and retrieval parameters
-- **`runtime/models/models.yaml`**: Model registry with solver, challenger, and unified assignments
+Current baseline in this repo:
 
-### Engine Management
-- **`core/engines/selector.py`**: Intelligent backend selection with canarying
-- **`core/engines/registry.py`**: Service discovery and health monitoring
-- **`core/hw/autotune.py`**: Hardware optimization for CPU/GPU configurations
+- `30 passed, 1 skipped` with Python `3.13.2`
 
-## 📚 API Reference
+## Assimilated Design Patterns
 
-### Core Endpoints
-- `GET /health` - System health check and status
-- `POST /chat` - Main inference with expert routing
-- `GET /admin/experts` - Available expert capsules and status
-- `POST /admin/toggle` - Feature and expert enable/disable
-- `GET /admin/config` - Runtime configuration view
-- `POST /temporal/ingest` - Knowledge graph data ingestion
-- `POST /temporal/query` - Time-based knowledge retrieval
-- `POST /qes/telemetry` - Performance and quality metrics
-- `POST /qes/evolve` - Dynamic system improvement requests
+The current foundation incorporates several useful patterns extracted from external CLI-agent research repos:
 
-### Advanced Capabilities
-- **Session Management**: Multi-user chat sessions with memory persistence
-- **WebSocket Telemetry**: Real-time event streaming and monitoring
-- **Federated Learning**: `POST /fl/register`, `POST /fl/update` for distributed training
-- **Configuration Hot-Reloading**: Runtime updates without service restart
-- **Model Auto-Download**: Intelligent model caching and optimization
+- doctor/preflight diagnostics instead of silent failure
+- explicit permission modes and tool authorization reporting
+- config precedence across user and workspace scopes
+- workspace manifest generation for ops visibility
+- model alias and provider-prefix resolution
+- shadow-only dreaming and improvement paths gated behind governance
+- compatibility-preserving migration instead of flattening the runtime stack
 
-## 🏗️ System Architecture
+## Phase Classification
 
-### Orchestration Layer
-- **Multi-vendor Integration**: Avoids single-platform dependency through comprehensive API abstractions
-- **Intelligent Selection**: Fault-tolerant orchestration with performance monitoring and adaptive routing
-- **Memory Management**: Sophisticated context preservation across multiple interaction modes
+Ship now:
 
-### Knowledge Infrastructure
-- **Temporal Processing**: Advanced time-series intelligence enabling contextual understanding
-- **Vector Operations**: Enterprise-standard retrieval mechanisms supporting complex similarity searches
-- **Adaptive Reasoning**: Dynamic model reconfiguration responding to contextual requirements and user needs
+- NexusNet brain wrapper
+- attached-model adapters
+- canonical generate path
+- telemetry logs
+- benchmark harness
+- operator kernel
+- registries
+- runtime abstraction
+- memory base
+- retrieval base
+- critique and audit
+- approval ledger
+- API, CLI, and web-shell surfaces
 
-### Safety and Reliability
-- **Privacy Protection**: Comprehensive data sanitization and intelligent filtering mechanisms
-- **Performance Optimization**: Scalable infrastructure designed for high-throughput computational demands
-- **Enterprise Compliance**: Robust governance frameworks ensuring operational integrity and regulatory alignment
+Prototype next:
 
-### Deployment and Compatibility
-- **Containerization**: Streamlined environmental configuration leveraging container technologies
-- **Extensibility**: Flexible architecture supporting modular component expansion
-- **Infrastructure Adaptability**: Seamless integration across diverse technological ecosystems
+- runtime autotuner promotion flow
+- consequence tracing
+- specialist student checkpoints
+- dynamic quantization policy learning
 
-## 🚀 Advanced Features
+Research track:
 
-### Federated Learning Engine
-Empowering privacy-preserving collaborative intelligence through innovative distributed computation techniques.
+- learned router
+- native routed backbone
+- expert capsule training lineages
+- multimodal native substrate
 
-### Expert Enhancement Mechanism
-Dynamic system capable of autonomously optimizing performance through intelligent model evolution strategies.
+Vision only:
 
-### Temporal Intelligence Framework
-Groundbreaking approach to historical context representation, enabling sophisticated temporal reasoning capabilities.
-
-### Neural Optimization Suite
-Intelligent configuration management and automated computational resource allocation system.
-
-## 🔐 Security and Compliance
-
-### Privacy-First Design
-- Advanced PII detection and redaction algorithms
-- Differential privacy noise application for federated computations
-- Zero-knowledge proof implementations protecting data integrity
-- Comprehensive audit trails tracking system interactions
-
-### Regulatory Compliance
-- GDPR-compliant data handling mechanisms
-- HIPAA-compliant sensitive information processing
-- Enterprise-grade security protocol adherence
-
-## 📊 Performance Metrics
-
-### Architecture Highlights
-- **Multilingual Proficiency**: Sophisticated language translation capabilities
-- **Broad Expertise**: Comprehensive coverage across 19 specialized domains
-- **Computational Efficiency**: Optimized multi-core thread utilization
-- **Scalable Model Support**: Extensive language model ecosystem integration
-- **Real-Time Intelligence**: Dynamic, context-aware knowledge processing capabilities
-
-### Operational Readiness
-- **Complete Production Infrastructure**: Fully configured deployment environment
-- **Automated Model Retrieval**: Intelligent caching mechanisms
-- **Intelligent Hardware Optimization**: Adaptive system resource configuration
-- **Comprehensive Monitoring**: Real-time performance analytics
-
-### Enterprise Integration
-- **Unified Management Dashboards**: Streamlined administrative interfaces
-- **Standardized Security Protocols**: Robust authentication and encryption strategies
-- **Modular Extensibility**: Flexible plugin architecture enabling seamless third-party integrations
-
-### Community and Accessibility
-- **Transparent Documentation**: Extensive technical resources
-- **Open-Source Commitment**: MIT license supporting commercial and community initiatives
-- **Platform Compliance**: Cross-platform deployment capabilities
-
----
-
-**NexusNet represents a groundbreaking enterprise AI infrastructure platform, meticulously engineered to deliver unparalleled sophistication and commercial-grade reliability.**
-
----
-
-## Licensing and Distribution
-- **MIT License**: Dual-licensing for open-source and commercial use
-- **Multi-Platform**: OS-agnostic with hardware optimization
-- **Community Repository**: Active GitHub presence
-
----
-
-**Repository Metadata**
-- **Organization**: CAGR Solutions
-- **Repository**: NexusNet v0.5.1a (r22)
-- **Platform**: GitHub
-- **Versioning**: SemVer 0.5.1alpha
-- **Documentation**: NexusNet Documentation HUB
-- **CI/CD Status**: Pre-configured Actions
-- **Release Cycle**: r21 → r22 development phase
+- unsandboxed self-rewrite
+- unbenchmarked native superiority claims
+- frontier-scale local-from-scratch training assumptions

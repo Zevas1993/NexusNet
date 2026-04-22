@@ -1,0 +1,60 @@
+[
+  {
+    "mode_id": "engineering",
+    "label": "Engineering Mode",
+    "description": "Engineering-grade schematic view with explicit buses, labels, and operator clarity.",
+    "status_label": "LOCKED CANON",
+    "palette": {
+      "bg": "#0d1321",
+      "panel": "#131c2f",
+      "ink": "#f3f7ff",
+      "muted": "#9aa7c2",
+      "grid": "#243252",
+      "core": "#6fe7ff",
+      "capsule": "#7da0ff",
+      "critique": "#ff6f91",
+      "dream": "#7affc8",
+      "consequence": "#ffd166",
+      "warning": "#ff9f43",
+      "safe": "#8bd3dd"
+    },
+    "animation_profile": {
+      "pulse_speed": 0.85,
+      "glow_strength": 0.28,
+      "parallax_depth": 0.12,
+      "route_flow": true
+    },
+    "preferred_renderer": "svg-canvas",
+    "allow_threejs_enhancement": false,
+    "label_density": "high"
+  },
+  {
+    "mode_id": "cinematic",
+    "label": "Cinematic Mode",
+    "description": "Cinematic inspection mode with deeper glow, motion, and parallax from the same canonical topology.",
+    "status_label": "STRONG ACCEPTED DIRECTION",
+    "palette": {
+      "bg": "#05070e",
+      "panel": "#0d1020",
+      "ink": "#f8fbff",
+      "muted": "#95a3c0",
+      "grid": "#18223f",
+      "core": "#67f0ff",
+      "capsule": "#9a7dff",
+      "critique": "#ff5370",
+      "dream": "#52ffa8",
+      "consequence": "#ffcf6e",
+      "warning": "#ff8a3d",
+      "safe": "#8af5ff"
+    },
+    "animation_profile": {
+      "pulse_speed": 1.4,
+      "glow_strength": 0.65,
+      "parallax_depth": 0.36,
+      "route_flow": true
+    },
+    "preferred_renderer": "svg-canvas",
+    "allow_threejs_enhancement": true,
+    "label_density": "medium"
+  }
+]

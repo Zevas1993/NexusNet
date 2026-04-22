@@ -1,0 +1,86 @@
+schema_version: 1
+canon_status: LOCKED CANON
+migration_notes:
+  - LOCKED CANON: teacher hardening records use additive JSON-compatible schema evolution.
+  - LOCKED CANON: auto-create startup remains valid; manifest-backed compatibility makes versions inspectable.
+families:
+  teacher-scorecard:
+    version: 1
+    min_reader_version: 1
+    current_writer_version: 1
+    migration_policy: additive-json
+    compatible_readers: [1]
+    notes:
+      - weighted benchmark record for a single expert benchmark family run
+  teacher-disagreement-artifact:
+    version: 1
+    min_reader_version: 1
+    current_writer_version: 1
+    migration_policy: additive-json
+    compatible_readers: [1]
+    notes:
+      - primary vs secondary disagreement record with critique arbitration and bounded LFM2 flags
+  teacher-evidence-bundle:
+    version: 1
+    min_reader_version: 1
+    current_writer_version: 1
+    migration_policy: additive-json
+    compatible_readers: [1]
+    notes:
+      - aggregate evidence bundle linking scorecards, disagreement artifacts, and lineage
+  takeover-scorecard:
+    version: 1
+    min_reader_version: 1
+    current_writer_version: 1
+    migration_policy: additive-json
+    compatible_readers: [1]
+    notes:
+      - native takeover scoring snapshot for one benchmark/export run
+  retirement-shadow-record:
+    version: 1
+    min_reader_version: 1
+    current_writer_version: 1
+    migration_policy: additive-json
+    compatible_readers: [1]
+    notes:
+      - inspectable teacher retirement shadow governance state
+  teacher-trend-scorecard:
+    version: 1
+    min_reader_version: 1
+    current_writer_version: 1
+    migration_policy: additive-json
+    compatible_readers: [1]
+    notes:
+      - multi-run trend summary for benchmarked teacher evidence over time
+  takeover-trend-report:
+    version: 1
+    min_reader_version: 1
+    current_writer_version: 1
+    migration_policy: additive-json
+    compatible_readers: [1]
+    notes:
+      - repeated native takeover trend analysis and stability gate
+  teacher-benchmark-fleet-summary:
+    version: 1
+    min_reader_version: 1
+    current_writer_version: 1
+    migration_policy: additive-json
+    compatible_readers: [1]
+    notes:
+      - fleet-level governance summary across benchmark families, windows, and routing dimensions
+  teacher-cohort-scorecard:
+    version: 1
+    min_reader_version: 1
+    current_writer_version: 1
+    migration_policy: additive-json
+    compatible_readers: [1]
+    notes:
+      - cohort-level teacher/native evidence scorecard over benchmark fleets and governance windows
+  replacement-readiness-report:
+    version: 1
+    min_reader_version: 1
+    current_writer_version: 1
+    migration_policy: additive-json
+    compatible_readers: [1]
+    notes:
+      - native replacement governance report requiring subject, fleet, and cohort evidence together

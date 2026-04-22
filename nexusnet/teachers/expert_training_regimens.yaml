@@ -1,0 +1,44 @@
+schema_version: 1
+canon_status: LOCKED CANON
+migration_notes:
+  - Every expert capsule training path includes teacher-guided distillation, dual-teacher contrast, skeptical examination, and Dream / Self-Evolution.
+  - Teacher retirement stays shadow-only until surpass evidence, external evaluation, rollback readiness, and governance sign-off exist.
+stage_definitions:
+  stage_1_domain_professor_distillation:
+    label: "Stage 1: Domain Professor Distillation"
+    teacher_scope: primary_teacher_only
+    objectives: [establish field instincts, collect clean domain traces]
+  stage_2_dual_teacher_contrast:
+    label: "Stage 2: Dual-Teacher Contrast"
+    teacher_scope: primary_and_secondary
+    objectives: [primary + secondary on same task families, capture disagreement traces, store arbitration-needed cases]
+  stage_3_skeptical_examination:
+    label: "Stage 3: Skeptical Examination"
+    teacher_scope: critique_arbiter
+    objectives: [Critique Expert arbitrates]
+    merge_decisions: [SELECT_BEST, PATCH_DOMAIN_WITH_LFM2_EDITS_THEN_VERIFY, DUAL_PASS_TOOL_THEN_FINAL]
+  stage_4_dream_self_evolution:
+    label: "Stage 4: Dream / Self-Evolution"
+    teacher_scope: dream_and_external_evaluation
+    objectives: [dream scenarios, adversarial edge cases, consequence feedback, external evaluation before promotion, teacher retirement only after surpass evidence and rollback readiness]
+expert_regimens:
+  "Coder Expert": {subject: coder, canon_status: LOCKED CANON, stages: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast, stage_3_skeptical_examination, stage_4_dream_self_evolution], benchmark_families: [repo navigation, multi-file patching, tests green after edits, terminal recovery, codebase-scale context use]}
+  "Strategist Expert": {subject: strategist, canon_status: LOCKED CANON, stages: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast, stage_3_skeptical_examination, stage_4_dream_self_evolution], benchmark_families: [task decomposition, objective trees, dependency planning, long-horizon planning consistency]}
+  "Analyst Expert": {subject: analyst, canon_status: LOCKED CANON, stages: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast, stage_3_skeptical_examination, stage_4_dream_self_evolution], benchmark_families: [evidence weighting, diagnosis, structured comparison, benchmark-grade evaluation]}
+  "Researcher Expert": {subject: researcher, canon_status: LOCKED CANON, stages: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast, stage_3_skeptical_examination, stage_4_dream_self_evolution], benchmark_families: [multi-source synthesis, contradiction handling, document reasoning, long-context study tasks]}
+  "Critique Expert": {subject: critique, canon_status: LOCKED CANON, stages: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast, stage_3_skeptical_examination, stage_4_dream_self_evolution], benchmark_families: [adversarial judging, rubric scoring, promotion gate review, rollback criticism]}
+  "Conversationalist Expert": {subject: conversationalist, canon_status: LOCKED CANON, stages: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast, stage_3_skeptical_examination, stage_4_dream_self_evolution], benchmark_families: [tone control, dialog continuity, persona stability, helpfulness without drift]}
+  "Toolsmith Expert": {subject: toolsmith, canon_status: LOCKED CANON, stages: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast, stage_3_skeptical_examination, stage_4_dream_self_evolution], benchmark_families: [strict JSON / tool schemas, tool chain recovery, sandbox-safe execution, API/tool invocation discipline]}
+  "Security Expert": {subject: security, canon_status: LOCKED CANON, stages: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast, stage_3_skeptical_examination, stage_4_dream_self_evolution], benchmark_families: [misuse-case generation, safe tool use, secure patching, exploit-to-mitigation reasoning]}
+  "Memory Weaver Expert": {subject: memory-weaver, canon_status: LOCKED CANON, stages: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast, stage_3_skeptical_examination, stage_4_dream_self_evolution], benchmark_families: [episodic/semantic linkage, compression, retrieval budgeting, decay policy correctness, memory-safe context stitching]}
+  "Meta Reasoner Expert": {subject: meta-reasoner, canon_status: LOCKED CANON, stages: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast, stage_3_skeptical_examination, stage_4_dream_self_evolution], benchmark_families: [self-reflection, multi-expert synthesis, conflict arbitration, policy-aware reasoning]}
+  "Router Expert": {subject: router, canon_status: LOCKED CANON, stages: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast, stage_3_skeptical_examination, stage_4_dream_self_evolution], benchmark_families: [route selection, budget/risk/output typing, fallback choice, long-context routing, capsule gating]}
+  "Linguist Expert": {subject: linguist, canon_status: LOCKED CANON, stages: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast, stage_3_skeptical_examination, stage_4_dream_self_evolution], benchmark_families: [multilingual generation, translation nuance, dialect/register control, cross-lingual paraphrase]}
+  "Vision Expert": {subject: vision, canon_status: LOCKED CANON, stages: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast, stage_3_skeptical_examination, stage_4_dream_self_evolution], benchmark_families: [OCR/layout grounding, chart/UI/screenshot reasoning, image task grounding]}
+  "Audio Expert": {subject: audio, canon_status: LOCKED CANON, stages: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast, stage_3_skeptical_examination, stage_4_dream_self_evolution], benchmark_families: [ASR, spoken instruction grounding, audio-to-task routing, timestamp sensitivity]}
+  "Simulation Expert": {subject: simulation, canon_status: LOCKED CANON, stages: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast, stage_3_skeptical_examination, stage_4_dream_self_evolution], benchmark_families: [world-model rollouts, counterfactuals, planning under uncertainty, dream scenario generation]}
+  "Builder Expert": {subject: builder, canon_status: LOCKED CANON, stages: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast, stage_3_skeptical_examination, stage_4_dream_self_evolution], benchmark_families: [feature assembly, API/UI scaffolding, build-debug-rebuild loops, artifact validation]}
+  "Instructor Expert": {subject: instructor, canon_status: LOCKED CANON, stages: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast, stage_3_skeptical_examination, stage_4_dream_self_evolution], benchmark_families: [Socratic questioning, scaffolding, remediation, mastery checks, lesson pacing]}
+  "Intent Mapper Expert": {subject: intent-mapper, canon_status: LOCKED CANON, stages: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast, stage_3_skeptical_examination, stage_4_dream_self_evolution], benchmark_families: [intent classification, ambiguity reduction, risk/domain typing, plan normalization]}
+  "Critic Historian Expert": {subject: critic-historian, canon_status: LOCKED CANON, stages: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast, stage_3_skeptical_examination, stage_4_dream_self_evolution], benchmark_families: [chronology repair, source conflict resolution, temporal consistency, evidence-weighted historical critique]}
+  "Curriculum Architect": {subject: curriculum-architect, canon_status: STRONG ACCEPTED DIRECTION, auxiliary: true, stages: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast, stage_3_skeptical_examination, stage_4_dream_self_evolution], benchmark_families: [synthetic task generation, dynamic difficulty escalation, tool-aware curriculum generation, co-evolution metrics, benchmark family synthesis]}

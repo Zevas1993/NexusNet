@@ -1,0 +1,402 @@
+{
+  "coder": {
+    "subject": "coder",
+    "display_name": "Coder Expert",
+    "topology_id": "coder-lattice",
+    "canon_status": "LOCKED CANON",
+    "auxiliary": false,
+    "authoritative_core_roster": true,
+    "geometry_kind": "lattice",
+    "palette_key": "cobalt",
+    "layer_count": 4,
+    "neural_node_budget": 22,
+    "motif_labels": [
+      "patch-bus",
+      "parser-fork",
+      "test-lane"
+    ],
+    "role_hint": "Multi-file code synthesis and repair.",
+    "description": "Rectilinear coding lattice with patch buses and validation forks.",
+    "inspect": {}
+  },
+  "strategist": {
+    "subject": "strategist",
+    "display_name": "Strategist Expert",
+    "topology_id": "strategist-tree",
+    "canon_status": "LOCKED CANON",
+    "auxiliary": false,
+    "authoritative_core_roster": true,
+    "geometry_kind": "branching-tree",
+    "palette_key": "amber",
+    "layer_count": 4,
+    "neural_node_budget": 18,
+    "motif_labels": [
+      "objective-tree",
+      "plan-fork",
+      "dependency-arc"
+    ],
+    "role_hint": "Long-horizon planning and objective decomposition.",
+    "description": "Branching plan canopy with weighted objective forks.",
+    "inspect": {}
+  },
+  "analyst": {
+    "subject": "analyst",
+    "display_name": "Analyst Expert",
+    "topology_id": "analyst-comparator",
+    "canon_status": "LOCKED CANON",
+    "auxiliary": false,
+    "authoritative_core_roster": true,
+    "geometry_kind": "comparator",
+    "palette_key": "steel",
+    "layer_count": 3,
+    "neural_node_budget": 16,
+    "motif_labels": [
+      "evidence-rack",
+      "comparator-lobe",
+      "metric-bridge"
+    ],
+    "role_hint": "Evidence weighting and structured comparison.",
+    "description": "Dual comparator lobes linked by evidence bridges.",
+    "inspect": {}
+  },
+  "researcher": {
+    "subject": "researcher",
+    "display_name": "Researcher Expert",
+    "topology_id": "researcher-web",
+    "canon_status": "LOCKED CANON",
+    "auxiliary": false,
+    "authoritative_core_roster": true,
+    "geometry_kind": "citation-web",
+    "palette_key": "jade",
+    "layer_count": 4,
+    "neural_node_budget": 20,
+    "motif_labels": [
+      "citation-web",
+      "contradiction-arc",
+      "source-ring"
+    ],
+    "role_hint": "Multi-source synthesis and contradiction handling.",
+    "description": "Citation web with contradiction arcs and source-weighting rings.",
+    "inspect": {}
+  },
+  "critique": {
+    "subject": "critique",
+    "display_name": "Critique Expert",
+    "topology_id": "critique-duality",
+    "canon_status": "LOCKED CANON",
+    "auxiliary": false,
+    "authoritative_core_roster": true,
+    "geometry_kind": "dual-hemisphere",
+    "palette_key": "crimson",
+    "layer_count": 4,
+    "neural_node_budget": 18,
+    "motif_labels": [
+      "skeptic-ring",
+      "arbitration-core",
+      "challenge-lane"
+    ],
+    "role_hint": "Arbiter, examiner, and skeptical safety gate.",
+    "description": "Opposed hemispheres joined by an arbitration core and challenge ring.",
+    "inspect": {}
+  },
+  "conversationalist": {
+    "subject": "conversationalist",
+    "display_name": "Conversationalist Expert",
+    "topology_id": "conversation-braid",
+    "canon_status": "LOCKED CANON",
+    "auxiliary": false,
+    "authoritative_core_roster": true,
+    "geometry_kind": "braid",
+    "palette_key": "rose",
+    "layer_count": 3,
+    "neural_node_budget": 16,
+    "motif_labels": [
+      "dialog-braid",
+      "tone-loop",
+      "continuity-ribbon"
+    ],
+    "role_hint": "Tone, continuity, and dialog shaping.",
+    "description": "Braided dialog loops with continuity ribbons.",
+    "inspect": {}
+  },
+  "toolsmith": {
+    "subject": "toolsmith",
+    "display_name": "Toolsmith Expert",
+    "topology_id": "toolsmith-switchboard",
+    "canon_status": "LOCKED CANON",
+    "auxiliary": false,
+    "authoritative_core_roster": true,
+    "geometry_kind": "switchboard",
+    "palette_key": "indigo",
+    "layer_count": 4,
+    "neural_node_budget": 18,
+    "motif_labels": [
+      "port-grid",
+      "schema-switch",
+      "recovery-line"
+    ],
+    "role_hint": "Tool schema discipline and chain recovery.",
+    "description": "Port-switchboard mesh for schema-locked tool orchestration.",
+    "inspect": {}
+  },
+  "security": {
+    "subject": "security",
+    "display_name": "Security Expert",
+    "topology_id": "security-shield",
+    "canon_status": "LOCKED CANON",
+    "auxiliary": false,
+    "authoritative_core_roster": true,
+    "geometry_kind": "shield-mesh",
+    "palette_key": "ember",
+    "layer_count": 4,
+    "neural_node_budget": 18,
+    "motif_labels": [
+      "shield-ring",
+      "breach-sentry",
+      "mitigation-lane"
+    ],
+    "role_hint": "Misuse analysis and secure patching.",
+    "description": "Shield mesh with breach sentries and mitigation lanes.",
+    "inspect": {}
+  },
+  "memory-weaver": {
+    "subject": "memory-weaver",
+    "display_name": "Memory Weaver Expert",
+    "topology_id": "memory-braid",
+    "canon_status": "LOCKED CANON",
+    "auxiliary": false,
+    "authoritative_core_roster": true,
+    "geometry_kind": "archive-braid",
+    "palette_key": "teal",
+    "layer_count": 4,
+    "neural_node_budget": 20,
+    "motif_labels": [
+      "episodic-thread",
+      "semantic-loom",
+      "retrieval-knot"
+    ],
+    "role_hint": "Multi-plane memory weaving and budgeting.",
+    "description": "Braided archive strands bridging episodic, semantic, and temporal memory.",
+    "inspect": {}
+  },
+  "meta-reasoner": {
+    "subject": "meta-reasoner",
+    "display_name": "Meta Reasoner Expert",
+    "topology_id": "meta-synthesis",
+    "canon_status": "LOCKED CANON",
+    "auxiliary": false,
+    "authoritative_core_roster": true,
+    "geometry_kind": "supervisory-halo",
+    "palette_key": "gold",
+    "layer_count": 4,
+    "neural_node_budget": 18,
+    "motif_labels": [
+      "synthesis-halo",
+      "self-check",
+      "merge-gate"
+    ],
+    "role_hint": "Multi-expert synthesis and reflective oversight.",
+    "description": "Mirrored synthesis lobes under a supervisory halo.",
+    "inspect": {}
+  },
+  "router": {
+    "subject": "router",
+    "display_name": "Router Expert",
+    "topology_id": "router-fabric",
+    "canon_status": "LOCKED CANON",
+    "auxiliary": false,
+    "authoritative_core_roster": true,
+    "geometry_kind": "router-fabric",
+    "palette_key": "violet",
+    "layer_count": 3,
+    "neural_node_budget": 16,
+    "motif_labels": [
+      "switch-fabric",
+      "budget-gate",
+      "fallback-spine"
+    ],
+    "role_hint": "Budget, routing, and fallback policy.",
+    "description": "Hub-and-spoke routing fabric with fallback spines.",
+    "inspect": {}
+  },
+  "linguist": {
+    "subject": "linguist",
+    "display_name": "Linguist Expert",
+    "topology_id": "linguist-helix",
+    "canon_status": "LOCKED CANON",
+    "auxiliary": false,
+    "authoritative_core_roster": true,
+    "geometry_kind": "syntax-helix",
+    "palette_key": "azure",
+    "layer_count": 3,
+    "neural_node_budget": 16,
+    "motif_labels": [
+      "syntax-helix",
+      "dialect-branch",
+      "paraphrase-lane"
+    ],
+    "role_hint": "Multilingual generation and register control.",
+    "description": "Syntax helix with dialect branches and paraphrase lanes.",
+    "inspect": {}
+  },
+  "vision": {
+    "subject": "vision",
+    "display_name": "Vision Expert",
+    "topology_id": "vision-retina",
+    "canon_status": "LOCKED CANON",
+    "auxiliary": false,
+    "authoritative_core_roster": true,
+    "geometry_kind": "feature-pyramid",
+    "palette_key": "cyan",
+    "layer_count": 4,
+    "neural_node_budget": 18,
+    "motif_labels": [
+      "retina-grid",
+      "layout-pyramid",
+      "grounding-axis"
+    ],
+    "role_hint": "OCR, layout, and image grounding.",
+    "description": "Retina grid feeding a feature pyramid and grounding axis.",
+    "inspect": {}
+  },
+  "audio": {
+    "subject": "audio",
+    "display_name": "Audio Expert",
+    "topology_id": "audio-wave",
+    "canon_status": "LOCKED CANON",
+    "auxiliary": false,
+    "authoritative_core_roster": true,
+    "geometry_kind": "waveform-spiral",
+    "palette_key": "coral",
+    "layer_count": 3,
+    "neural_node_budget": 16,
+    "motif_labels": [
+      "wave-spiral",
+      "timestamp-ring",
+      "asr-lane"
+    ],
+    "role_hint": "ASR, spoken instruction grounding, and timing.",
+    "description": "Waveform spiral wrapped in timestamp sensitivity rings.",
+    "inspect": {}
+  },
+  "simulation": {
+    "subject": "simulation",
+    "display_name": "Simulation Expert",
+    "topology_id": "simulation-rollout",
+    "canon_status": "LOCKED CANON",
+    "auxiliary": false,
+    "authoritative_core_roster": true,
+    "geometry_kind": "rollout-orbits",
+    "palette_key": "lime",
+    "layer_count": 4,
+    "neural_node_budget": 20,
+    "motif_labels": [
+      "rollout-orbit",
+      "counterfactual-arc",
+      "uncertainty-gate"
+    ],
+    "role_hint": "Rollouts, counterfactuals, and dream scenarios.",
+    "description": "Orbiting rollout lanes with counterfactual branches.",
+    "inspect": {}
+  },
+  "builder": {
+    "subject": "builder",
+    "display_name": "Builder Expert",
+    "topology_id": "builder-scaffold",
+    "canon_status": "LOCKED CANON",
+    "auxiliary": false,
+    "authoritative_core_roster": true,
+    "geometry_kind": "scaffold-lattice",
+    "palette_key": "ochre",
+    "layer_count": 4,
+    "neural_node_budget": 18,
+    "motif_labels": [
+      "scaffold-rail",
+      "assembly-node",
+      "rebuild-loop"
+    ],
+    "role_hint": "Feature assembly and artifact validation.",
+    "description": "Structural scaffold with assembly rails and rebuild loops.",
+    "inspect": {}
+  },
+  "instructor": {
+    "subject": "instructor",
+    "display_name": "Instructor Expert",
+    "topology_id": "instructor-ladder",
+    "canon_status": "LOCKED CANON",
+    "auxiliary": false,
+    "authoritative_core_roster": true,
+    "geometry_kind": "ladder-checkpoints",
+    "palette_key": "mint",
+    "layer_count": 4,
+    "neural_node_budget": 18,
+    "motif_labels": [
+      "lesson-ladder",
+      "mastery-check",
+      "remediation-rung"
+    ],
+    "role_hint": "Scaffolding, questioning, and mastery checks.",
+    "description": "Pedagogical ladder with checkpoint rungs and remediation branches.",
+    "inspect": {}
+  },
+  "intent-mapper": {
+    "subject": "intent-mapper",
+    "display_name": "Intent Mapper Expert",
+    "topology_id": "intent-funnel",
+    "canon_status": "LOCKED CANON",
+    "auxiliary": false,
+    "authoritative_core_roster": true,
+    "geometry_kind": "funnel-cones",
+    "palette_key": "plum",
+    "layer_count": 3,
+    "neural_node_budget": 16,
+    "motif_labels": [
+      "intent-funnel",
+      "ambiguity-prism",
+      "risk-gate"
+    ],
+    "role_hint": "Intent classification and ambiguity reduction.",
+    "description": "Funnel classifier cones with ambiguity prisms and risk gates.",
+    "inspect": {}
+  },
+  "critic-historian": {
+    "subject": "critic-historian",
+    "display_name": "Critic Historian Expert",
+    "topology_id": "historian-chronology",
+    "canon_status": "LOCKED CANON",
+    "auxiliary": false,
+    "authoritative_core_roster": true,
+    "geometry_kind": "chronology-rings",
+    "palette_key": "sepia",
+    "layer_count": 4,
+    "neural_node_budget": 18,
+    "motif_labels": [
+      "chronology-ring",
+      "source-conflict-bridge",
+      "temporal-axis"
+    ],
+    "role_hint": "Chronology repair and evidence-weighted historical critique.",
+    "description": "Chronology rings crossed by source-conflict bridges.",
+    "inspect": {}
+  },
+  "curriculum-architect": {
+    "subject": "curriculum-architect",
+    "display_name": "Curriculum Architect",
+    "topology_id": "curriculum-synthesis",
+    "canon_status": "STRONG ACCEPTED DIRECTION",
+    "auxiliary": true,
+    "authoritative_core_roster": false,
+    "geometry_kind": "synthesis-grid",
+    "palette_key": "silver",
+    "layer_count": 4,
+    "neural_node_budget": 16,
+    "motif_labels": [
+      "curriculum-grid",
+      "difficulty-wave",
+      "benchmark-forge"
+    ],
+    "role_hint": "Auxiliary curriculum synthesis path.",
+    "description": "Auxiliary curriculum forge, not part of the authoritative core 19.",
+    "inspect": {}
+  }
+}

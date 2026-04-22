@@ -1,0 +1,45 @@
+recipe_id: ao-deep-research
+kind: recipe
+label: AO Deep Research
+description: Local-first AO playbook for multi-hop retrieval, citation-heavy synthesis, and governed review.
+version: "1.0"
+ao_targets:
+  - ResearchAO
+skill_ids:
+  - retrieval-audit
+gateway_policy: ask
+approved_tool_sets:
+  - readonly-research
+roots_scope:
+  - "{project_root}"
+tags:
+  - research
+  - citations
+  - local-first
+parameters:
+  - name: topic
+    type: string
+    required: true
+    description: Topic or question the AO should investigate.
+  - name: depth
+    type: integer
+    required: false
+    default: 3
+    description: Maximum synthesis depth before the critique/review step.
+steps:
+  - step_id: retrieve
+    action: skill-bundle
+    description: Retrieve lexical, graph, memory, and temporal candidates.
+    skill_ids:
+      - retrieval-audit
+    approved_tools:
+      - retrieval.query
+  - step_id: synthesize
+    action: ao-dispatch
+    description: Route the gathered material through the AO synthesis pass.
+    ao_id: ResearchAO
+  - step_id: review
+    action: review
+    description: Require critique and evaluator review before operator handoff.
+    metadata:
+      evaluator: EvalsAO

@@ -6,14 +6,22 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nexusnet"
 version = "0.5.1a"
-description = "NexusNet Neural Core AI Brain"
+description = "Nexus platform foundation with NexusNet native-core research scaffolding"
 authors = [{name="NexusNet Team"}]
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
-dependencies = []
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.29",
+  "pydantic>=2.7",
+  "requests>=2.31",
+  "PyYAML>=6.0",
+]
 
 [project.scripts]
+nexus = "nexus.cli.main:main"
+nexusnet-brain = "nexusnet.cli.brain:main"
 nexusnet-api = "nexusnet.cli.api:main"
 nexusnet-bootstrap = "nexusnet.cli.bootstrap:main"
 nexusnet-qes = "nexusnet.cli.qes:main"

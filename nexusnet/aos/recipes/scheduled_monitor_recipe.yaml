@@ -1,0 +1,37 @@
+recipe_id: ao-scheduled-monitor
+kind: recipe
+label: AO Scheduled Monitor
+description: Schedule-compatible monitoring recipe for persistent operative workflows with traceability and approvals.
+version: "1.0"
+ao_targets:
+  - MonitorAO
+skill_ids:
+  - policy-approval-gate
+gateway_policy: allow-if-approved
+approved_tool_sets:
+  - scheduled-monitor
+roots_scope:
+  - "{project_root}/runtime"
+tags:
+  - scheduled
+  - monitoring
+  - governance
+schedule:
+  cadence: every-30m
+  timezone: America/New_York
+  persistent_state: true
+steps:
+  - step_id: collect
+    action: tool-bundle
+    description: Collect runtime and retrieval posture data.
+    approved_tools:
+      - retrieval.query
+      - governance.audit
+  - step_id: summarize
+    action: ao-dispatch
+    description: Summarize the current state through the monitoring AO.
+    ao_id: MonitorAO
+  - step_id: gate
+    action: gateway-policy
+    description: Route any high-risk action through the approval gate.
+    gateway_policy: allow-if-approved

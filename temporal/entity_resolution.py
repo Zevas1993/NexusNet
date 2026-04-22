@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 import re
+from typing import Any, Dict, List, Tuple
 
 ALIASES = {
     "openai": {"oai","open ai"},
@@ -111,3 +112,4 @@ def get_entity_statistics() -> Dict[str, Any]:
         "canonical_entities": total_canonical_entities,
         "total_variants": total_variants,
         "entities": list(ALIASES.keys())
+    }

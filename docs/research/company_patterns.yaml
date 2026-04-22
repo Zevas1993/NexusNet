@@ -1,0 +1,268 @@
+patterns:
+  cross_encoder_reranking:
+    status: ship-now
+    built: second-stage rerankers over bounded retrieval candidates
+    problem: noisy first-stage retrieval
+    mechanism: pairwise query-document scoring over top-k
+    steal:
+      - retrieve-then-rerank
+      - top-k bounded reranking
+      - rerank score provenance
+      - benchmark delta vs non-reranked retrieval
+    refuse:
+      - first-stage reranker takeover
+      - hidden latency costs
+    gates:
+      - retrieval benchmark delta
+      - latency delta
+      - groundedness delta
+      - wrapper inspection visibility
+    sources:
+      - https://sbert.net/docs/cross_encoder/training_overview.html
+  openclaw_runtime_patterns:
+    status: ship-now
+    built: local-first skills and approvals driven execution patterns
+    problem: unsafe or opaque tool-heavy execution
+    mechanism: local gateway, skill packages, scoped visibility, approvals
+    steal:
+      - gateway pattern
+      - skill precedence
+      - allowlists
+      - ask fallback
+      - deny by default on ambiguity
+    refuse:
+      - second control plane above NexusNet
+      - generic gateway replacement of brain-first flow
+    gates:
+      - approval auditability
+      - deny-on-ambiguity tests
+      - read-only wrapper visibility
+    sources:
+      - https://docs.openclaw.ai/en/docs/skills/overview
+      - https://docs.openclaw.ai/en/docs/approvals/overview
+      - https://openclawalpha.org/en/playbooks/development/p/autoclaw-local-openclaw-solution-2038632251551023250
+  lfm25_vl_450m:
+    status: ship-now
+    built: compact edge-first multimodal model
+    problem: multimodal quality on constrained devices
+    mechanism: compact backbone, grounded outputs, multilingual support, tunable speed-quality tradeoff
+    steal:
+      - edge-first latency profiles
+      - structured outputs
+      - grounding boxes
+      - multilingual visual prompting
+      - function calling
+    refuse:
+      - replacing broader multimodal teacher system
+    gates:
+      - grounding schema validation
+      - latency profile routing
+      - safe skip behavior
+      - wrapper visibility
+    sources:
+      - https://huggingface.co/LiquidAI/LFM2.5-VL-450M
+      - https://huggingface.co/LiquidAI/LFM2.5-VL-450M-GGUF
+  aitune:
+    status: ship-now
+    built: PyTorch-native inference autotuning toolkit
+    problem: backend/config selection for nn.Module and pipelines
+    mechanism: inspect, tune, correctness validation, benchmark, save/load tuned artifacts
+    steal:
+      - environment-gated autotuning
+      - backend search
+      - correctness checks
+      - deployable tuned artifacts
+    refuse:
+      - forced dependency in unsupported environments
+      - replacing dedicated serving backends
+    gates:
+      - python platform nvidia gating
+      - correctness benchmarks
+      - rollback references
+      - promotion discipline
+    sources:
+      - https://pypi.org/project/aitune/
+      - https://github.com/pytorch/tensorrt/releases
+  skillclaw_pattern:
+    status: prototype-next
+    built: self-improving shared skill ecosystem
+    problem: repeated successful trajectories remain local and ad hoc
+    mechanism: learn from good skills and recurring usage patterns
+    steal:
+      - trajectory aggregation
+      - recurring-pattern extraction
+      - governed shared repository
+    refuse:
+      - uncontrolled live mutation
+      - raw user data propagation
+    gates:
+      - privacy review
+      - eval review
+      - rollback path
+    sources:
+      - https://openclawalpha.org/en/playbooks/development/p/openspace-new-version-skill-quality-search-toolkits-2039955042565013648
+  minimax_m27:
+    status: prototype-next
+    built: self-evolving agent harness behavior
+    problem: weak long-horizon self-improvement and tool-search loops
+    mechanism: memory updates, skill building, failure trajectory refinement, agent teams
+    steal:
+      - benchmark harness design
+      - teacher/reference lane
+      - self-improvement task patterns
+    refuse:
+      - default local runtime role
+      - local-first displacement
+    gates:
+      - teacher-only integration
+      - harness benchmarks
+      - no default-runtime registration
+    sources:
+      - https://developer.nvidia.com/blog/minimax-m2-7-advances-scalable-agentic-workflows-on-nvidia-platforms-for-complex-ai-applications/
+      - https://build.nvidia.com/minimaxai/minimax-m2.7/modelcard
+  triattention:
+    status: research-track
+    built: trigonometric KV compression for long reasoning
+    problem: long-context KV memory bottlenecks
+    mechanism: pre-RoPE key importance estimation and distance-aware compression
+    steal:
+      - provider-style research integration
+      - long-context benchmark lane
+    refuse:
+      - default-on activation without proof
+    gates:
+      - feature flag default off
+      - kv memory benchmark
+      - throughput benchmark
+      - stability benchmark
+      - reasoning-quality benchmark
+    sources:
+      - https://arxiv.org/abs/2604.04921
+  openjarvis_productization:
+    status: ship-now
+    built: local-first runtime product surface with init, doctor, presets, skills, and scheduled agents
+    problem: local AI stacks lack hardware-aware onboarding and cohesive product defaults
+    mechanism: hardware detection, preset bundles, skill cataloging, scheduled operative workflows, and energy-aware evaluation
+    steal:
+      - init and doctor recommendations
+      - preset bundles
+      - skill catalog and sync planning
+      - local trace skill benchmarking
+      - scheduled monitor patterns
+      - energy flops latency and dollar-cost dimensions
+    refuse:
+      - second control plane
+      - cloud-first defaults
+      - replacement of NexusNet gateway and wrapper identity
+    gates:
+      - local-first recommendation discipline
+      - wrapper and ops visibility
+      - cost-energy eval output
+      - read-only sync planning
+    sources:
+      - https://github.com/open-jarvis/OpenJarvis
+  obliteratus_safe_boundary:
+    status: research-track
+    built: safe subset of mechanistic-analysis and red-team review patterns only
+    problem: bounded circuit-localization and rebound detection are useful without importing refusal removal
+    mechanism: before-after analysis artifacts, stress testing, and compensation tracking
+    steal:
+      - circuit-localization style comparison
+      - before-after artifacts
+      - rebound detection
+      - robustness stress testing
+    refuse:
+      - refusal removal
+      - liberation presets
+      - safety-ablation workflows
+      - production weight surgery
+    gates:
+      - quarantine flag
+      - evalsao and safetyao review
+      - external audit
+      - rollback required
+      - non-promotion default
+    sources:
+      - https://github.com/elder-plinius/OBLITERATUS
+  goose_runtime_patterns:
+    status: ship-now
+    built: local-first runtime and operator product patterns with recipes, delegated workers, extension catalogs, ACP bridges, and explicit security controls
+    problem: local-first agent systems need reusable procedures, bounded delegation, extension ergonomics, and explicit fail-closed review controls
+    mechanism: portable yaml recipes, temporary subagents, extension catalogs, optional acp providers, permission modes, sandboxing, persistent instructions, and reviewer gates
+    steal:
+      - portable yaml recipes and runbooks
+      - persistent recipe and runbook execution history
+      - automatic execution history linkage from real subagent plans
+      - gateway decision and fallback provenance
+      - gateway-only execution artifacts
+      - extension bundle provenance and governance
+      - versioned extension policy sets and bundle families
+      - scheduled artifact persistence
+      - schedule-aware execution-linked artifacts
+      - bounded subagent delegation
+      - restricted tool and extension inheritance
+      - extension catalog visibility
+      - optional acp provider bridges
+      - acp health and capability diagnostics
+      - acp readiness-check diagnostics
+      - acp remediation action reporting
+      - acp compatibility checks
+      - acp version and feature compatibility diagnostics
+      - acp extension compatibility diagnostics
+      - simulated acp compatibility fixtures
+      - permission modes
+      - sandbox summaries
+      - persistent guardrails
+      - adversary-review patterns
+    refuse:
+      - second control plane
+      - replacement of nexus or nexusnet identity
+      - fail-open reviewer behavior on high-risk paths
+      - governance bypass by delegated workers
+    gates:
+      - recipe validation
+      - execution history artifact linkage
+      - real flow execution-history linkage
+      - explicit goose flow-family classification
+      - gateway and approval-fallback traceability
+      - gateway execution compare views
+      - gateway execution compare exports
+      - extension policy-set versioning
+      - policy lifecycle history and rollback lineage
+      - explicit multi-version lifecycle fixtures
+      - policy-history compare views
+      - policy-history compare exports
+      - extension certification artifacts
+      - certification compare views
+      - certification compare exports
+      - grouped compare UX for large operator payloads
+      - compare diff-category filter and collapse controls
+      - deeper stored certification lineage
+      - certification-history depth across multiple bundle families
+      - certification lineage drill-down
+      - scheduled artifact idempotence
+      - subagent provenance artifacts
+      - acp graceful degradation
+      - acp health diagnostics
+      - acp readiness-check diagnostics
+      - simulated versus live-probe readiness reporting
+      - probe-readiness-state and blocker reporting
+      - acp compatibility diagnostics
+      - acp version and feature diagnostics
+      - acp extension compatibility diagnostics
+      - acp provider compare views
+      - acp provider compare exports
+      - bounded live-probe examples
+      - adversary audit export artifacts
+      - adversary review compare views
+      - visualizer goose compare controls
+      - fail-closed or escalate review behavior
+      - no silent extension or acp privilege inheritance
+      - read-only wrapper and visualizer visibility
+    closeout_recommendation: pause-goose-expansion-unless-real-acp-provider-or-concrete-operator-pain
+    sources:
+      - https://goose-docs.ai/
+      - https://goose-docs.ai/docs/guides/recipes/
+      - https://goose-docs.ai/docs/guides/goose-permissions
+      - https://goose-docs.ai/docs/guides/using-persistent-instructions
+      - https://github.com/aaif-goose/goose

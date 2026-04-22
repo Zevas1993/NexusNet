@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NexusNet Neural Visualizer</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="chrome">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">NexusNet Canonical Visualizer</div>
+        <h1>Living Neural Sculpture</h1>
+        <p class="lede">Brain-first hive topology with expert mini-brains, recursive loops, and read-only governance overlays.</p>
+      </div>
+      <div class="topbar-actions">
+        <div class="mode-pill-group" id="modePills"></div>
+        <a class="ghost-link" href="/ui/">Return To Wrapper Surface</a>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="sidebar left-rail">
+        <section class="panel">
+          <div class="panel-title">View Controls</div>
+          <div class="control-stack">
+            <label>
+              Session ID
+              <input id="sessionInput" type="text" placeholder="shared session id">
+            </label>
+            <div class="button-row">
+              <button id="refreshButton">Refresh Live State</button>
+              <button id="resetViewButton" class="secondary">Reset View</button>
+            </div>
+            <div class="toggle-grid">
+              <label><input type="checkbox" id="toggleDream" checked> Dream Loop</label>
+              <label><input type="checkbox" id="toggleCritique" checked> Critique Loop</label>
+              <label><input type="checkbox" id="toggleConsequence" checked> Consequence Loop</label>
+              <label><input type="checkbox" id="togglePhysiology" checked> Physiology</label>
+            </div>
+            <label>
+              Render Tier
+              <select id="renderTierSelect">
+                <option value="auto">Auto</option>
+                <option value="full">Full</option>
+                <option value="balanced">Balanced</option>
+                <option value="safe">Safe</option>
+              </select>
+            </label>
+            <label class="toggle-inline"><input type="checkbox" id="toggleLowPower"> Low Power Clamp</label>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">Filters</div>
+          <div class="control-stack filter-grid">
+            <label>Registry Layer<select id="filterRegistryLayer"></select></label>
+            <label>Expert Capsule<select id="filterSubject"></select></label>
+            <label>Teacher Pair<select id="filterTeacherPair"></select></label>
+            <label>Promotion Kind<select id="filterPromotionKind"></select></label>
+            <label>Takeover Status<select id="filterTakeoverStatus"></select></label>
+            <label>Benchmark Family<select id="filterBenchmarkFamily"></select></label>
+            <label>Threshold Set<select id="filterThresholdSet"></select></label>
+            <label>Evidence Bundle<select id="filterEvidenceBundle"></select></label>
+            <label>Disagreement Artifact<select id="filterDisagreement"></select></label>
+            <label>Lineage<select id="filterLineage"></select></label>
+            <label>Trace Window<select id="filterTraceWindow"></select></label>
+            <label>Safe Posture<select id="filterSafePosture"></select></label>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">Live Posture</div>
+          <div class="metric-list" id="livePosture"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">Legend</div>
+          <div id="legend" class="legend-stack"></div>
+        </section>
+      </aside>
+
+      <main class="stage-panel">
+        <div class="stage-shell" id="stageShell">
+          <canvas id="fxCanvas" aria-hidden="true"></canvas>
+          <svg id="sceneSvg" viewBox="-1200 -900 2400 1800" role="img" aria-label="NexusNet neural visualizer">
+            <defs>
+              <filter id="softGlow">
+                <feGaussianBlur stdDeviation="8" result="blur"></feGaussianBlur>
+                <feMerge>
+                  <feMergeNode in="blur"></feMergeNode>
+                  <feMergeNode in="SourceGraphic"></feMergeNode>
+                </feMerge>
+              </filter>
+            </defs>
+            <g id="cameraLayer">
+              <g id="gridLayer"></g>
+              <g id="loopLayer"></g>
+              <g id="linkLayer"></g>
+              <g id="nodeLayer"></g>
+              <g id="overlayLayer"></g>
+            </g>
+          </svg>
+        </div>
+        <div class="stage-footer">
+          <div class="footer-pill" id="sceneStatus">Loading canonical scene...</div>
+          <div class="footer-pill" id="overlayStatus">Waiting for live overlay...</div>
+          <div class="footer-pill" id="selectionStatus">Nothing selected</div>
+        </div>
+      </main>
+
+      <aside class="sidebar right-rail">
+        <section class="panel">
+          <div class="panel-title">Selection</div>
+          <div id="selectionCard" class="inspect-stack">Select the NexusNet core or an expert capsule.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">Active Evidence</div>
+          <div id="evidenceCard" class="inspect-stack">No overlay evidence loaded yet.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">Governance Signals</div>
+          <div id="governanceCard" class="inspect-stack">Promotion, takeover, and retirement cues will appear here.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">Diff / Replay</div>
+          <div class="control-stack">
+            <label>Bundle A<select id="compareBundleLeft"></select></label>
+            <label>Bundle B<select id="compareBundleRight"></select></label>
+            <div class="button-row">
+              <button id="compareBundleButton" class="secondary">Compare Bundles</button>
+            </div>
+            <label>Disagreement A<select id="compareDisagreementLeft"></select></label>
+            <label>Disagreement B<select id="compareDisagreementRight"></select></label>
+            <div class="button-row">
+              <button id="compareDisagreementButton" class="secondary">Compare Disagreements</button>
+            </div>
+            <label>Readiness A<select id="compareReplacementLeft"></select></label>
+            <label>Readiness B<select id="compareReplacementRight"></select></label>
+            <div class="button-row">
+              <button id="compareReplacementButton" class="secondary">Compare Readiness</button>
+              <button id="compareRouteButton" class="secondary">Compare Route Windows</button>
+            </div>
+            <div class="inspect-row"><small><strong>Goose Compare Views</strong></small></div>
+            <label>Gateway A<select id="compareGooseGatewayLeft"></select></label>
+            <label>Gateway B<select id="compareGooseGatewayRight"></select></label>
+            <div class="button-row">
+              <button id="compareGooseGatewayButton" class="secondary">Compare Gateway</button>
+            </div>
+            <label>Policy A<select id="compareGoosePolicyLeft"></select></label>
+            <label>Policy B<select id="compareGoosePolicyRight"></select></label>
+            <div class="button-row">
+              <button id="compareGoosePolicyButton" class="secondary">Compare Policies</button>
+            </div>
+            <label>Certification A<select id="compareGooseCertLeft"></select></label>
+            <label>Certification B<select id="compareGooseCertRight"></select></label>
+            <div class="button-row">
+              <button id="compareGooseCertButton" class="secondary">Compare Certifications</button>
+            </div>
+            <label>Adversary A<select id="compareGooseAdversaryLeft"></select></label>
+            <label>Adversary B<select id="compareGooseAdversaryRight"></select></label>
+            <div class="button-row">
+              <button id="compareGooseAdversaryButton" class="secondary">Compare Adversary</button>
+            </div>
+            <label>ACP A<select id="compareGooseAcpLeft"></select></label>
+            <label>ACP B<select id="compareGooseAcpRight"></select></label>
+            <div class="button-row">
+              <button id="compareGooseAcpButton" class="secondary">Compare ACP</button>
+            </div>
+            <label>Fleet / Cohort<select id="compareFleetId"></select></label>
+            <label>Window A<select id="compareFleetWindowLeft"></select></label>
+            <label>Window B<select id="compareFleetWindowRight"></select></label>
+            <div class="button-row">
+              <button id="compareFleetButton" class="secondary">Compare Cohorts</button>
+              <button id="clearDiffButton" class="secondary">Clear Diff</button>
+            </div>
+            <div class="button-row">
+              <button id="reloadReplayButton">Reload Replay</button>
+              <button id="toggleReplayButton" class="secondary">Play Replay</button>
+            </div>
+            <label>
+              Replay Scrubber
+              <input id="replayRange" type="range" min="0" max="0" step="1" value="0">
+            </label>
+            <label>
+              Replay Anchor
+              <input id="replayAnchorRange" type="range" min="0" max="0" step="1" value="0">
+            </label>
+            <div class="button-row">
+              <button id="compareReplayButton" class="secondary">Compare Replay Frames</button>
+              <button id="compareNowThenButton" class="secondary">Compare Live vs Frame</button>
+            </div>
+            <div class="inspect-row"><small><strong>Grouped Diff Sections</strong> keep Goose lifecycle, certification, permission, ACP, adversary, and gateway deltas readable without mutating runtime state.</small></div>
+            <div id="gooseCompareFilterCard" class="inspect-stack">
+              <div class="inspect-row">
+                <strong>Goose Diff Filters</strong>
+                <small>read-only</small>
+              </div>
+              <div class="button-row">
+                <button id="gooseCompareExpandAllButton" class="secondary">Expand All Groups</button>
+                <button id="gooseCompareCollapseAllButton" class="secondary">Collapse All Groups</button>
+                <button id="gooseCompareResetFiltersButton" class="secondary">Reset Group Filters</button>
+              </div>
+              <div id="gooseCompareFilterSummary" class="inspect-row"><small>No Goose compare loaded yet.</small></div>
+              <div id="gooseCompareGroupFilters" class="control-stack"></div>
+            </div>
+            <div id="replayStatus" class="inspect-row"><small>No replay loaded yet.</small></div>
+            <div id="timelineCard" class="timeline-stack">Replay Timeline: no replay timeline yet.</div>
+            <div id="diffCard" class="inspect-stack">No diff loaded yet.</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">Operator Inspection</div>
+          <div id="operatorCard" class="inspect-stack">Telemetry providers, replay provenance, and render posture will appear here.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">Depth Inspection</div>
+          <div class="control-stack">
+            <label><input type="checkbox" id="toggleDepthView"> Enable depth subrenderer</label>
+            <canvas id="depthCanvas" class="depth-canvas" aria-hidden="true"></canvas>
+            <div id="depthStatus" class="inspect-row"><small>Depth inspection idle.</small></div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

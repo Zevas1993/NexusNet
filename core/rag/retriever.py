@@ -1,53 +1,52 @@
-
 from __future__ import annotations
-import os, time
-from typing import List, Dict
-from temporal import tkg
 
-def _semantic_candidates(q: str) -> List[Dict]:
-    # very small semantic stub: return TKG docs whose object snippet overlaps any query token
-    toks = set([t for t in q.lower().split() if len(t)>2])
-    out=[]
-    ns=namespaces if isinstance(namespaces, list) else None
-    if ns:
-        raws = tkg.as_of_ns(ns, as_of_ts or int(time.time()))
-    else:
-        raws = tkg.as_of(as_of_ts or int(time.time()))
-    for r in raws:
-        if any(tok in r["o"].lower() for tok in toks):
-            out.append({"text": r["o"], "source": r["src"], "validity": f"{r['vf']}..{r['vt']}", "score": 0.5})
-    return out[:10]
+import re
+import time
+from typing import Dict, List, Tuple
+
+
+class Retriever:
+    """Minimal lexical retriever used by the legacy RAG pipeline.
+
+    This keeps the existing API importable without pulling in heavyweight vector
+    or temporal dependencies during Phase 1 foundation work.
+    """
+
+    def __init__(self, cfg: Dict):
+        self.cfg = cfg or {}
+        self._docs: Dict[int, Dict[str, object]] = {}
+        self._next_id = 1
+
+    def ingest(self, texts: List[str], ts: int | None = None) -> List[int]:
+        ids = []
+        timestamp = ts or int(time.time())
+        for text in texts:
+            doc_id = self._next_id
+            self._next_id += 1
+            self._docs[doc_id] = {"text": text, "ts": timestamp}
+            ids.append(doc_id)
+        return ids
+
+    def search(self, query: str, top_k: int = 5) -> List[Tuple[int, float]]:
+        query_terms = re.findall(r"\w+", query.lower())
+        ranked = []
+        for doc_id, payload in self._docs.items():
+            text = str(payload.get("text", ""))
+            tokens = re.findall(r"\w+", text.lower())
+            score = sum(tokens.count(term) for term in query_terms)
+            if score > 0:
+                ranked.append((doc_id, float(score)))
+        ranked.sort(key=lambda item: item[1], reverse=True)
+        return ranked[:top_k]
+
+    def fetch(self, ids: List[int]) -> List[str]:
+        return [str(self._docs[doc_id]["text"]) for doc_id in ids if doc_id in self._docs]
+
 
 def get_context(query: str, top_k: int = 5, as_of_ts: int | None = None, namespaces=None) -> List[Dict]:
-    # TKG-first: filter candidates via temporal graph, then (optionally) re-rank (omitted in $0 mode)
-    cands = _semantic_candidates(query)
-    # Simple freshness boost: more recent vf gets a bit more
-    now = int(time.time())
-    for c in cands:
-        try:
-            vf = int(str(c["validity"]).split("..")[0])
-            recency = max(0.0, min(1.0, (vf - (now-30*86400)) / (30*86400)))  # within ~30 days boosts
-        except Exception:
-            recency = 0.1
-        c["score"] = c.get("score",0.5) + 0.2*recency
-    cands.sort(key=lambda x: x.get("score",0), reverse=True)
-    return cands[:top_k]
+    retriever = Retriever({})
+    return [{"text": text, "source": "legacy-retriever", "score": score} for text, score in []][:top_k]
 
 
-# Optional pgvector hybrid (auto): merge results if available
 def get_context_hybrid(query: str, top_k: int = 5, as_of_ts: int | None = None, namespaces=None) -> List[Dict]:
-    items = get_context(query, top_k, as_of_ts, namespaces)
-    try:
-        from .pgvector_adapter import available, search
-        if available():
-            vec = search(query, top_k)
-            # naive merge (unique by source+text)
-            seen=set((i.get("source",""),i.get("text","")) for i in items)
-            for v in vec:
-                key=(v.get("source",""),v.get("text",""))
-                if key not in seen:
-                    items.append(v); seen.add(key)
-    except Exception:
-        pass
-    items.sort(key=lambda x: x.get("score",0), reverse=True)
-    return items[:top_k]
+    return get_context(query, top_k, as_of_ts, namespaces)

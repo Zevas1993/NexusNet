@@ -1,0 +1,4567 @@
+{
+  "status_label": "LOCKED CANON",
+  "scene_version": "visuals-2026.1",
+  "default_mode_id": "engineering",
+  "manifest": {
+    "schema_version": "visuals-2026.1",
+    "status_label": "LOCKED CANON",
+    "visualizer_id": "nexusnet-neural-visualizer",
+    "title": "NexusNet Neural Visualizer",
+    "description": "Canonical living-neural visualization for the NexusNet brain, expert capsules, critique loops, and governed growth overlays.",
+    "default_mode_id": "engineering",
+    "default_renderer": "svg-canvas",
+    "core": {
+      "node_id": "nexus-core",
+      "label": "NexusNet Core",
+      "ring_radii": [
+        88,
+        148,
+        214
+      ],
+      "neural_layer_labels": [
+        "wake",
+        "synthesize",
+        "arbitrate"
+      ],
+      "neural_bus_count": 6,
+      "sculpture_density": 48
+    },
+    "capsules": {
+      "authoritative_core_roster": [
+        "coder",
+        "strategist",
+        "analyst",
+        "researcher",
+        "critique",
+        "conversationalist",
+        "toolsmith",
+        "security",
+        "memory-weaver",
+        "meta-reasoner",
+        "router",
+        "linguist",
+        "vision",
+        "audio",
+        "simulation",
+        "builder",
+        "instructor",
+        "intent-mapper",
+        "critic-historian"
+      ],
+      "auxiliary_off_by_default": [
+        "curriculum-architect"
+      ]
+    },
+    "layout": {
+      "center": [
+        0,
+        0
+      ],
+      "capsule_orbit_radius_x": 760,
+      "capsule_orbit_radius_y": 510,
+      "capsule_radius": 96,
+      "capsule_inner_scale": 0.76,
+      "critique_broadcast_subject": "critique"
+    },
+    "collaboration_groups": [
+      {
+        "group_id": "build-chain",
+        "subjects": [
+          "coder",
+          "toolsmith",
+          "builder",
+          "security"
+        ],
+        "link_type": "collaboration"
+      },
+      {
+        "group_id": "reasoning-spine",
+        "subjects": [
+          "strategist",
+          "analyst",
+          "meta-reasoner",
+          "critique"
+        ],
+        "link_type": "collaboration"
+      },
+      {
+        "group_id": "research-memory",
+        "subjects": [
+          "researcher",
+          "critic-historian",
+          "linguist",
+          "memory-weaver"
+        ],
+        "link_type": "collaboration"
+      },
+      {
+        "group_id": "multimodal-band",
+        "subjects": [
+          "vision",
+          "audio",
+          "conversationalist"
+        ],
+        "link_type": "collaboration"
+      },
+      {
+        "group_id": "routing-band",
+        "subjects": [
+          "router",
+          "intent-mapper",
+          "memory-weaver"
+        ],
+        "link_type": "collaboration"
+      },
+      {
+        "group_id": "simulation-planning",
+        "subjects": [
+          "simulation",
+          "strategist",
+          "researcher",
+          "meta-reasoner"
+        ],
+        "link_type": "collaboration"
+      }
+    ],
+    "loop_definitions": [
+      {
+        "loop_id": "dream-loop",
+        "loop_type": "dream",
+        "label": "Recursive Dreaming",
+        "orbit_radius": 335,
+        "target_subjects": [
+          "simulation",
+          "researcher",
+          "meta-reasoner",
+          "memory-weaver"
+        ]
+      },
+      {
+        "loop_id": "critique-loop",
+        "loop_type": "critique",
+        "label": "Skeptical Critique",
+        "orbit_radius": 420,
+        "target_subjects": [
+          "critique",
+          "strategist",
+          "analyst",
+          "coder",
+          "security"
+        ]
+      },
+      {
+        "loop_id": "consequence-loop",
+        "loop_type": "consequence",
+        "label": "Consequence Feedback",
+        "orbit_radius": 505,
+        "target_subjects": [
+          "router",
+          "intent-mapper",
+          "builder",
+          "instructor",
+          "critic-historian"
+        ]
+      }
+    ],
+    "overlay_channels": [
+      {
+        "binding_id": "registry-layer",
+        "label": "Registry Layer",
+        "source_ref": "teachers.visibility.recent_teacher_traces",
+        "target_id": "nexus-core",
+        "channel": "registry-layer"
+      },
+      {
+        "binding_id": "teacher-arbitration",
+        "label": "Critique Arbitration",
+        "source_ref": "teachers.visibility.recent_teacher_traces",
+        "target_id": "capsule:critique",
+        "channel": "arbitration"
+      },
+      {
+        "binding_id": "promotion-cues",
+        "label": "Promotion Evidence",
+        "source_ref": "promotions.items",
+        "target_id": "nexus-core",
+        "channel": "promotion"
+      },
+      {
+        "binding_id": "takeover-cues",
+        "label": "Foundry Takeover",
+        "source_ref": "foundry.native_takeover",
+        "target_id": "nexus-core",
+        "channel": "takeover"
+      },
+      {
+        "binding_id": "runtime-posture",
+        "label": "Runtime Posture",
+        "source_ref": "runtime.device_profile",
+        "target_id": "nexus-core",
+        "channel": "runtime"
+      },
+      {
+        "binding_id": "safe-mode",
+        "label": "Safe Mode Physiology",
+        "source_ref": "runtime.device_profile",
+        "target_id": "nexus-core",
+        "channel": "physiology"
+      }
+    ],
+    "safe_mode_channels": [
+      "safe_mode",
+      "thermal_mode",
+      "vram_pressure",
+      "retry_state"
+    ],
+    "render_policy": {
+      "default_path": "svg-canvas",
+      "enhancement_path": "repo-local-threejs",
+      "external_cdn_allowed": false,
+      "competing_visualizers_allowed": false
+    },
+    "legend": {
+      "node_types": [
+        {
+          "id": "core",
+          "label": "Core neural structure"
+        },
+        {
+          "id": "capsule",
+          "label": "Expert mini-brain"
+        },
+        {
+          "id": "subnode",
+          "label": "Internal neural substructure"
+        }
+      ],
+      "link_types": [
+        {
+          "id": "core",
+          "label": "Core-to-capsule channel"
+        },
+        {
+          "id": "collaboration",
+          "label": "Capsule-to-capsule hive link"
+        },
+        {
+          "id": "critique",
+          "label": "Critique broadcast / challenge line"
+        }
+      ],
+      "loops": [
+        {
+          "id": "dream",
+          "label": "Recursive Dreaming loop"
+        },
+        {
+          "id": "critique",
+          "label": "Skeptical Critique loop"
+        },
+        {
+          "id": "consequence",
+          "label": "Consequence Feedback loop"
+        }
+      ],
+      "overlays": [
+        {
+          "id": "promotion",
+          "label": "Promotion / governance overlay"
+        },
+        {
+          "id": "takeover",
+          "label": "Foundry / native takeover overlay"
+        },
+        {
+          "id": "physiology",
+          "label": "Safe mode / thermal / VRAM physiology"
+        }
+      ]
+    }
+  },
+  "modes": [
+    {
+      "mode_id": "engineering",
+      "label": "Engineering Mode",
+      "description": "Engineering-grade schematic view with explicit buses, labels, and operator clarity.",
+      "status_label": "LOCKED CANON",
+      "palette": {
+        "bg": "#0d1321",
+        "panel": "#131c2f",
+        "ink": "#f3f7ff",
+        "muted": "#9aa7c2",
+        "grid": "#243252",
+        "core": "#6fe7ff",
+        "capsule": "#7da0ff",
+        "critique": "#ff6f91",
+        "dream": "#7affc8",
+        "consequence": "#ffd166",
+        "warning": "#ff9f43",
+        "safe": "#8bd3dd"
+      },
+      "animation_profile": {
+        "pulse_speed": 0.85,
+        "glow_strength": 0.28,
+        "parallax_depth": 0.12,
+        "route_flow": true
+      },
+      "preferred_renderer": "svg-canvas",
+      "allow_threejs_enhancement": false,
+      "label_density": "high"
+    },
+    {
+      "mode_id": "cinematic",
+      "label": "Cinematic Mode",
+      "description": "Cinematic inspection mode with deeper glow, motion, and parallax from the same canonical topology.",
+      "status_label": "STRONG ACCEPTED DIRECTION",
+      "palette": {
+        "bg": "#05070e",
+        "panel": "#0d1020",
+        "ink": "#f8fbff",
+        "muted": "#95a3c0",
+        "grid": "#18223f",
+        "core": "#67f0ff",
+        "capsule": "#9a7dff",
+        "critique": "#ff5370",
+        "dream": "#52ffa8",
+        "consequence": "#ffcf6e",
+        "warning": "#ff8a3d",
+        "safe": "#8af5ff"
+      },
+      "animation_profile": {
+        "pulse_speed": 1.4,
+        "glow_strength": 0.65,
+        "parallax_depth": 0.36,
+        "route_flow": true
+      },
+      "preferred_renderer": "svg-canvas",
+      "allow_threejs_enhancement": true,
+      "label_density": "medium"
+    }
+  ],
+  "topologies": [
+    {
+      "subject": "coder",
+      "display_name": "Coder Expert",
+      "topology_id": "coder-lattice",
+      "canon_status": "LOCKED CANON",
+      "auxiliary": false,
+      "authoritative_core_roster": true,
+      "geometry_kind": "lattice",
+      "palette_key": "cobalt",
+      "layer_count": 4,
+      "neural_node_budget": 22,
+      "motif_labels": [
+        "patch-bus",
+        "parser-fork",
+        "test-lane"
+      ],
+      "role_hint": "Multi-file code synthesis and repair.",
+      "description": "Rectilinear coding lattice with patch buses and validation forks.",
+      "inspect": {}
+    },
+    {
+      "subject": "strategist",
+      "display_name": "Strategist Expert",
+      "topology_id": "strategist-tree",
+      "canon_status": "LOCKED CANON",
+      "auxiliary": false,
+      "authoritative_core_roster": true,
+      "geometry_kind": "branching-tree",
+      "palette_key": "amber",
+      "layer_count": 4,
+      "neural_node_budget": 18,
+      "motif_labels": [
+        "objective-tree",
+        "plan-fork",
+        "dependency-arc"
+      ],
+      "role_hint": "Long-horizon planning and objective decomposition.",
+      "description": "Branching plan canopy with weighted objective forks.",
+      "inspect": {}
+    },
+    {
+      "subject": "analyst",
+      "display_name": "Analyst Expert",
+      "topology_id": "analyst-comparator",
+      "canon_status": "LOCKED CANON",
+      "auxiliary": false,
+      "authoritative_core_roster": true,
+      "geometry_kind": "comparator",
+      "palette_key": "steel",
+      "layer_count": 3,
+      "neural_node_budget": 16,
+      "motif_labels": [
+        "evidence-rack",
+        "comparator-lobe",
+        "metric-bridge"
+      ],
+      "role_hint": "Evidence weighting and structured comparison.",
+      "description": "Dual comparator lobes linked by evidence bridges.",
+      "inspect": {}
+    },
+    {
+      "subject": "researcher",
+      "display_name": "Researcher Expert",
+      "topology_id": "researcher-web",
+      "canon_status": "LOCKED CANON",
+      "auxiliary": false,
+      "authoritative_core_roster": true,
+      "geometry_kind": "citation-web",
+      "palette_key": "jade",
+      "layer_count": 4,
+      "neural_node_budget": 20,
+      "motif_labels": [
+        "citation-web",
+        "contradiction-arc",
+        "source-ring"
+      ],
+      "role_hint": "Multi-source synthesis and contradiction handling.",
+      "description": "Citation web with contradiction arcs and source-weighting rings.",
+      "inspect": {}
+    },
+    {
+      "subject": "critique",
+      "display_name": "Critique Expert",
+      "topology_id": "critique-duality",
+      "canon_status": "LOCKED CANON",
+      "auxiliary": false,
+      "authoritative_core_roster": true,
+      "geometry_kind": "dual-hemisphere",
+      "palette_key": "crimson",
+      "layer_count": 4,
+      "neural_node_budget": 18,
+      "motif_labels": [
+        "skeptic-ring",
+        "arbitration-core",
+        "challenge-lane"
+      ],
+      "role_hint": "Arbiter, examiner, and skeptical safety gate.",
+      "description": "Opposed hemispheres joined by an arbitration core and challenge ring.",
+      "inspect": {}
+    },
+    {
+      "subject": "conversationalist",
+      "display_name": "Conversationalist Expert",
+      "topology_id": "conversation-braid",
+      "canon_status": "LOCKED CANON",
+      "auxiliary": false,
+      "authoritative_core_roster": true,
+      "geometry_kind": "braid",
+      "palette_key": "rose",
+      "layer_count": 3,
+      "neural_node_budget": 16,
+      "motif_labels": [
+        "dialog-braid",
+        "tone-loop",
+        "continuity-ribbon"
+      ],
+      "role_hint": "Tone, continuity, and dialog shaping.",
+      "description": "Braided dialog loops with continuity ribbons.",
+      "inspect": {}
+    },
+    {
+      "subject": "toolsmith",
+      "display_name": "Toolsmith Expert",
+      "topology_id": "toolsmith-switchboard",
+      "canon_status": "LOCKED CANON",
+      "auxiliary": false,
+      "authoritative_core_roster": true,
+      "geometry_kind": "switchboard",
+      "palette_key": "indigo",
+      "layer_count": 4,
+      "neural_node_budget": 18,
+      "motif_labels": [
+        "port-grid",
+        "schema-switch",
+        "recovery-line"
+      ],
+      "role_hint": "Tool schema discipline and chain recovery.",
+      "description": "Port-switchboard mesh for schema-locked tool orchestration.",
+      "inspect": {}
+    },
+    {
+      "subject": "security",
+      "display_name": "Security Expert",
+      "topology_id": "security-shield",
+      "canon_status": "LOCKED CANON",
+      "auxiliary": false,
+      "authoritative_core_roster": true,
+      "geometry_kind": "shield-mesh",
+      "palette_key": "ember",
+      "layer_count": 4,
+      "neural_node_budget": 18,
+      "motif_labels": [
+        "shield-ring",
+        "breach-sentry",
+        "mitigation-lane"
+      ],
+      "role_hint": "Misuse analysis and secure patching.",
+      "description": "Shield mesh with breach sentries and mitigation lanes.",
+      "inspect": {}
+    },
+    {
+      "subject": "memory-weaver",
+      "display_name": "Memory Weaver Expert",
+      "topology_id": "memory-braid",
+      "canon_status": "LOCKED CANON",
+      "auxiliary": false,
+      "authoritative_core_roster": true,
+      "geometry_kind": "archive-braid",
+      "palette_key": "teal",
+      "layer_count": 4,
+      "neural_node_budget": 20,
+      "motif_labels": [
+        "episodic-thread",
+        "semantic-loom",
+        "retrieval-knot"
+      ],
+      "role_hint": "Multi-plane memory weaving and budgeting.",
+      "description": "Braided archive strands bridging episodic, semantic, and temporal memory.",
+      "inspect": {}
+    },
+    {
+      "subject": "meta-reasoner",
+      "display_name": "Meta Reasoner Expert",
+      "topology_id": "meta-synthesis",
+      "canon_status": "LOCKED CANON",
+      "auxiliary": false,
+      "authoritative_core_roster": true,
+      "geometry_kind": "supervisory-halo",
+      "palette_key": "gold",
+      "layer_count": 4,
+      "neural_node_budget": 18,
+      "motif_labels": [
+        "synthesis-halo",
+        "self-check",
+        "merge-gate"
+      ],
+      "role_hint": "Multi-expert synthesis and reflective oversight.",
+      "description": "Mirrored synthesis lobes under a supervisory halo.",
+      "inspect": {}
+    },
+    {
+      "subject": "router",
+      "display_name": "Router Expert",
+      "topology_id": "router-fabric",
+      "canon_status": "LOCKED CANON",
+      "auxiliary": false,
+      "authoritative_core_roster": true,
+      "geometry_kind": "router-fabric",
+      "palette_key": "violet",
+      "layer_count": 3,
+      "neural_node_budget": 16,
+      "motif_labels": [
+        "switch-fabric",
+        "budget-gate",
+        "fallback-spine"
+      ],
+      "role_hint": "Budget, routing, and fallback policy.",
+      "description": "Hub-and-spoke routing fabric with fallback spines.",
+      "inspect": {}
+    },
+    {
+      "subject": "linguist",
+      "display_name": "Linguist Expert",
+      "topology_id": "linguist-helix",
+      "canon_status": "LOCKED CANON",
+      "auxiliary": false,
+      "authoritative_core_roster": true,
+      "geometry_kind": "syntax-helix",
+      "palette_key": "azure",
+      "layer_count": 3,
+      "neural_node_budget": 16,
+      "motif_labels": [
+        "syntax-helix",
+        "dialect-branch",
+        "paraphrase-lane"
+      ],
+      "role_hint": "Multilingual generation and register control.",
+      "description": "Syntax helix with dialect branches and paraphrase lanes.",
+      "inspect": {}
+    },
+    {
+      "subject": "vision",
+      "display_name": "Vision Expert",
+      "topology_id": "vision-retina",
+      "canon_status": "LOCKED CANON",
+      "auxiliary": false,
+      "authoritative_core_roster": true,
+      "geometry_kind": "feature-pyramid",
+      "palette_key": "cyan",
+      "layer_count": 4,
+      "neural_node_budget": 18,
+      "motif_labels": [
+        "retina-grid",
+        "layout-pyramid",
+        "grounding-axis"
+      ],
+      "role_hint": "OCR, layout, and image grounding.",
+      "description": "Retina grid feeding a feature pyramid and grounding axis.",
+      "inspect": {}
+    },
+    {
+      "subject": "audio",
+      "display_name": "Audio Expert",
+      "topology_id": "audio-wave",
+      "canon_status": "LOCKED CANON",
+      "auxiliary": false,
+      "authoritative_core_roster": true,
+      "geometry_kind": "waveform-spiral",
+      "palette_key": "coral",
+      "layer_count": 3,
+      "neural_node_budget": 16,
+      "motif_labels": [
+        "wave-spiral",
+        "timestamp-ring",
+        "asr-lane"
+      ],
+      "role_hint": "ASR, spoken instruction grounding, and timing.",
+      "description": "Waveform spiral wrapped in timestamp sensitivity rings.",
+      "inspect": {}
+    },
+    {
+      "subject": "simulation",
+      "display_name": "Simulation Expert",
+      "topology_id": "simulation-rollout",
+      "canon_status": "LOCKED CANON",
+      "auxiliary": false,
+      "authoritative_core_roster": true,
+      "geometry_kind": "rollout-orbits",
+      "palette_key": "lime",
+      "layer_count": 4,
+      "neural_node_budget": 20,
+      "motif_labels": [
+        "rollout-orbit",
+        "counterfactual-arc",
+        "uncertainty-gate"
+      ],
+      "role_hint": "Rollouts, counterfactuals, and dream scenarios.",
+      "description": "Orbiting rollout lanes with counterfactual branches.",
+      "inspect": {}
+    },
+    {
+      "subject": "builder",
+      "display_name": "Builder Expert",
+      "topology_id": "builder-scaffold",
+      "canon_status": "LOCKED CANON",
+      "auxiliary": false,
+      "authoritative_core_roster": true,
+      "geometry_kind": "scaffold-lattice",
+      "palette_key": "ochre",
+      "layer_count": 4,
+      "neural_node_budget": 18,
+      "motif_labels": [
+        "scaffold-rail",
+        "assembly-node",
+        "rebuild-loop"
+      ],
+      "role_hint": "Feature assembly and artifact validation.",
+      "description": "Structural scaffold with assembly rails and rebuild loops.",
+      "inspect": {}
+    },
+    {
+      "subject": "instructor",
+      "display_name": "Instructor Expert",
+      "topology_id": "instructor-ladder",
+      "canon_status": "LOCKED CANON",
+      "auxiliary": false,
+      "authoritative_core_roster": true,
+      "geometry_kind": "ladder-checkpoints",
+      "palette_key": "mint",
+      "layer_count": 4,
+      "neural_node_budget": 18,
+      "motif_labels": [
+        "lesson-ladder",
+        "mastery-check",
+        "remediation-rung"
+      ],
+      "role_hint": "Scaffolding, questioning, and mastery checks.",
+      "description": "Pedagogical ladder with checkpoint rungs and remediation branches.",
+      "inspect": {}
+    },
+    {
+      "subject": "intent-mapper",
+      "display_name": "Intent Mapper Expert",
+      "topology_id": "intent-funnel",
+      "canon_status": "LOCKED CANON",
+      "auxiliary": false,
+      "authoritative_core_roster": true,
+      "geometry_kind": "funnel-cones",
+      "palette_key": "plum",
+      "layer_count": 3,
+      "neural_node_budget": 16,
+      "motif_labels": [
+        "intent-funnel",
+        "ambiguity-prism",
+        "risk-gate"
+      ],
+      "role_hint": "Intent classification and ambiguity reduction.",
+      "description": "Funnel classifier cones with ambiguity prisms and risk gates.",
+      "inspect": {}
+    },
+    {
+      "subject": "critic-historian",
+      "display_name": "Critic Historian Expert",
+      "topology_id": "historian-chronology",
+      "canon_status": "LOCKED CANON",
+      "auxiliary": false,
+      "authoritative_core_roster": true,
+      "geometry_kind": "chronology-rings",
+      "palette_key": "sepia",
+      "layer_count": 4,
+      "neural_node_budget": 18,
+      "motif_labels": [
+        "chronology-ring",
+        "source-conflict-bridge",
+        "temporal-axis"
+      ],
+      "role_hint": "Chronology repair and evidence-weighted historical critique.",
+      "description": "Chronology rings crossed by source-conflict bridges.",
+      "inspect": {}
+    },
+    {
+      "subject": "curriculum-architect",
+      "display_name": "Curriculum Architect",
+      "topology_id": "curriculum-synthesis",
+      "canon_status": "STRONG ACCEPTED DIRECTION",
+      "auxiliary": true,
+      "authoritative_core_roster": false,
+      "geometry_kind": "synthesis-grid",
+      "palette_key": "silver",
+      "layer_count": 4,
+      "neural_node_budget": 16,
+      "motif_labels": [
+        "curriculum-grid",
+        "difficulty-wave",
+        "benchmark-forge"
+      ],
+      "role_hint": "Auxiliary curriculum synthesis path.",
+      "description": "Auxiliary curriculum forge, not part of the authoritative core 19.",
+      "inspect": {}
+    }
+  ],
+  "nodes": [
+    {
+      "node_id": "nexus-core",
+      "node_type": "core",
+      "label": "NexusNet Core",
+      "x": 0.0,
+      "y": 0.0,
+      "z": 0.0,
+      "radius": 214.0,
+      "status_label": "LOCKED CANON",
+      "subject": null,
+      "topology_id": null,
+      "layer_index": 0,
+      "internal_nodes": [
+        {
+          "id": "core-layer-0-0",
+          "x": 51.04,
+          "y": 0.0,
+          "kind": "core-neuron",
+          "layer_index": 0
+        },
+        {
+          "id": "core-layer-0-1",
+          "x": 36.091,
+          "y": 36.091,
+          "kind": "core-neuron",
+          "layer_index": 0
+        },
+        {
+          "id": "core-layer-0-2",
+          "x": 0.0,
+          "y": 51.04,
+          "kind": "core-neuron",
+          "layer_index": 0
+        },
+        {
+          "id": "core-layer-0-3",
+          "x": -36.091,
+          "y": 36.091,
+          "kind": "core-neuron",
+          "layer_index": 0
+        },
+        {
+          "id": "core-layer-0-4",
+          "x": -51.04,
+          "y": 0.0,
+          "kind": "core-neuron",
+          "layer_index": 0
+        },
+        {
+          "id": "core-layer-0-5",
+          "x": -36.091,
+          "y": -36.091,
+          "kind": "core-neuron",
+          "layer_index": 0
+        },
+        {
+          "id": "core-layer-0-6",
+          "x": -0.0,
+          "y": -51.04,
+          "kind": "core-neuron",
+          "layer_index": 0
+        },
+        {
+          "id": "core-layer-0-7",
+          "x": 36.091,
+          "y": -36.091,
+          "kind": "core-neuron",
+          "layer_index": 0
+        },
+        {
+          "id": "core-layer-1-0",
+          "x": 85.84,
+          "y": 0.0,
+          "kind": "core-neuron",
+          "layer_index": 1
+        },
+        {
+          "id": "core-layer-1-1",
+          "x": 77.339,
+          "y": 37.245,
+          "kind": "core-neuron",
+          "layer_index": 1
+        },
+        {
+          "id": "core-layer-1-2",
+          "x": 53.52,
+          "y": 67.112,
+          "kind": "core-neuron",
+          "layer_index": 1
+        },
+        {
+          "id": "core-layer-1-3",
+          "x": 19.101,
+          "y": 83.688,
+          "kind": "core-neuron",
+          "layer_index": 1
+        },
+        {
+          "id": "core-layer-1-4",
+          "x": -19.101,
+          "y": 83.688,
+          "kind": "core-neuron",
+          "layer_index": 1
+        },
+        {
+          "id": "core-layer-1-5",
+          "x": -53.52,
+          "y": 67.112,
+          "kind": "core-neuron",
+          "layer_index": 1
+        },
+        {
+          "id": "core-layer-1-6",
+          "x": -77.339,
+          "y": 37.245,
+          "kind": "core-neuron",
+          "layer_index": 1
+        },
+        {
+          "id": "core-layer-1-7",
+          "x": -85.84,
+          "y": 0.0,
+          "kind": "core-neuron",
+          "layer_index": 1
+        },
+        {
+          "id": "core-layer-1-8",
+          "x": -77.339,
+          "y": -37.245,
+          "kind": "core-neuron",
+          "layer_index": 1
+        },
+        {
+          "id": "core-layer-1-9",
+          "x": -53.52,
+          "y": -67.112,
+          "kind": "core-neuron",
+          "layer_index": 1
+        },
+        {
+          "id": "core-layer-1-10",
+          "x": -19.101,
+          "y": -83.688,
+          "kind": "core-neuron",
+          "layer_index": 1
+        },
+        {
+          "id": "core-layer-1-11",
+          "x": 19.101,
+          "y": -83.688,
+          "kind": "core-neuron",
+          "layer_index": 1
+        },
+        {
+          "id": "core-layer-1-12",
+          "x": 53.52,
+          "y": -67.112,
+          "kind": "core-neuron",
+          "layer_index": 1
+        },
+        {
+          "id": "core-layer-1-13",
+          "x": 77.339,
+          "y": -37.245,
+          "kind": "core-neuron",
+          "layer_index": 1
+        },
+        {
+          "id": "core-layer-2-0",
+          "x": 124.12,
+          "y": 0.0,
+          "kind": "core-neuron",
+          "layer_index": 2
+        },
+        {
+          "id": "core-layer-2-1",
+          "x": 118.045,
+          "y": 38.355,
+          "kind": "core-neuron",
+          "layer_index": 2
+        },
+        {
+          "id": "core-layer-2-2",
+          "x": 100.415,
+          "y": 72.956,
+          "kind": "core-neuron",
+          "layer_index": 2
+        },
+        {
+          "id": "core-layer-2-3",
+          "x": 72.956,
+          "y": 100.415,
+          "kind": "core-neuron",
+          "layer_index": 2
+        },
+        {
+          "id": "core-layer-2-4",
+          "x": 38.355,
+          "y": 118.045,
+          "kind": "core-neuron",
+          "layer_index": 2
+        },
+        {
+          "id": "core-layer-2-5",
+          "x": 0.0,
+          "y": 124.12,
+          "kind": "core-neuron",
+          "layer_index": 2
+        },
+        {
+          "id": "core-layer-2-6",
+          "x": -38.355,
+          "y": 118.045,
+          "kind": "core-neuron",
+          "layer_index": 2
+        },
+        {
+          "id": "core-layer-2-7",
+          "x": -72.956,
+          "y": 100.415,
+          "kind": "core-neuron",
+          "layer_index": 2
+        },
+        {
+          "id": "core-layer-2-8",
+          "x": -100.415,
+          "y": 72.956,
+          "kind": "core-neuron",
+          "layer_index": 2
+        },
+        {
+          "id": "core-layer-2-9",
+          "x": -118.045,
+          "y": 38.355,
+          "kind": "core-neuron",
+          "layer_index": 2
+        },
+        {
+          "id": "core-layer-2-10",
+          "x": -124.12,
+          "y": 0.0,
+          "kind": "core-neuron",
+          "layer_index": 2
+        },
+        {
+          "id": "core-layer-2-11",
+          "x": -118.045,
+          "y": -38.355,
+          "kind": "core-neuron",
+          "layer_index": 2
+        },
+        {
+          "id": "core-layer-2-12",
+          "x": -100.415,
+          "y": -72.956,
+          "kind": "core-neuron",
+          "layer_index": 2
+        },
+        {
+          "id": "core-layer-2-13",
+          "x": -72.956,
+          "y": -100.415,
+          "kind": "core-neuron",
+          "layer_index": 2
+        },
+        {
+          "id": "core-layer-2-14",
+          "x": -38.355,
+          "y": -118.045,
+          "kind": "core-neuron",
+          "layer_index": 2
+        },
+        {
+          "id": "core-layer-2-15",
+          "x": -0.0,
+          "y": -124.12,
+          "kind": "core-neuron",
+          "layer_index": 2
+        },
+        {
+          "id": "core-layer-2-16",
+          "x": 38.355,
+          "y": -118.045,
+          "kind": "core-neuron",
+          "layer_index": 2
+        },
+        {
+          "id": "core-layer-2-17",
+          "x": 72.956,
+          "y": -100.415,
+          "kind": "core-neuron",
+          "layer_index": 2
+        },
+        {
+          "id": "core-layer-2-18",
+          "x": 100.415,
+          "y": -72.956,
+          "kind": "core-neuron",
+          "layer_index": 2
+        },
+        {
+          "id": "core-layer-2-19",
+          "x": 118.045,
+          "y": -38.355,
+          "kind": "core-neuron",
+          "layer_index": 2
+        }
+      ],
+      "meta": {
+        "neural_layer_labels": [
+          "wake",
+          "synthesize",
+          "arbitrate"
+        ],
+        "ring_radii": [
+          88,
+          148,
+          214
+        ],
+        "neural_bus_count": 6,
+        "sculpture_density": 48
+      }
+    },
+    {
+      "node_id": "capsule:coder",
+      "node_type": "capsule",
+      "label": "Coder Expert",
+      "x": 0.0,
+      "y": -510.0,
+      "z": -0.0,
+      "radius": 96.0,
+      "status_label": "LOCKED CANON",
+      "subject": "coder",
+      "topology_id": "coder-lattice",
+      "layer_index": 0,
+      "internal_nodes": [
+        {
+          "id": "coder-0",
+          "x": -52.0,
+          "y": -42.0,
+          "kind": "lattice"
+        },
+        {
+          "id": "coder-1",
+          "x": -26.0,
+          "y": -42.0,
+          "kind": "lattice"
+        },
+        {
+          "id": "coder-2",
+          "x": 0.0,
+          "y": -42.0,
+          "kind": "lattice"
+        },
+        {
+          "id": "coder-3",
+          "x": 26.0,
+          "y": -42.0,
+          "kind": "lattice"
+        },
+        {
+          "id": "coder-4",
+          "x": 52.0,
+          "y": -42.0,
+          "kind": "lattice"
+        },
+        {
+          "id": "coder-5",
+          "x": -52.0,
+          "y": -14.0,
+          "kind": "lattice"
+        },
+        {
+          "id": "coder-6",
+          "x": -26.0,
+          "y": -14.0,
+          "kind": "lattice"
+        },
+        {
+          "id": "coder-7",
+          "x": 0.0,
+          "y": -14.0,
+          "kind": "lattice"
+        },
+        {
+          "id": "coder-8",
+          "x": 26.0,
+          "y": -14.0,
+          "kind": "lattice"
+        },
+        {
+          "id": "coder-9",
+          "x": 52.0,
+          "y": -14.0,
+          "kind": "lattice"
+        },
+        {
+          "id": "coder-10",
+          "x": -52.0,
+          "y": 14.0,
+          "kind": "lattice"
+        },
+        {
+          "id": "coder-11",
+          "x": -26.0,
+          "y": 14.0,
+          "kind": "lattice"
+        },
+        {
+          "id": "coder-12",
+          "x": 0.0,
+          "y": 14.0,
+          "kind": "lattice"
+        },
+        {
+          "id": "coder-13",
+          "x": 26.0,
+          "y": 14.0,
+          "kind": "lattice"
+        },
+        {
+          "id": "coder-14",
+          "x": 52.0,
+          "y": 14.0,
+          "kind": "lattice"
+        },
+        {
+          "id": "coder-15",
+          "x": -52.0,
+          "y": 42.0,
+          "kind": "lattice"
+        },
+        {
+          "id": "coder-16",
+          "x": -26.0,
+          "y": 42.0,
+          "kind": "lattice"
+        },
+        {
+          "id": "coder-17",
+          "x": 0.0,
+          "y": 42.0,
+          "kind": "lattice"
+        },
+        {
+          "id": "coder-18",
+          "x": 26.0,
+          "y": 42.0,
+          "kind": "lattice"
+        },
+        {
+          "id": "coder-19",
+          "x": 52.0,
+          "y": 42.0,
+          "kind": "lattice"
+        }
+      ],
+      "meta": {
+        "palette_key": "cobalt",
+        "geometry_kind": "lattice",
+        "motif_labels": [
+          "patch-bus",
+          "parser-fork",
+          "test-lane"
+        ],
+        "description": "Rectilinear coding lattice with patch buses and validation forks.",
+        "role_hint": "Multi-file code synthesis and repair.",
+        "auxiliary": false,
+        "authoritative_core_roster": true,
+        "inspect": {}
+      }
+    },
+    {
+      "node_id": "capsule:strategist",
+      "node_type": "capsule",
+      "label": "Strategist Expert",
+      "x": 246.772,
+      "y": -482.367,
+      "z": -17.198,
+      "radius": 96.0,
+      "status_label": "LOCKED CANON",
+      "subject": "strategist",
+      "topology_id": "strategist-tree",
+      "layer_index": 1,
+      "internal_nodes": [
+        {
+          "id": "strategist-0",
+          "x": 0,
+          "y": -54,
+          "kind": "branching-tree"
+        },
+        {
+          "id": "strategist-1",
+          "x": -34,
+          "y": -12,
+          "kind": "branching-tree"
+        },
+        {
+          "id": "strategist-2",
+          "x": 34,
+          "y": -12,
+          "kind": "branching-tree"
+        },
+        {
+          "id": "strategist-3",
+          "x": -52,
+          "y": 24,
+          "kind": "branching-tree"
+        },
+        {
+          "id": "strategist-4",
+          "x": 0,
+          "y": 18,
+          "kind": "branching-tree"
+        },
+        {
+          "id": "strategist-5",
+          "x": 52,
+          "y": 24,
+          "kind": "branching-tree"
+        },
+        {
+          "id": "strategist-6",
+          "x": -62,
+          "y": 58,
+          "kind": "branching-tree"
+        },
+        {
+          "id": "strategist-7",
+          "x": -20,
+          "y": 52,
+          "kind": "branching-tree"
+        },
+        {
+          "id": "strategist-8",
+          "x": 20,
+          "y": 52,
+          "kind": "branching-tree"
+        },
+        {
+          "id": "strategist-9",
+          "x": 62,
+          "y": 58,
+          "kind": "branching-tree"
+        }
+      ],
+      "meta": {
+        "palette_key": "amber",
+        "geometry_kind": "branching-tree",
+        "motif_labels": [
+          "objective-tree",
+          "plan-fork",
+          "dependency-arc"
+        ],
+        "description": "Branching plan canopy with weighted objective forks.",
+        "role_hint": "Long-horizon planning and objective decomposition.",
+        "auxiliary": false,
+        "authoritative_core_roster": true,
+        "inspect": {}
+      }
+    },
+    {
+      "node_id": "capsule:analyst",
+      "node_type": "capsule",
+      "label": "Analyst Expert",
+      "x": 466.802,
+      "y": -402.462,
+      "z": -27.143,
+      "radius": 96.0,
+      "status_label": "LOCKED CANON",
+      "subject": "analyst",
+      "topology_id": "analyst-comparator",
+      "layer_index": 2,
+      "internal_nodes": [
+        {
+          "id": "analyst-0",
+          "x": -6.0,
+          "y": 0.0,
+          "kind": "comparator",
+          "side": 0
+        },
+        {
+          "id": "analyst-1",
+          "x": -12.444,
+          "y": 24.042,
+          "kind": "comparator",
+          "side": 0
+        },
+        {
+          "id": "analyst-2",
+          "x": -28.0,
+          "y": 34.0,
+          "kind": "comparator",
+          "side": 0
+        },
+        {
+          "id": "analyst-3",
+          "x": -43.556,
+          "y": 24.042,
+          "kind": "comparator",
+          "side": 0
+        },
+        {
+          "id": "analyst-4",
+          "x": -50.0,
+          "y": 0.0,
+          "kind": "comparator",
+          "side": 0
+        },
+        {
+          "id": "analyst-5",
+          "x": -43.556,
+          "y": -24.042,
+          "kind": "comparator",
+          "side": 0
+        },
+        {
+          "id": "analyst-6",
+          "x": -28.0,
+          "y": -34.0,
+          "kind": "comparator",
+          "side": 0
+        },
+        {
+          "id": "analyst-7",
+          "x": -12.444,
+          "y": -24.042,
+          "kind": "comparator",
+          "side": 0
+        },
+        {
+          "id": "analyst-8",
+          "x": 50.0,
+          "y": 0.0,
+          "kind": "comparator",
+          "side": 1
+        },
+        {
+          "id": "analyst-9",
+          "x": 43.556,
+          "y": 24.042,
+          "kind": "comparator",
+          "side": 1
+        },
+        {
+          "id": "analyst-10",
+          "x": 28.0,
+          "y": 34.0,
+          "kind": "comparator",
+          "side": 1
+        },
+        {
+          "id": "analyst-11",
+          "x": 12.444,
+          "y": 24.042,
+          "kind": "comparator",
+          "side": 1
+        },
+        {
+          "id": "analyst-12",
+          "x": 6.0,
+          "y": 0.0,
+          "kind": "comparator",
+          "side": 1
+        },
+        {
+          "id": "analyst-13",
+          "x": 12.444,
+          "y": -24.042,
+          "kind": "comparator",
+          "side": 1
+        },
+        {
+          "id": "analyst-14",
+          "x": 28.0,
+          "y": -34.0,
+          "kind": "comparator",
+          "side": 1
+        },
+        {
+          "id": "analyst-15",
+          "x": 43.556,
+          "y": -24.042,
+          "kind": "comparator",
+          "side": 1
+        }
+      ],
+      "meta": {
+        "palette_key": "steel",
+        "geometry_kind": "comparator",
+        "motif_labels": [
+          "evidence-rack",
+          "comparator-lobe",
+          "metric-bridge"
+        ],
+        "description": "Dual comparator lobes linked by evidence bridges.",
+        "role_hint": "Evidence weighting and structured comparison.",
+        "auxiliary": false,
+        "authoritative_core_roster": true,
+        "inspect": {}
+      }
+    },
+    {
+      "node_id": "capsule:researcher",
+      "node_type": "capsule",
+      "label": "Researcher Expert",
+      "x": 636.247,
+      "y": -278.944,
+      "z": -25.642,
+      "radius": 96.0,
+      "status_label": "LOCKED CANON",
+      "subject": "researcher",
+      "topology_id": "researcher-web",
+      "layer_index": 3,
+      "internal_nodes": [
+        {
+          "id": "researcher-0",
+          "x": 18.0,
+          "y": 0.0,
+          "kind": "citation-web",
+          "ring_index": 0
+        },
+        {
+          "id": "researcher-1",
+          "x": 9.0,
+          "y": 15.588,
+          "kind": "citation-web",
+          "ring_index": 0
+        },
+        {
+          "id": "researcher-2",
+          "x": -9.0,
+          "y": 15.588,
+          "kind": "citation-web",
+          "ring_index": 0
+        },
+        {
+          "id": "researcher-3",
+          "x": -18.0,
+          "y": 0.0,
+          "kind": "citation-web",
+          "ring_index": 0
+        },
+        {
+          "id": "researcher-4",
+          "x": -9.0,
+          "y": -15.588,
+          "kind": "citation-web",
+          "ring_index": 0
+        },
+        {
+          "id": "researcher-5",
+          "x": 9.0,
+          "y": -15.588,
+          "kind": "citation-web",
+          "ring_index": 0
+        },
+        {
+          "id": "researcher-6",
+          "x": 36.0,
+          "y": 0.0,
+          "kind": "citation-web",
+          "ring_index": 1
+        },
+        {
+          "id": "researcher-7",
+          "x": 18.0,
+          "y": 31.177,
+          "kind": "citation-web",
+          "ring_index": 1
+        },
+        {
+          "id": "researcher-8",
+          "x": -18.0,
+          "y": 31.177,
+          "kind": "citation-web",
+          "ring_index": 1
+        },
+        {
+          "id": "researcher-9",
+          "x": -36.0,
+          "y": 0.0,
+          "kind": "citation-web",
+          "ring_index": 1
+        },
+        {
+          "id": "researcher-10",
+          "x": -18.0,
+          "y": -31.177,
+          "kind": "citation-web",
+          "ring_index": 1
+        },
+        {
+          "id": "researcher-11",
+          "x": 18.0,
+          "y": -31.177,
+          "kind": "citation-web",
+          "ring_index": 1
+        },
+        {
+          "id": "researcher-12",
+          "x": 54.0,
+          "y": 0.0,
+          "kind": "citation-web",
+          "ring_index": 2
+        },
+        {
+          "id": "researcher-13",
+          "x": 27.0,
+          "y": 46.765,
+          "kind": "citation-web",
+          "ring_index": 2
+        },
+        {
+          "id": "researcher-14",
+          "x": -27.0,
+          "y": 46.765,
+          "kind": "citation-web",
+          "ring_index": 2
+        },
+        {
+          "id": "researcher-15",
+          "x": -54.0,
+          "y": 0.0,
+          "kind": "citation-web",
+          "ring_index": 2
+        },
+        {
+          "id": "researcher-16",
+          "x": -27.0,
+          "y": -46.765,
+          "kind": "citation-web",
+          "ring_index": 2
+        },
+        {
+          "id": "researcher-17",
+          "x": 27.0,
+          "y": -46.765,
+          "kind": "citation-web",
+          "ring_index": 2
+        }
+      ],
+      "meta": {
+        "palette_key": "jade",
+        "geometry_kind": "citation-web",
+        "motif_labels": [
+          "citation-web",
+          "contradiction-arc",
+          "source-ring"
+        ],
+        "description": "Citation web with contradiction arcs and source-weighting rings.",
+        "role_hint": "Multi-source synthesis and contradiction handling.",
+        "auxiliary": false,
+        "authoritative_core_roster": true,
+        "inspect": {}
+      }
+    },
+    {
+      "node_id": "capsule:critique",
+      "node_type": "capsule",
+      "label": "Critique Expert",
+      "x": 736.744,
+      "y": -125.198,
+      "z": -13.327,
+      "radius": 96.0,
+      "status_label": "LOCKED CANON",
+      "subject": "critique",
+      "topology_id": "critique-duality",
+      "layer_index": 4,
+      "internal_nodes": [
+        {
+          "id": "critique-0",
+          "x": -6.0,
+          "y": 0.0,
+          "kind": "dual-hemisphere",
+          "side": 0
+        },
+        {
+          "id": "critique-1",
+          "x": -11.147,
+          "y": 21.855,
+          "kind": "dual-hemisphere",
+          "side": 0
+        },
+        {
+          "id": "critique-2",
+          "x": -24.18,
+          "y": 33.483,
+          "kind": "dual-hemisphere",
+          "side": 0
+        },
+        {
+          "id": "critique-3",
+          "x": -39.0,
+          "y": 29.445,
+          "kind": "dual-hemisphere",
+          "side": 0
+        },
+        {
+          "id": "critique-4",
+          "x": -48.673,
+          "y": 11.629,
+          "kind": "dual-hemisphere",
+          "side": 0
+        },
+        {
+          "id": "critique-5",
+          "x": -48.673,
+          "y": -11.629,
+          "kind": "dual-hemisphere",
+          "side": 0
+        },
+        {
+          "id": "critique-6",
+          "x": -39.0,
+          "y": -29.445,
+          "kind": "dual-hemisphere",
+          "side": 0
+        },
+        {
+          "id": "critique-7",
+          "x": -24.18,
+          "y": -33.483,
+          "kind": "dual-hemisphere",
+          "side": 0
+        },
+        {
+          "id": "critique-8",
+          "x": -11.147,
+          "y": -21.855,
+          "kind": "dual-hemisphere",
+          "side": 0
+        },
+        {
+          "id": "critique-9",
+          "x": 50.0,
+          "y": 0.0,
+          "kind": "dual-hemisphere",
+          "side": 1
+        },
+        {
+          "id": "critique-10",
+          "x": 44.853,
+          "y": 21.855,
+          "kind": "dual-hemisphere",
+          "side": 1
+        },
+        {
+          "id": "critique-11",
+          "x": 31.82,
+          "y": 33.483,
+          "kind": "dual-hemisphere",
+          "side": 1
+        },
+        {
+          "id": "critique-12",
+          "x": 17.0,
+          "y": 29.445,
+          "kind": "dual-hemisphere",
+          "side": 1
+        },
+        {
+          "id": "critique-13",
+          "x": 7.327,
+          "y": 11.629,
+          "kind": "dual-hemisphere",
+          "side": 1
+        },
+        {
+          "id": "critique-14",
+          "x": 7.327,
+          "y": -11.629,
+          "kind": "dual-hemisphere",
+          "side": 1
+        },
+        {
+          "id": "critique-15",
+          "x": 17.0,
+          "y": -29.445,
+          "kind": "dual-hemisphere",
+          "side": 1
+        },
+        {
+          "id": "critique-16",
+          "x": 31.82,
+          "y": -33.483,
+          "kind": "dual-hemisphere",
+          "side": 1
+        },
+        {
+          "id": "critique-17",
+          "x": 44.853,
+          "y": -21.855,
+          "kind": "dual-hemisphere",
+          "side": 1
+        }
+      ],
+      "meta": {
+        "palette_key": "crimson",
+        "geometry_kind": "dual-hemisphere",
+        "motif_labels": [
+          "skeptic-ring",
+          "arbitration-core",
+          "challenge-lane"
+        ],
+        "description": "Opposed hemispheres joined by an arbitration core and challenge ring.",
+        "role_hint": "Arbiter, examiner, and skeptical safety gate.",
+        "auxiliary": false,
+        "authoritative_core_roster": true,
+        "inspect": {}
+      }
+    },
+    {
+      "node_id": "capsule:conversationalist",
+      "node_type": "capsule",
+      "label": "Conversationalist Expert",
+      "x": 757.404,
+      "y": 42.115,
+      "z": 4.609,
+      "radius": 96.0,
+      "status_label": "LOCKED CANON",
+      "subject": "conversationalist",
+      "topology_id": "conversation-braid",
+      "layer_index": 5,
+      "internal_nodes": [
+        {
+          "id": "conversationalist-0",
+          "x": 0.0,
+          "y": -54.0,
+          "kind": "braid",
+          "band": 0
+        },
+        {
+          "id": "conversationalist-1",
+          "x": 32.888,
+          "y": -46.8,
+          "kind": "braid",
+          "band": 1
+        },
+        {
+          "id": "conversationalist-2",
+          "x": 20.808,
+          "y": -39.6,
+          "kind": "braid",
+          "band": 0
+        },
+        {
+          "id": "conversationalist-3",
+          "x": 11.125,
+          "y": -32.4,
+          "kind": "braid",
+          "band": 1
+        },
+        {
+          "id": "conversationalist-4",
+          "x": 27.847,
+          "y": -25.2,
+          "kind": "braid",
+          "band": 0
+        },
+        {
+          "id": "conversationalist-5",
+          "x": -18.0,
+          "y": -18.0,
+          "kind": "braid",
+          "band": 1
+        },
+        {
+          "id": "conversationalist-6",
+          "x": 16.458,
+          "y": -10.8,
+          "kind": "braid",
+          "band": 0
+        },
+        {
+          "id": "conversationalist-7",
+          "x": -35.213,
+          "y": -3.6,
+          "kind": "braid",
+          "band": 1
+        },
+        {
+          "id": "conversationalist-8",
+          "x": -5.822,
+          "y": 3.6,
+          "kind": "braid",
+          "band": 0
+        },
+        {
+          "id": "conversationalist-9",
+          "x": -29.125,
+          "y": 10.8,
+          "kind": "braid",
+          "band": 1
+        },
+        {
+          "id": "conversationalist-10",
+          "x": -24.249,
+          "y": 18.0,
+          "kind": "braid",
+          "band": 0
+        },
+        {
+          "id": "conversationalist-11",
+          "x": -3.763,
+          "y": 25.2,
+          "kind": "braid",
+          "band": 1
+        },
+        {
+          "id": "conversationalist-12",
+          "x": -26.63,
+          "y": 32.4,
+          "kind": "braid",
+          "band": 0
+        },
+        {
+          "id": "conversationalist-13",
+          "x": 24.089,
+          "y": 39.6,
+          "kind": "braid",
+          "band": 1
+        },
+        {
+          "id": "conversationalist-14",
+          "x": -11.389,
+          "y": 46.8,
+          "kind": "braid",
+          "band": 0
+        },
+        {
+          "id": "conversationalist-15",
+          "x": 36.0,
+          "y": 54.0,
+          "kind": "braid",
+          "band": 1
+        }
+      ],
+      "meta": {
+        "palette_key": "rose",
+        "geometry_kind": "braid",
+        "motif_labels": [
+          "dialog-braid",
+          "tone-loop",
+          "continuity-ribbon"
+        ],
+        "description": "Braided dialog loops with continuity ribbons.",
+        "role_hint": "Tone, continuity, and dialog shaping.",
+        "auxiliary": false,
+        "authoritative_core_roster": true,
+        "inspect": {}
+      }
+    },
+    {
+      "node_id": "capsule:toolsmith",
+      "node_type": "capsule",
+      "label": "Toolsmith Expert",
+      "x": 695.988,
+      "y": 204.865,
+      "z": 20.6,
+      "radius": 96.0,
+      "status_label": "LOCKED CANON",
+      "subject": "toolsmith",
+      "topology_id": "toolsmith-switchboard",
+      "layer_index": 6,
+      "internal_nodes": [
+        {
+          "id": "toolsmith-0",
+          "x": -52.0,
+          "y": -42.0,
+          "kind": "switchboard"
+        },
+        {
+          "id": "toolsmith-1",
+          "x": -17.333,
+          "y": -42.0,
+          "kind": "switchboard"
+        },
+        {
+          "id": "toolsmith-2",
+          "x": 17.333,
+          "y": -42.0,
+          "kind": "switchboard"
+        },
+        {
+          "id": "toolsmith-3",
+          "x": 52.0,
+          "y": -42.0,
+          "kind": "switchboard"
+        },
+        {
+          "id": "toolsmith-4",
+          "x": -42.0,
+          "y": -14.0,
+          "kind": "switchboard"
+        },
+        {
+          "id": "toolsmith-5",
+          "x": -7.333,
+          "y": -14.0,
+          "kind": "switchboard"
+        },
+        {
+          "id": "toolsmith-6",
+          "x": 27.333,
+          "y": -14.0,
+          "kind": "switchboard"
+        },
+        {
+          "id": "toolsmith-7",
+          "x": 62.0,
+          "y": -14.0,
+          "kind": "switchboard"
+        },
+        {
+          "id": "toolsmith-8",
+          "x": -52.0,
+          "y": 14.0,
+          "kind": "switchboard"
+        },
+        {
+          "id": "toolsmith-9",
+          "x": -17.333,
+          "y": 14.0,
+          "kind": "switchboard"
+        },
+        {
+          "id": "toolsmith-10",
+          "x": 17.333,
+          "y": 14.0,
+          "kind": "switchboard"
+        },
+        {
+          "id": "toolsmith-11",
+          "x": 52.0,
+          "y": 14.0,
+          "kind": "switchboard"
+        },
+        {
+          "id": "toolsmith-12",
+          "x": -42.0,
+          "y": 42.0,
+          "kind": "switchboard"
+        },
+        {
+          "id": "toolsmith-13",
+          "x": -7.333,
+          "y": 42.0,
+          "kind": "switchboard"
+        },
+        {
+          "id": "toolsmith-14",
+          "x": 27.333,
+          "y": 42.0,
+          "kind": "switchboard"
+        },
+        {
+          "id": "toolsmith-15",
+          "x": 62.0,
+          "y": 42.0,
+          "kind": "switchboard"
+        }
+      ],
+      "meta": {
+        "palette_key": "indigo",
+        "geometry_kind": "switchboard",
+        "motif_labels": [
+          "port-grid",
+          "schema-switch",
+          "recovery-line"
+        ],
+        "description": "Port-switchboard mesh for schema-locked tool orchestration.",
+        "role_hint": "Tool schema discipline and chain recovery.",
+        "auxiliary": false,
+        "authoritative_core_roster": true,
+        "inspect": {}
+      }
+    },
+    {
+      "node_id": "capsule:security",
+      "node_type": "capsule",
+      "label": "Security Expert",
+      "x": 559.15,
+      "y": 345.414,
+      "z": 27.904,
+      "radius": 96.0,
+      "status_label": "LOCKED CANON",
+      "subject": "security",
+      "topology_id": "security-shield",
+      "layer_index": 7,
+      "internal_nodes": [
+        {
+          "id": "security-0",
+          "x": -42,
+          "y": -8,
+          "kind": "shield"
+        },
+        {
+          "id": "security-1",
+          "x": -28,
+          "y": -42,
+          "kind": "shield"
+        },
+        {
+          "id": "security-2",
+          "x": 0,
+          "y": -54,
+          "kind": "shield"
+        },
+        {
+          "id": "security-3",
+          "x": 28,
+          "y": -42,
+          "kind": "shield"
+        },
+        {
+          "id": "security-4",
+          "x": 42,
+          "y": -8,
+          "kind": "shield"
+        },
+        {
+          "id": "security-5",
+          "x": 24,
+          "y": 40,
+          "kind": "shield"
+        },
+        {
+          "id": "security-6",
+          "x": 0,
+          "y": 54,
+          "kind": "shield"
+        },
+        {
+          "id": "security-7",
+          "x": -24,
+          "y": 40,
+          "kind": "shield"
+        },
+        {
+          "id": "security-8",
+          "x": -18,
+          "y": -6,
+          "kind": "shield-mesh"
+        },
+        {
+          "id": "security-9",
+          "x": 0,
+          "y": -6,
+          "kind": "shield-mesh"
+        },
+        {
+          "id": "security-10",
+          "x": 18,
+          "y": -6,
+          "kind": "shield-mesh"
+        },
+        {
+          "id": "security-11",
+          "x": -18,
+          "y": 12,
+          "kind": "shield-mesh"
+        },
+        {
+          "id": "security-12",
+          "x": 0,
+          "y": 12,
+          "kind": "shield-mesh"
+        },
+        {
+          "id": "security-13",
+          "x": 18,
+          "y": 12,
+          "kind": "shield-mesh"
+        },
+        {
+          "id": "security-14",
+          "x": -18,
+          "y": 30,
+          "kind": "shield-mesh"
+        },
+        {
+          "id": "security-15",
+          "x": 0,
+          "y": 30,
+          "kind": "shield-mesh"
+        },
+        {
+          "id": "security-16",
+          "x": 18,
+          "y": 30,
+          "kind": "shield-mesh"
+        },
+        {
+          "id": "security-17",
+          "x": -18,
+          "y": 48,
+          "kind": "shield-mesh"
+        }
+      ],
+      "meta": {
+        "palette_key": "ember",
+        "geometry_kind": "shield-mesh",
+        "motif_labels": [
+          "shield-ring",
+          "breach-sentry",
+          "mitigation-lane"
+        ],
+        "description": "Shield mesh with breach sentries and mitigation lanes.",
+        "role_hint": "Misuse analysis and secure patching.",
+        "auxiliary": false,
+        "authoritative_core_roster": true,
+        "inspect": {}
+      }
+    },
+    {
+      "node_id": "capsule:memory-weaver",
+      "node_type": "capsule",
+      "label": "Memory Weaver Expert",
+      "x": 361.72,
+      "y": 448.532,
+      "z": 23.441,
+      "radius": 96.0,
+      "status_label": "LOCKED CANON",
+      "subject": "memory-weaver",
+      "topology_id": "memory-braid",
+      "layer_index": 8,
+      "internal_nodes": [
+        {
+          "id": "memory-weaver-0",
+          "x": 0.0,
+          "y": -54.0,
+          "kind": "archive-braid",
+          "band": 0
+        },
+        {
+          "id": "memory-weaver-1",
+          "x": 35.332,
+          "y": -48.316,
+          "kind": "archive-braid",
+          "band": 1
+        },
+        {
+          "id": "memory-weaver-2",
+          "x": 16.558,
+          "y": -42.632,
+          "kind": "archive-braid",
+          "band": 2
+        },
+        {
+          "id": "memory-weaver-3",
+          "x": 23.441,
+          "y": -36.947,
+          "kind": "archive-braid",
+          "band": 0
+        },
+        {
+          "id": "memory-weaver-4",
+          "x": 25.103,
+          "y": -31.263,
+          "kind": "archive-braid",
+          "band": 1
+        },
+        {
+          "id": "memory-weaver-5",
+          "x": -25.072,
+          "y": -25.579,
+          "kind": "archive-braid",
+          "band": 2
+        },
+        {
+          "id": "memory-weaver-6",
+          "x": 25.642,
+          "y": -19.895,
+          "kind": "archive-braid",
+          "band": 0
+        },
+        {
+          "id": "memory-weaver-7",
+          "x": -7.873,
+          "y": -14.211,
+          "kind": "archive-braid",
+          "band": 1
+        },
+        {
+          "id": "memory-weaver-8",
+          "x": -43.983,
+          "y": -8.526,
+          "kind": "archive-braid",
+          "band": 2
+        },
+        {
+          "id": "memory-weaver-9",
+          "x": 4.609,
+          "y": -2.842,
+          "kind": "archive-braid",
+          "band": 0
+        },
+        {
+          "id": "memory-weaver-10",
+          "x": -33.714,
+          "y": 2.842,
+          "kind": "archive-braid",
+          "band": 1
+        },
+        {
+          "id": "memory-weaver-11",
+          "x": -23.042,
+          "y": 8.526,
+          "kind": "archive-braid",
+          "band": 2
+        },
+        {
+          "id": "memory-weaver-12",
+          "x": -20.6,
+          "y": 14.211,
+          "kind": "archive-braid",
+          "band": 0
+        },
+        {
+          "id": "memory-weaver-13",
+          "x": -29.008,
+          "y": 19.895,
+          "kind": "archive-braid",
+          "band": 1
+        },
+        {
+          "id": "memory-weaver-14",
+          "x": 18.778,
+          "y": 25.579,
+          "kind": "archive-braid",
+          "band": 2
+        },
+        {
+          "id": "memory-weaver-15",
+          "x": -27.143,
+          "y": 31.263,
+          "kind": "archive-braid",
+          "band": 0
+        },
+        {
+          "id": "memory-weaver-16",
+          "x": 1.983,
+          "y": 36.947,
+          "kind": "archive-braid",
+          "band": 1
+        },
+        {
+          "id": "memory-weaver-17",
+          "x": 43.583,
+          "y": 42.632,
+          "kind": "archive-braid",
+          "band": 2
+        },
+        {
+          "id": "memory-weaver-18",
+          "x": -9.092,
+          "y": 48.316,
+          "kind": "archive-braid",
+          "band": 0
+        },
+        {
+          "id": "memory-weaver-19",
+          "x": 31.177,
+          "y": 54.0,
+          "kind": "archive-braid",
+          "band": 1
+        }
+      ],
+      "meta": {
+        "palette_key": "teal",
+        "geometry_kind": "archive-braid",
+        "motif_labels": [
+          "episodic-thread",
+          "semantic-loom",
+          "retrieval-knot"
+        ],
+        "description": "Braided archive strands bridging episodic, semantic, and temporal memory.",
+        "role_hint": "Multi-plane memory weaving and budgeting.",
+        "auxiliary": false,
+        "authoritative_core_roster": true,
+        "inspect": {}
+      }
+    },
+    {
+      "node_id": "capsule:meta-reasoner",
+      "node_type": "capsule",
+      "label": "Meta Reasoner Expert",
+      "x": 125.092,
+      "y": 503.044,
+      "z": 9.092,
+      "radius": 96.0,
+      "status_label": "LOCKED CANON",
+      "subject": "meta-reasoner",
+      "topology_id": "meta-synthesis",
+      "layer_index": 9,
+      "internal_nodes": [
+        {
+          "id": "meta-reasoner-0",
+          "x": -6.0,
+          "y": 0.0,
+          "kind": "supervisory-halo",
+          "side": 0
+        },
+        {
+          "id": "meta-reasoner-1",
+          "x": -17.0,
+          "y": 29.445,
+          "kind": "supervisory-halo",
+          "side": 0
+        },
+        {
+          "id": "meta-reasoner-2",
+          "x": -39.0,
+          "y": 29.445,
+          "kind": "supervisory-halo",
+          "side": 0
+        },
+        {
+          "id": "meta-reasoner-3",
+          "x": -50.0,
+          "y": 0.0,
+          "kind": "supervisory-halo",
+          "side": 0
+        },
+        {
+          "id": "meta-reasoner-4",
+          "x": -39.0,
+          "y": -29.445,
+          "kind": "supervisory-halo",
+          "side": 0
+        },
+        {
+          "id": "meta-reasoner-5",
+          "x": -17.0,
+          "y": -29.445,
+          "kind": "supervisory-halo",
+          "side": 0
+        },
+        {
+          "id": "meta-reasoner-6",
+          "x": 50.0,
+          "y": 0.0,
+          "kind": "supervisory-halo",
+          "side": 1
+        },
+        {
+          "id": "meta-reasoner-7",
+          "x": 39.0,
+          "y": 29.445,
+          "kind": "supervisory-halo",
+          "side": 1
+        },
+        {
+          "id": "meta-reasoner-8",
+          "x": 17.0,
+          "y": 29.445,
+          "kind": "supervisory-halo",
+          "side": 1
+        },
+        {
+          "id": "meta-reasoner-9",
+          "x": 6.0,
+          "y": 0.0,
+          "kind": "supervisory-halo",
+          "side": 1
+        },
+        {
+          "id": "meta-reasoner-10",
+          "x": 17.0,
+          "y": -29.445,
+          "kind": "supervisory-halo",
+          "side": 1
+        },
+        {
+          "id": "meta-reasoner-11",
+          "x": 39.0,
+          "y": -29.445,
+          "kind": "supervisory-halo",
+          "side": 1
+        },
+        {
+          "id": "meta-reasoner-halo-0",
+          "x": 58.0,
+          "y": 0.0,
+          "kind": "halo"
+        },
+        {
+          "id": "meta-reasoner-halo-1",
+          "x": 29.0,
+          "y": 50.229,
+          "kind": "halo"
+        },
+        {
+          "id": "meta-reasoner-halo-2",
+          "x": -29.0,
+          "y": 50.229,
+          "kind": "halo"
+        },
+        {
+          "id": "meta-reasoner-halo-3",
+          "x": -58.0,
+          "y": 0.0,
+          "kind": "halo"
+        },
+        {
+          "id": "meta-reasoner-halo-4",
+          "x": -29.0,
+          "y": -50.229,
+          "kind": "halo"
+        },
+        {
+          "id": "meta-reasoner-halo-5",
+          "x": 29.0,
+          "y": -50.229,
+          "kind": "halo"
+        }
+      ],
+      "meta": {
+        "palette_key": "gold",
+        "geometry_kind": "supervisory-halo",
+        "motif_labels": [
+          "synthesis-halo",
+          "self-check",
+          "merge-gate"
+        ],
+        "description": "Mirrored synthesis lobes under a supervisory halo.",
+        "role_hint": "Multi-expert synthesis and reflective oversight.",
+        "auxiliary": false,
+        "authoritative_core_roster": true,
+        "inspect": {}
+      }
+    },
+    {
+      "node_id": "capsule:router",
+      "node_type": "capsule",
+      "label": "Router Expert",
+      "x": -125.092,
+      "y": 503.044,
+      "z": -9.092,
+      "radius": 96.0,
+      "status_label": "LOCKED CANON",
+      "subject": "router",
+      "topology_id": "router-fabric",
+      "layer_index": 10,
+      "internal_nodes": [
+        {
+          "id": "router-hub",
+          "x": 0,
+          "y": 0,
+          "kind": "hub"
+        },
+        {
+          "id": "router-1",
+          "x": 42.0,
+          "y": 0.0,
+          "kind": "router-fabric"
+        },
+        {
+          "id": "router-2",
+          "x": 52.986,
+          "y": 23.591,
+          "kind": "router-fabric"
+        },
+        {
+          "id": "router-3",
+          "x": 28.103,
+          "y": 31.212,
+          "kind": "router-fabric"
+        },
+        {
+          "id": "router-4",
+          "x": 17.923,
+          "y": 55.161,
+          "kind": "router-fabric"
+        },
+        {
+          "id": "router-5",
+          "x": -4.39,
+          "y": 41.77,
+          "kind": "router-fabric"
+        },
+        {
+          "id": "router-6",
+          "x": -29.0,
+          "y": 50.229,
+          "kind": "router-fabric"
+        },
+        {
+          "id": "router-7",
+          "x": -33.979,
+          "y": 24.687,
+          "kind": "router-fabric"
+        },
+        {
+          "id": "router-8",
+          "x": -56.733,
+          "y": 12.059,
+          "kind": "router-fabric"
+        },
+        {
+          "id": "router-9",
+          "x": -41.082,
+          "y": -8.732,
+          "kind": "router-fabric"
+        },
+        {
+          "id": "router-10",
+          "x": -46.923,
+          "y": -34.092,
+          "kind": "router-fabric"
+        },
+        {
+          "id": "router-11",
+          "x": -21.0,
+          "y": -36.373,
+          "kind": "router-fabric"
+        },
+        {
+          "id": "router-12",
+          "x": -6.063,
+          "y": -57.682,
+          "kind": "router-fabric"
+        },
+        {
+          "id": "router-13",
+          "x": 12.979,
+          "y": -39.944,
+          "kind": "router-fabric"
+        },
+        {
+          "id": "router-14",
+          "x": 38.81,
+          "y": -43.102,
+          "kind": "router-fabric"
+        },
+        {
+          "id": "router-15",
+          "x": 38.369,
+          "y": -17.083,
+          "kind": "router-fabric"
+        }
+      ],
+      "meta": {
+        "palette_key": "violet",
+        "geometry_kind": "router-fabric",
+        "motif_labels": [
+          "switch-fabric",
+          "budget-gate",
+          "fallback-spine"
+        ],
+        "description": "Hub-and-spoke routing fabric with fallback spines.",
+        "role_hint": "Budget, routing, and fallback policy.",
+        "auxiliary": false,
+        "authoritative_core_roster": true,
+        "inspect": {}
+      }
+    },
+    {
+      "node_id": "capsule:linguist",
+      "node_type": "capsule",
+      "label": "Linguist Expert",
+      "x": -361.72,
+      "y": 448.532,
+      "z": -23.441,
+      "radius": 96.0,
+      "status_label": "LOCKED CANON",
+      "subject": "linguist",
+      "topology_id": "linguist-helix",
+      "layer_index": 11,
+      "internal_nodes": [
+        {
+          "id": "linguist-0",
+          "x": 26.0,
+          "y": -52.0,
+          "kind": "syntax-helix"
+        },
+        {
+          "id": "linguist-1",
+          "x": 17.397,
+          "y": -45.067,
+          "kind": "syntax-helix"
+        },
+        {
+          "id": "linguist-2",
+          "x": -2.718,
+          "y": -38.133,
+          "kind": "syntax-helix"
+        },
+        {
+          "id": "linguist-3",
+          "x": -21.034,
+          "y": -31.2,
+          "kind": "syntax-helix"
+        },
+        {
+          "id": "linguist-4",
+          "x": -25.432,
+          "y": -24.267,
+          "kind": "syntax-helix"
+        },
+        {
+          "id": "linguist-5",
+          "x": -13.0,
+          "y": -17.333,
+          "kind": "syntax-helix"
+        },
+        {
+          "id": "linguist-6",
+          "x": 8.034,
+          "y": -10.4,
+          "kind": "syntax-helix"
+        },
+        {
+          "id": "linguist-7",
+          "x": 23.752,
+          "y": -3.467,
+          "kind": "syntax-helix"
+        },
+        {
+          "id": "linguist-8",
+          "x": 23.752,
+          "y": 3.467,
+          "kind": "syntax-helix"
+        },
+        {
+          "id": "linguist-9",
+          "x": 8.034,
+          "y": 10.4,
+          "kind": "syntax-helix"
+        },
+        {
+          "id": "linguist-10",
+          "x": -13.0,
+          "y": 17.333,
+          "kind": "syntax-helix"
+        },
+        {
+          "id": "linguist-11",
+          "x": -25.432,
+          "y": 24.267,
+          "kind": "syntax-helix"
+        },
+        {
+          "id": "linguist-12",
+          "x": -21.034,
+          "y": 31.2,
+          "kind": "syntax-helix"
+        },
+        {
+          "id": "linguist-13",
+          "x": -2.718,
+          "y": 38.133,
+          "kind": "syntax-helix"
+        },
+        {
+          "id": "linguist-14",
+          "x": 17.397,
+          "y": 45.067,
+          "kind": "syntax-helix"
+        },
+        {
+          "id": "linguist-15",
+          "x": 26.0,
+          "y": 52.0,
+          "kind": "syntax-helix"
+        }
+      ],
+      "meta": {
+        "palette_key": "azure",
+        "geometry_kind": "syntax-helix",
+        "motif_labels": [
+          "syntax-helix",
+          "dialect-branch",
+          "paraphrase-lane"
+        ],
+        "description": "Syntax helix with dialect branches and paraphrase lanes.",
+        "role_hint": "Multilingual generation and register control.",
+        "auxiliary": false,
+        "authoritative_core_roster": true,
+        "inspect": {}
+      }
+    },
+    {
+      "node_id": "capsule:vision",
+      "node_type": "capsule",
+      "label": "Vision Expert",
+      "x": -559.15,
+      "y": 345.414,
+      "z": -27.904,
+      "radius": 96.0,
+      "status_label": "LOCKED CANON",
+      "subject": "vision",
+      "topology_id": "vision-retina",
+      "layer_index": 12,
+      "internal_nodes": [
+        {
+          "id": "vision-0",
+          "x": 0,
+          "y": -50,
+          "kind": "feature-pyramid"
+        },
+        {
+          "id": "vision-1",
+          "x": -34.0,
+          "y": -18,
+          "kind": "feature-pyramid"
+        },
+        {
+          "id": "vision-2",
+          "x": 34.0,
+          "y": -18,
+          "kind": "feature-pyramid"
+        },
+        {
+          "id": "vision-3",
+          "x": -52.0,
+          "y": 14,
+          "kind": "feature-pyramid"
+        },
+        {
+          "id": "vision-4",
+          "x": 0.0,
+          "y": 14,
+          "kind": "feature-pyramid"
+        },
+        {
+          "id": "vision-5",
+          "x": 52.0,
+          "y": 14,
+          "kind": "feature-pyramid"
+        },
+        {
+          "id": "vision-6",
+          "x": -70.0,
+          "y": 46,
+          "kind": "feature-pyramid"
+        },
+        {
+          "id": "vision-7",
+          "x": -23.333,
+          "y": 46,
+          "kind": "feature-pyramid"
+        },
+        {
+          "id": "vision-8",
+          "x": 23.333,
+          "y": 46,
+          "kind": "feature-pyramid"
+        },
+        {
+          "id": "vision-9",
+          "x": 70.0,
+          "y": 46,
+          "kind": "feature-pyramid"
+        }
+      ],
+      "meta": {
+        "palette_key": "cyan",
+        "geometry_kind": "feature-pyramid",
+        "motif_labels": [
+          "retina-grid",
+          "layout-pyramid",
+          "grounding-axis"
+        ],
+        "description": "Retina grid feeding a feature pyramid and grounding axis.",
+        "role_hint": "OCR, layout, and image grounding.",
+        "auxiliary": false,
+        "authoritative_core_roster": true,
+        "inspect": {}
+      }
+    },
+    {
+      "node_id": "capsule:audio",
+      "node_type": "capsule",
+      "label": "Audio Expert",
+      "x": -695.988,
+      "y": 204.865,
+      "z": -20.6,
+      "radius": 96.0,
+      "status_label": "LOCKED CANON",
+      "subject": "audio",
+      "topology_id": "audio-wave",
+      "layer_index": 13,
+      "internal_nodes": [
+        {
+          "id": "audio-0",
+          "x": 10.0,
+          "y": 0.0,
+          "kind": "waveform-spiral"
+        },
+        {
+          "id": "audio-1",
+          "x": 6.4,
+          "y": 11.085,
+          "kind": "waveform-spiral"
+        },
+        {
+          "id": "audio-2",
+          "x": -7.8,
+          "y": 13.51,
+          "kind": "waveform-spiral"
+        },
+        {
+          "id": "audio-3",
+          "x": -18.4,
+          "y": 0.0,
+          "kind": "waveform-spiral"
+        },
+        {
+          "id": "audio-4",
+          "x": -10.6,
+          "y": -18.36,
+          "kind": "waveform-spiral"
+        },
+        {
+          "id": "audio-5",
+          "x": 12.0,
+          "y": -20.785,
+          "kind": "waveform-spiral"
+        },
+        {
+          "id": "audio-6",
+          "x": 26.8,
+          "y": -0.0,
+          "kind": "waveform-spiral"
+        },
+        {
+          "id": "audio-7",
+          "x": 14.8,
+          "y": 25.634,
+          "kind": "waveform-spiral"
+        },
+        {
+          "id": "audio-8",
+          "x": -16.2,
+          "y": 28.059,
+          "kind": "waveform-spiral"
+        },
+        {
+          "id": "audio-9",
+          "x": -35.2,
+          "y": 0.0,
+          "kind": "waveform-spiral"
+        },
+        {
+          "id": "audio-10",
+          "x": -19.0,
+          "y": -32.909,
+          "kind": "waveform-spiral"
+        },
+        {
+          "id": "audio-11",
+          "x": 20.4,
+          "y": -35.334,
+          "kind": "waveform-spiral"
+        },
+        {
+          "id": "audio-12",
+          "x": 43.6,
+          "y": -0.0,
+          "kind": "waveform-spiral"
+        },
+        {
+          "id": "audio-13",
+          "x": 23.2,
+          "y": 40.184,
+          "kind": "waveform-spiral"
+        },
+        {
+          "id": "audio-14",
+          "x": -24.6,
+          "y": 42.608,
+          "kind": "waveform-spiral"
+        },
+        {
+          "id": "audio-15",
+          "x": -52.0,
+          "y": 0.0,
+          "kind": "waveform-spiral"
+        }
+      ],
+      "meta": {
+        "palette_key": "coral",
+        "geometry_kind": "waveform-spiral",
+        "motif_labels": [
+          "wave-spiral",
+          "timestamp-ring",
+          "asr-lane"
+        ],
+        "description": "Waveform spiral wrapped in timestamp sensitivity rings.",
+        "role_hint": "ASR, spoken instruction grounding, and timing.",
+        "auxiliary": false,
+        "authoritative_core_roster": true,
+        "inspect": {}
+      }
+    },
+    {
+      "node_id": "capsule:simulation",
+      "node_type": "capsule",
+      "label": "Simulation Expert",
+      "x": -757.404,
+      "y": 42.115,
+      "z": -4.609,
+      "radius": 96.0,
+      "status_label": "LOCKED CANON",
+      "subject": "simulation",
+      "topology_id": "simulation-rollout",
+      "layer_index": 14,
+      "internal_nodes": [
+        {
+          "id": "simulation-core",
+          "x": 0,
+          "y": 0,
+          "kind": "sim-core"
+        },
+        {
+          "id": "simulation-0",
+          "x": 22.0,
+          "y": 0.0,
+          "kind": "rollout-orbits"
+        },
+        {
+          "id": "simulation-1",
+          "x": 34.049,
+          "y": 11.689,
+          "kind": "rollout-orbits"
+        },
+        {
+          "id": "simulation-2",
+          "x": 39.457,
+          "y": 30.711,
+          "kind": "rollout-orbits"
+        },
+        {
+          "id": "simulation-3",
+          "x": 12.033,
+          "y": 18.418,
+          "kind": "rollout-orbits"
+        },
+        {
+          "id": "simulation-4",
+          "x": 8.837,
+          "y": 34.898,
+          "kind": "rollout-orbits"
+        },
+        {
+          "id": "simulation-5",
+          "x": -4.129,
+          "y": 49.829,
+          "kind": "rollout-orbits"
+        },
+        {
+          "id": "simulation-6",
+          "x": -8.837,
+          "y": 20.147,
+          "kind": "rollout-orbits"
+        },
+        {
+          "id": "simulation-7",
+          "x": -24.382,
+          "y": 26.486,
+          "kind": "rollout-orbits"
+        },
+        {
+          "id": "simulation-8",
+          "x": -43.974,
+          "y": 23.797,
+          "kind": "rollout-orbits"
+        },
+        {
+          "id": "simulation-9",
+          "x": -21.7,
+          "y": 3.621,
+          "kind": "rollout-orbits"
+        },
+        {
+          "id": "simulation-10",
+          "x": -35.509,
+          "y": -5.925,
+          "kind": "rollout-orbits"
+        },
+        {
+          "id": "simulation-11",
+          "x": -43.974,
+          "y": -23.797,
+          "kind": "rollout-orbits"
+        },
+        {
+          "id": "simulation-12",
+          "x": -14.9,
+          "y": -16.186,
+          "kind": "rollout-orbits"
+        },
+        {
+          "id": "simulation-13",
+          "x": -14.461,
+          "y": -32.968,
+          "kind": "rollout-orbits"
+        },
+        {
+          "id": "simulation-14",
+          "x": -4.129,
+          "y": -49.829,
+          "kind": "rollout-orbits"
+        },
+        {
+          "id": "simulation-15",
+          "x": 5.401,
+          "y": -21.327,
+          "kind": "rollout-orbits"
+        },
+        {
+          "id": "simulation-16",
+          "x": 19.69,
+          "y": -30.138,
+          "kind": "rollout-orbits"
+        },
+        {
+          "id": "simulation-17",
+          "x": 39.457,
+          "y": -30.711,
+          "kind": "rollout-orbits"
+        },
+        {
+          "id": "simulation-18",
+          "x": 20.808,
+          "y": -7.143,
+          "kind": "rollout-orbits"
+        }
+      ],
+      "meta": {
+        "palette_key": "lime",
+        "geometry_kind": "rollout-orbits",
+        "motif_labels": [
+          "rollout-orbit",
+          "counterfactual-arc",
+          "uncertainty-gate"
+        ],
+        "description": "Orbiting rollout lanes with counterfactual branches.",
+        "role_hint": "Rollouts, counterfactuals, and dream scenarios.",
+        "auxiliary": false,
+        "authoritative_core_roster": true,
+        "inspect": {}
+      }
+    },
+    {
+      "node_id": "capsule:builder",
+      "node_type": "capsule",
+      "label": "Builder Expert",
+      "x": -736.744,
+      "y": -125.198,
+      "z": 13.327,
+      "radius": 96.0,
+      "status_label": "LOCKED CANON",
+      "subject": "builder",
+      "topology_id": "builder-scaffold",
+      "layer_index": 15,
+      "internal_nodes": [
+        {
+          "id": "builder-0",
+          "x": -52.0,
+          "y": -42.0,
+          "kind": "scaffold-lattice"
+        },
+        {
+          "id": "builder-1",
+          "x": -17.333,
+          "y": -42.0,
+          "kind": "scaffold-lattice"
+        },
+        {
+          "id": "builder-2",
+          "x": 17.333,
+          "y": -42.0,
+          "kind": "scaffold-lattice"
+        },
+        {
+          "id": "builder-3",
+          "x": 52.0,
+          "y": -42.0,
+          "kind": "scaffold-lattice"
+        },
+        {
+          "id": "builder-4",
+          "x": -52.0,
+          "y": -21.0,
+          "kind": "scaffold-lattice"
+        },
+        {
+          "id": "builder-5",
+          "x": -17.333,
+          "y": -21.0,
+          "kind": "scaffold-lattice"
+        },
+        {
+          "id": "builder-6",
+          "x": 17.333,
+          "y": -21.0,
+          "kind": "scaffold-lattice"
+        },
+        {
+          "id": "builder-7",
+          "x": 52.0,
+          "y": -21.0,
+          "kind": "scaffold-lattice"
+        },
+        {
+          "id": "builder-8",
+          "x": -52.0,
+          "y": 0.0,
+          "kind": "scaffold-lattice"
+        },
+        {
+          "id": "builder-9",
+          "x": -17.333,
+          "y": 0.0,
+          "kind": "scaffold-lattice"
+        },
+        {
+          "id": "builder-10",
+          "x": 17.333,
+          "y": 0.0,
+          "kind": "scaffold-lattice"
+        },
+        {
+          "id": "builder-11",
+          "x": 52.0,
+          "y": 0.0,
+          "kind": "scaffold-lattice"
+        },
+        {
+          "id": "builder-12",
+          "x": -52.0,
+          "y": 21.0,
+          "kind": "scaffold-lattice"
+        },
+        {
+          "id": "builder-13",
+          "x": -17.333,
+          "y": 21.0,
+          "kind": "scaffold-lattice"
+        },
+        {
+          "id": "builder-14",
+          "x": 17.333,
+          "y": 21.0,
+          "kind": "scaffold-lattice"
+        },
+        {
+          "id": "builder-15",
+          "x": 52.0,
+          "y": 21.0,
+          "kind": "scaffold-lattice"
+        },
+        {
+          "id": "builder-16",
+          "x": -52.0,
+          "y": 42.0,
+          "kind": "scaffold-lattice"
+        },
+        {
+          "id": "builder-17",
+          "x": -17.333,
+          "y": 42.0,
+          "kind": "scaffold-lattice"
+        }
+      ],
+      "meta": {
+        "palette_key": "ochre",
+        "geometry_kind": "scaffold-lattice",
+        "motif_labels": [
+          "scaffold-rail",
+          "assembly-node",
+          "rebuild-loop"
+        ],
+        "description": "Structural scaffold with assembly rails and rebuild loops.",
+        "role_hint": "Feature assembly and artifact validation.",
+        "auxiliary": false,
+        "authoritative_core_roster": true,
+        "inspect": {}
+      }
+    },
+    {
+      "node_id": "capsule:instructor",
+      "node_type": "capsule",
+      "label": "Instructor Expert",
+      "x": -636.247,
+      "y": -278.944,
+      "z": 25.642,
+      "radius": 96.0,
+      "status_label": "LOCKED CANON",
+      "subject": "instructor",
+      "topology_id": "instructor-ladder",
+      "layer_index": 16,
+      "internal_nodes": [
+        {
+          "id": "instructor-0",
+          "x": -22,
+          "y": -48.0,
+          "kind": "rail"
+        },
+        {
+          "id": "instructor-1",
+          "x": 22,
+          "y": -48.0,
+          "kind": "ladder-checkpoints"
+        },
+        {
+          "id": "instructor-2",
+          "x": -22,
+          "y": -36.0,
+          "kind": "rail"
+        },
+        {
+          "id": "instructor-3",
+          "x": 22,
+          "y": -36.0,
+          "kind": "ladder-checkpoints"
+        },
+        {
+          "id": "instructor-4",
+          "x": -22,
+          "y": -24.0,
+          "kind": "rail"
+        },
+        {
+          "id": "instructor-5",
+          "x": 22,
+          "y": -24.0,
+          "kind": "ladder-checkpoints"
+        },
+        {
+          "id": "instructor-6",
+          "x": -22,
+          "y": -12.0,
+          "kind": "rail"
+        },
+        {
+          "id": "instructor-7",
+          "x": 22,
+          "y": -12.0,
+          "kind": "ladder-checkpoints"
+        },
+        {
+          "id": "instructor-8",
+          "x": -22,
+          "y": 0.0,
+          "kind": "rail"
+        },
+        {
+          "id": "instructor-9",
+          "x": 22,
+          "y": 0.0,
+          "kind": "ladder-checkpoints"
+        },
+        {
+          "id": "instructor-10",
+          "x": -22,
+          "y": 12.0,
+          "kind": "rail"
+        },
+        {
+          "id": "instructor-11",
+          "x": 22,
+          "y": 12.0,
+          "kind": "ladder-checkpoints"
+        },
+        {
+          "id": "instructor-12",
+          "x": -22,
+          "y": 24.0,
+          "kind": "rail"
+        },
+        {
+          "id": "instructor-13",
+          "x": 22,
+          "y": 24.0,
+          "kind": "ladder-checkpoints"
+        },
+        {
+          "id": "instructor-14",
+          "x": -22,
+          "y": 36.0,
+          "kind": "rail"
+        },
+        {
+          "id": "instructor-15",
+          "x": 22,
+          "y": 36.0,
+          "kind": "ladder-checkpoints"
+        },
+        {
+          "id": "instructor-16",
+          "x": -22,
+          "y": 48.0,
+          "kind": "rail"
+        },
+        {
+          "id": "instructor-17",
+          "x": 22,
+          "y": 48.0,
+          "kind": "ladder-checkpoints"
+        }
+      ],
+      "meta": {
+        "palette_key": "mint",
+        "geometry_kind": "ladder-checkpoints",
+        "motif_labels": [
+          "lesson-ladder",
+          "mastery-check",
+          "remediation-rung"
+        ],
+        "description": "Pedagogical ladder with checkpoint rungs and remediation branches.",
+        "role_hint": "Scaffolding, questioning, and mastery checks.",
+        "auxiliary": false,
+        "authoritative_core_roster": true,
+        "inspect": {}
+      }
+    },
+    {
+      "node_id": "capsule:intent-mapper",
+      "node_type": "capsule",
+      "label": "Intent Mapper Expert",
+      "x": -466.802,
+      "y": -402.462,
+      "z": 27.143,
+      "radius": 96.0,
+      "status_label": "LOCKED CANON",
+      "subject": "intent-mapper",
+      "topology_id": "intent-funnel",
+      "layer_index": 17,
+      "internal_nodes": [
+        {
+          "id": "intent-mapper-0",
+          "x": -46.0,
+          "y": -52,
+          "kind": "funnel-cones"
+        },
+        {
+          "id": "intent-mapper-1",
+          "x": -15.333,
+          "y": -52,
+          "kind": "funnel-cones"
+        },
+        {
+          "id": "intent-mapper-2",
+          "x": 15.333,
+          "y": -52,
+          "kind": "funnel-cones"
+        },
+        {
+          "id": "intent-mapper-3",
+          "x": 46.0,
+          "y": -52,
+          "kind": "funnel-cones"
+        },
+        {
+          "id": "intent-mapper-4",
+          "x": -34.0,
+          "y": -18,
+          "kind": "funnel-cones"
+        },
+        {
+          "id": "intent-mapper-5",
+          "x": 0.0,
+          "y": -18,
+          "kind": "funnel-cones"
+        },
+        {
+          "id": "intent-mapper-6",
+          "x": 34.0,
+          "y": -18,
+          "kind": "funnel-cones"
+        },
+        {
+          "id": "intent-mapper-7",
+          "x": -22.0,
+          "y": 16,
+          "kind": "funnel-cones"
+        },
+        {
+          "id": "intent-mapper-8",
+          "x": 22.0,
+          "y": 16,
+          "kind": "funnel-cones"
+        },
+        {
+          "id": "intent-mapper-9",
+          "x": 0,
+          "y": 50,
+          "kind": "funnel-cones"
+        }
+      ],
+      "meta": {
+        "palette_key": "plum",
+        "geometry_kind": "funnel-cones",
+        "motif_labels": [
+          "intent-funnel",
+          "ambiguity-prism",
+          "risk-gate"
+        ],
+        "description": "Funnel classifier cones with ambiguity prisms and risk gates.",
+        "role_hint": "Intent classification and ambiguity reduction.",
+        "auxiliary": false,
+        "authoritative_core_roster": true,
+        "inspect": {}
+      }
+    },
+    {
+      "node_id": "capsule:critic-historian",
+      "node_type": "capsule",
+      "label": "Critic Historian Expert",
+      "x": -246.772,
+      "y": -482.367,
+      "z": 17.198,
+      "radius": 96.0,
+      "status_label": "LOCKED CANON",
+      "subject": "critic-historian",
+      "topology_id": "historian-chronology",
+      "layer_index": 18,
+      "internal_nodes": [
+        {
+          "id": "critic-historian-0",
+          "x": 18.0,
+          "y": 0.0,
+          "kind": "chronology-rings",
+          "ring_index": 0
+        },
+        {
+          "id": "critic-historian-1",
+          "x": 0.0,
+          "y": 18.0,
+          "kind": "chronology-rings",
+          "ring_index": 0
+        },
+        {
+          "id": "critic-historian-2",
+          "x": -18.0,
+          "y": 0.0,
+          "kind": "chronology-rings",
+          "ring_index": 0
+        },
+        {
+          "id": "critic-historian-3",
+          "x": -0.0,
+          "y": -18.0,
+          "kind": "chronology-rings",
+          "ring_index": 0
+        },
+        {
+          "id": "critic-historian-4",
+          "x": 36.0,
+          "y": 0.0,
+          "kind": "chronology-rings",
+          "ring_index": 1
+        },
+        {
+          "id": "critic-historian-5",
+          "x": 0.0,
+          "y": 36.0,
+          "kind": "chronology-rings",
+          "ring_index": 1
+        },
+        {
+          "id": "critic-historian-6",
+          "x": -36.0,
+          "y": 0.0,
+          "kind": "chronology-rings",
+          "ring_index": 1
+        },
+        {
+          "id": "critic-historian-7",
+          "x": -0.0,
+          "y": -36.0,
+          "kind": "chronology-rings",
+          "ring_index": 1
+        },
+        {
+          "id": "critic-historian-8",
+          "x": 54.0,
+          "y": 0.0,
+          "kind": "chronology-rings",
+          "ring_index": 2
+        },
+        {
+          "id": "critic-historian-9",
+          "x": 0.0,
+          "y": 54.0,
+          "kind": "chronology-rings",
+          "ring_index": 2
+        },
+        {
+          "id": "critic-historian-10",
+          "x": -54.0,
+          "y": 0.0,
+          "kind": "chronology-rings",
+          "ring_index": 2
+        },
+        {
+          "id": "critic-historian-11",
+          "x": -0.0,
+          "y": -54.0,
+          "kind": "chronology-rings",
+          "ring_index": 2
+        },
+        {
+          "id": "critic-historian-12",
+          "x": 72.0,
+          "y": 0.0,
+          "kind": "chronology-rings",
+          "ring_index": 3
+        },
+        {
+          "id": "critic-historian-13",
+          "x": 0.0,
+          "y": 72.0,
+          "kind": "chronology-rings",
+          "ring_index": 3
+        },
+        {
+          "id": "critic-historian-14",
+          "x": -72.0,
+          "y": 0.0,
+          "kind": "chronology-rings",
+          "ring_index": 3
+        },
+        {
+          "id": "critic-historian-15",
+          "x": -0.0,
+          "y": -72.0,
+          "kind": "chronology-rings",
+          "ring_index": 3
+        }
+      ],
+      "meta": {
+        "palette_key": "sepia",
+        "geometry_kind": "chronology-rings",
+        "motif_labels": [
+          "chronology-ring",
+          "source-conflict-bridge",
+          "temporal-axis"
+        ],
+        "description": "Chronology rings crossed by source-conflict bridges.",
+        "role_hint": "Chronology repair and evidence-weighted historical critique.",
+        "auxiliary": false,
+        "authoritative_core_roster": true,
+        "inspect": {}
+      }
+    }
+  ],
+  "links": [
+    {
+      "link_id": "core::coder",
+      "source_id": "nexus-core",
+      "target_id": "capsule:coder",
+      "link_type": "core",
+      "strength": 1.0,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "subject": "coder"
+      }
+    },
+    {
+      "link_id": "core::strategist",
+      "source_id": "nexus-core",
+      "target_id": "capsule:strategist",
+      "link_type": "core",
+      "strength": 1.0,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "subject": "strategist"
+      }
+    },
+    {
+      "link_id": "core::analyst",
+      "source_id": "nexus-core",
+      "target_id": "capsule:analyst",
+      "link_type": "core",
+      "strength": 1.0,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "subject": "analyst"
+      }
+    },
+    {
+      "link_id": "core::researcher",
+      "source_id": "nexus-core",
+      "target_id": "capsule:researcher",
+      "link_type": "core",
+      "strength": 1.0,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "subject": "researcher"
+      }
+    },
+    {
+      "link_id": "core::critique",
+      "source_id": "nexus-core",
+      "target_id": "capsule:critique",
+      "link_type": "core",
+      "strength": 1.0,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "subject": "critique"
+      }
+    },
+    {
+      "link_id": "core::conversationalist",
+      "source_id": "nexus-core",
+      "target_id": "capsule:conversationalist",
+      "link_type": "core",
+      "strength": 1.0,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "subject": "conversationalist"
+      }
+    },
+    {
+      "link_id": "core::toolsmith",
+      "source_id": "nexus-core",
+      "target_id": "capsule:toolsmith",
+      "link_type": "core",
+      "strength": 1.0,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "subject": "toolsmith"
+      }
+    },
+    {
+      "link_id": "core::security",
+      "source_id": "nexus-core",
+      "target_id": "capsule:security",
+      "link_type": "core",
+      "strength": 1.0,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "subject": "security"
+      }
+    },
+    {
+      "link_id": "core::memory-weaver",
+      "source_id": "nexus-core",
+      "target_id": "capsule:memory-weaver",
+      "link_type": "core",
+      "strength": 1.0,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "subject": "memory-weaver"
+      }
+    },
+    {
+      "link_id": "core::meta-reasoner",
+      "source_id": "nexus-core",
+      "target_id": "capsule:meta-reasoner",
+      "link_type": "core",
+      "strength": 1.0,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "subject": "meta-reasoner"
+      }
+    },
+    {
+      "link_id": "core::router",
+      "source_id": "nexus-core",
+      "target_id": "capsule:router",
+      "link_type": "core",
+      "strength": 1.0,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "subject": "router"
+      }
+    },
+    {
+      "link_id": "core::linguist",
+      "source_id": "nexus-core",
+      "target_id": "capsule:linguist",
+      "link_type": "core",
+      "strength": 1.0,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "subject": "linguist"
+      }
+    },
+    {
+      "link_id": "core::vision",
+      "source_id": "nexus-core",
+      "target_id": "capsule:vision",
+      "link_type": "core",
+      "strength": 1.0,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "subject": "vision"
+      }
+    },
+    {
+      "link_id": "core::audio",
+      "source_id": "nexus-core",
+      "target_id": "capsule:audio",
+      "link_type": "core",
+      "strength": 1.0,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "subject": "audio"
+      }
+    },
+    {
+      "link_id": "core::simulation",
+      "source_id": "nexus-core",
+      "target_id": "capsule:simulation",
+      "link_type": "core",
+      "strength": 1.0,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "subject": "simulation"
+      }
+    },
+    {
+      "link_id": "core::builder",
+      "source_id": "nexus-core",
+      "target_id": "capsule:builder",
+      "link_type": "core",
+      "strength": 1.0,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "subject": "builder"
+      }
+    },
+    {
+      "link_id": "core::instructor",
+      "source_id": "nexus-core",
+      "target_id": "capsule:instructor",
+      "link_type": "core",
+      "strength": 1.0,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "subject": "instructor"
+      }
+    },
+    {
+      "link_id": "core::intent-mapper",
+      "source_id": "nexus-core",
+      "target_id": "capsule:intent-mapper",
+      "link_type": "core",
+      "strength": 1.0,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "subject": "intent-mapper"
+      }
+    },
+    {
+      "link_id": "core::critic-historian",
+      "source_id": "nexus-core",
+      "target_id": "capsule:critic-historian",
+      "link_type": "core",
+      "strength": 1.0,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "subject": "critic-historian"
+      }
+    },
+    {
+      "link_id": "critique::coder",
+      "source_id": "capsule:critique",
+      "target_id": "capsule:coder",
+      "link_type": "critique",
+      "strength": 0.82,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "broadcast": true
+      }
+    },
+    {
+      "link_id": "critique::strategist",
+      "source_id": "capsule:critique",
+      "target_id": "capsule:strategist",
+      "link_type": "critique",
+      "strength": 0.82,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "broadcast": true
+      }
+    },
+    {
+      "link_id": "critique::analyst",
+      "source_id": "capsule:critique",
+      "target_id": "capsule:analyst",
+      "link_type": "critique",
+      "strength": 0.82,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "broadcast": true
+      }
+    },
+    {
+      "link_id": "critique::researcher",
+      "source_id": "capsule:critique",
+      "target_id": "capsule:researcher",
+      "link_type": "critique",
+      "strength": 0.82,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "broadcast": true
+      }
+    },
+    {
+      "link_id": "critique::conversationalist",
+      "source_id": "capsule:critique",
+      "target_id": "capsule:conversationalist",
+      "link_type": "critique",
+      "strength": 0.82,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "broadcast": true
+      }
+    },
+    {
+      "link_id": "critique::toolsmith",
+      "source_id": "capsule:critique",
+      "target_id": "capsule:toolsmith",
+      "link_type": "critique",
+      "strength": 0.82,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "broadcast": true
+      }
+    },
+    {
+      "link_id": "critique::security",
+      "source_id": "capsule:critique",
+      "target_id": "capsule:security",
+      "link_type": "critique",
+      "strength": 0.82,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "broadcast": true
+      }
+    },
+    {
+      "link_id": "critique::memory-weaver",
+      "source_id": "capsule:critique",
+      "target_id": "capsule:memory-weaver",
+      "link_type": "critique",
+      "strength": 0.82,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "broadcast": true
+      }
+    },
+    {
+      "link_id": "critique::meta-reasoner",
+      "source_id": "capsule:critique",
+      "target_id": "capsule:meta-reasoner",
+      "link_type": "critique",
+      "strength": 0.82,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "broadcast": true
+      }
+    },
+    {
+      "link_id": "critique::router",
+      "source_id": "capsule:critique",
+      "target_id": "capsule:router",
+      "link_type": "critique",
+      "strength": 0.82,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "broadcast": true
+      }
+    },
+    {
+      "link_id": "critique::linguist",
+      "source_id": "capsule:critique",
+      "target_id": "capsule:linguist",
+      "link_type": "critique",
+      "strength": 0.82,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "broadcast": true
+      }
+    },
+    {
+      "link_id": "critique::vision",
+      "source_id": "capsule:critique",
+      "target_id": "capsule:vision",
+      "link_type": "critique",
+      "strength": 0.82,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "broadcast": true
+      }
+    },
+    {
+      "link_id": "critique::audio",
+      "source_id": "capsule:critique",
+      "target_id": "capsule:audio",
+      "link_type": "critique",
+      "strength": 0.82,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "broadcast": true
+      }
+    },
+    {
+      "link_id": "critique::simulation",
+      "source_id": "capsule:critique",
+      "target_id": "capsule:simulation",
+      "link_type": "critique",
+      "strength": 0.82,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "broadcast": true
+      }
+    },
+    {
+      "link_id": "critique::builder",
+      "source_id": "capsule:critique",
+      "target_id": "capsule:builder",
+      "link_type": "critique",
+      "strength": 0.82,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "broadcast": true
+      }
+    },
+    {
+      "link_id": "critique::instructor",
+      "source_id": "capsule:critique",
+      "target_id": "capsule:instructor",
+      "link_type": "critique",
+      "strength": 0.82,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "broadcast": true
+      }
+    },
+    {
+      "link_id": "critique::intent-mapper",
+      "source_id": "capsule:critique",
+      "target_id": "capsule:intent-mapper",
+      "link_type": "critique",
+      "strength": 0.82,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "broadcast": true
+      }
+    },
+    {
+      "link_id": "critique::critic-historian",
+      "source_id": "capsule:critique",
+      "target_id": "capsule:critic-historian",
+      "link_type": "critique",
+      "strength": 0.82,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "broadcast": true
+      }
+    },
+    {
+      "link_id": "build-chain::coder::toolsmith",
+      "source_id": "capsule:coder",
+      "target_id": "capsule:toolsmith",
+      "link_type": "collaboration",
+      "strength": 0.74,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "group_id": "build-chain"
+      }
+    },
+    {
+      "link_id": "build-chain::toolsmith::builder",
+      "source_id": "capsule:toolsmith",
+      "target_id": "capsule:builder",
+      "link_type": "collaboration",
+      "strength": 0.74,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "group_id": "build-chain"
+      }
+    },
+    {
+      "link_id": "build-chain::builder::security",
+      "source_id": "capsule:builder",
+      "target_id": "capsule:security",
+      "link_type": "collaboration",
+      "strength": 0.74,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "group_id": "build-chain"
+      }
+    },
+    {
+      "link_id": "reasoning-spine::strategist::analyst",
+      "source_id": "capsule:strategist",
+      "target_id": "capsule:analyst",
+      "link_type": "collaboration",
+      "strength": 0.74,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "group_id": "reasoning-spine"
+      }
+    },
+    {
+      "link_id": "reasoning-spine::analyst::meta-reasoner",
+      "source_id": "capsule:analyst",
+      "target_id": "capsule:meta-reasoner",
+      "link_type": "collaboration",
+      "strength": 0.74,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "group_id": "reasoning-spine"
+      }
+    },
+    {
+      "link_id": "reasoning-spine::meta-reasoner::critique",
+      "source_id": "capsule:meta-reasoner",
+      "target_id": "capsule:critique",
+      "link_type": "collaboration",
+      "strength": 0.74,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "group_id": "reasoning-spine"
+      }
+    },
+    {
+      "link_id": "research-memory::researcher::critic-historian",
+      "source_id": "capsule:researcher",
+      "target_id": "capsule:critic-historian",
+      "link_type": "collaboration",
+      "strength": 0.74,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "group_id": "research-memory"
+      }
+    },
+    {
+      "link_id": "research-memory::critic-historian::linguist",
+      "source_id": "capsule:critic-historian",
+      "target_id": "capsule:linguist",
+      "link_type": "collaboration",
+      "strength": 0.74,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "group_id": "research-memory"
+      }
+    },
+    {
+      "link_id": "research-memory::linguist::memory-weaver",
+      "source_id": "capsule:linguist",
+      "target_id": "capsule:memory-weaver",
+      "link_type": "collaboration",
+      "strength": 0.74,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "group_id": "research-memory"
+      }
+    },
+    {
+      "link_id": "multimodal-band::vision::audio",
+      "source_id": "capsule:vision",
+      "target_id": "capsule:audio",
+      "link_type": "collaboration",
+      "strength": 0.74,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "group_id": "multimodal-band"
+      }
+    },
+    {
+      "link_id": "multimodal-band::audio::conversationalist",
+      "source_id": "capsule:audio",
+      "target_id": "capsule:conversationalist",
+      "link_type": "collaboration",
+      "strength": 0.74,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "group_id": "multimodal-band"
+      }
+    },
+    {
+      "link_id": "routing-band::router::intent-mapper",
+      "source_id": "capsule:router",
+      "target_id": "capsule:intent-mapper",
+      "link_type": "collaboration",
+      "strength": 0.74,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "group_id": "routing-band"
+      }
+    },
+    {
+      "link_id": "routing-band::intent-mapper::memory-weaver",
+      "source_id": "capsule:intent-mapper",
+      "target_id": "capsule:memory-weaver",
+      "link_type": "collaboration",
+      "strength": 0.74,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "group_id": "routing-band"
+      }
+    },
+    {
+      "link_id": "simulation-planning::simulation::strategist",
+      "source_id": "capsule:simulation",
+      "target_id": "capsule:strategist",
+      "link_type": "collaboration",
+      "strength": 0.74,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "group_id": "simulation-planning"
+      }
+    },
+    {
+      "link_id": "simulation-planning::strategist::researcher",
+      "source_id": "capsule:strategist",
+      "target_id": "capsule:researcher",
+      "link_type": "collaboration",
+      "strength": 0.74,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "group_id": "simulation-planning"
+      }
+    },
+    {
+      "link_id": "simulation-planning::researcher::meta-reasoner",
+      "source_id": "capsule:researcher",
+      "target_id": "capsule:meta-reasoner",
+      "link_type": "collaboration",
+      "strength": 0.74,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "group_id": "simulation-planning"
+      }
+    },
+    {
+      "link_id": "dream-loop::simulation",
+      "source_id": "nexus-core",
+      "target_id": "capsule:simulation",
+      "link_type": "dream",
+      "strength": 0.55,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "loop_id": "dream-loop"
+      }
+    },
+    {
+      "link_id": "dream-loop::researcher",
+      "source_id": "nexus-core",
+      "target_id": "capsule:researcher",
+      "link_type": "dream",
+      "strength": 0.55,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "loop_id": "dream-loop"
+      }
+    },
+    {
+      "link_id": "dream-loop::meta-reasoner",
+      "source_id": "nexus-core",
+      "target_id": "capsule:meta-reasoner",
+      "link_type": "dream",
+      "strength": 0.55,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "loop_id": "dream-loop"
+      }
+    },
+    {
+      "link_id": "dream-loop::memory-weaver",
+      "source_id": "nexus-core",
+      "target_id": "capsule:memory-weaver",
+      "link_type": "dream",
+      "strength": 0.55,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "loop_id": "dream-loop"
+      }
+    },
+    {
+      "link_id": "critique-loop::critique",
+      "source_id": "nexus-core",
+      "target_id": "capsule:critique",
+      "link_type": "critique",
+      "strength": 0.55,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "loop_id": "critique-loop"
+      }
+    },
+    {
+      "link_id": "critique-loop::strategist",
+      "source_id": "nexus-core",
+      "target_id": "capsule:strategist",
+      "link_type": "critique",
+      "strength": 0.55,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "loop_id": "critique-loop"
+      }
+    },
+    {
+      "link_id": "critique-loop::analyst",
+      "source_id": "nexus-core",
+      "target_id": "capsule:analyst",
+      "link_type": "critique",
+      "strength": 0.55,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "loop_id": "critique-loop"
+      }
+    },
+    {
+      "link_id": "critique-loop::coder",
+      "source_id": "nexus-core",
+      "target_id": "capsule:coder",
+      "link_type": "critique",
+      "strength": 0.55,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "loop_id": "critique-loop"
+      }
+    },
+    {
+      "link_id": "critique-loop::security",
+      "source_id": "nexus-core",
+      "target_id": "capsule:security",
+      "link_type": "critique",
+      "strength": 0.55,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "loop_id": "critique-loop"
+      }
+    },
+    {
+      "link_id": "consequence-loop::router",
+      "source_id": "nexus-core",
+      "target_id": "capsule:router",
+      "link_type": "consequence",
+      "strength": 0.55,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "loop_id": "consequence-loop"
+      }
+    },
+    {
+      "link_id": "consequence-loop::intent-mapper",
+      "source_id": "nexus-core",
+      "target_id": "capsule:intent-mapper",
+      "link_type": "consequence",
+      "strength": 0.55,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "loop_id": "consequence-loop"
+      }
+    },
+    {
+      "link_id": "consequence-loop::builder",
+      "source_id": "nexus-core",
+      "target_id": "capsule:builder",
+      "link_type": "consequence",
+      "strength": 0.55,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "loop_id": "consequence-loop"
+      }
+    },
+    {
+      "link_id": "consequence-loop::instructor",
+      "source_id": "nexus-core",
+      "target_id": "capsule:instructor",
+      "link_type": "consequence",
+      "strength": 0.55,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "loop_id": "consequence-loop"
+      }
+    },
+    {
+      "link_id": "consequence-loop::critic-historian",
+      "source_id": "nexus-core",
+      "target_id": "capsule:critic-historian",
+      "link_type": "consequence",
+      "strength": 0.55,
+      "animated": true,
+      "status_label": "LOCKED CANON",
+      "meta": {
+        "loop_id": "consequence-loop"
+      }
+    }
+  ],
+  "loops": [
+    {
+      "loop_id": "dream-loop",
+      "loop_type": "dream",
+      "label": "Recursive Dreaming",
+      "orbit_radius": 335.0,
+      "target_subjects": [
+        "simulation",
+        "researcher",
+        "meta-reasoner",
+        "memory-weaver"
+      ],
+      "status_label": "LOCKED CANON",
+      "meta": {}
+    },
+    {
+      "loop_id": "critique-loop",
+      "loop_type": "critique",
+      "label": "Skeptical Critique",
+      "orbit_radius": 420.0,
+      "target_subjects": [
+        "critique",
+        "strategist",
+        "analyst",
+        "coder",
+        "security"
+      ],
+      "status_label": "LOCKED CANON",
+      "meta": {}
+    },
+    {
+      "loop_id": "consequence-loop",
+      "loop_type": "consequence",
+      "label": "Consequence Feedback",
+      "orbit_radius": 505.0,
+      "target_subjects": [
+        "router",
+        "intent-mapper",
+        "builder",
+        "instructor",
+        "critic-historian"
+      ],
+      "status_label": "LOCKED CANON",
+      "meta": {}
+    }
+  ],
+  "overlay_bindings": [
+    {
+      "binding_id": "registry-layer",
+      "label": "Registry Layer",
+      "target_id": "nexus-core",
+      "channel": "registry-layer",
+      "source_ref": "teachers.visibility.recent_teacher_traces",
+      "status_label": "LOCKED CANON",
+      "active": true,
+      "meta": {}
+    },
+    {
+      "binding_id": "teacher-arbitration",
+      "label": "Critique Arbitration",
+      "target_id": "capsule:critique",
+      "channel": "arbitration",
+      "source_ref": "teachers.visibility.recent_teacher_traces",
+      "status_label": "LOCKED CANON",
+      "active": true,
+      "meta": {}
+    },
+    {
+      "binding_id": "promotion-cues",
+      "label": "Promotion Evidence",
+      "target_id": "nexus-core",
+      "channel": "promotion",
+      "source_ref": "promotions.items",
+      "status_label": "LOCKED CANON",
+      "active": true,
+      "meta": {}
+    },
+    {
+      "binding_id": "takeover-cues",
+      "label": "Foundry Takeover",
+      "target_id": "nexus-core",
+      "channel": "takeover",
+      "source_ref": "foundry.native_takeover",
+      "status_label": "LOCKED CANON",
+      "active": true,
+      "meta": {}
+    },
+    {
+      "binding_id": "runtime-posture",
+      "label": "Runtime Posture",
+      "target_id": "nexus-core",
+      "channel": "runtime",
+      "source_ref": "runtime.device_profile",
+      "status_label": "LOCKED CANON",
+      "active": true,
+      "meta": {}
+    },
+    {
+      "binding_id": "safe-mode",
+      "label": "Safe Mode Physiology",
+      "target_id": "nexus-core",
+      "channel": "physiology",
+      "source_ref": "runtime.device_profile",
+      "status_label": "LOCKED CANON",
+      "active": true,
+      "meta": {}
+    }
+  ],
+  "legend": {
+    "node_types": [
+      {
+        "id": "core",
+        "label": "Core neural structure"
+      },
+      {
+        "id": "capsule",
+        "label": "Expert mini-brain"
+      },
+      {
+        "id": "subnode",
+        "label": "Internal neural substructure"
+      }
+    ],
+    "link_types": [
+      {
+        "id": "core",
+        "label": "Core-to-capsule channel"
+      },
+      {
+        "id": "collaboration",
+        "label": "Capsule-to-capsule hive link"
+      },
+      {
+        "id": "critique",
+        "label": "Critique broadcast / challenge line"
+      }
+    ],
+    "loops": [
+      {
+        "id": "dream",
+        "label": "Recursive Dreaming loop"
+      },
+      {
+        "id": "critique",
+        "label": "Skeptical Critique loop"
+      },
+      {
+        "id": "consequence",
+        "label": "Consequence Feedback loop"
+      }
+    ],
+    "overlays": [
+      {
+        "id": "promotion",
+        "label": "Promotion / governance overlay"
+      },
+      {
+        "id": "takeover",
+        "label": "Foundry / native takeover overlay"
+      },
+      {
+        "id": "physiology",
+        "label": "Safe mode / thermal / VRAM physiology"
+      }
+    ]
+  }
+}

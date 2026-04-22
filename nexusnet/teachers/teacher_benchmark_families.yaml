@@ -1,0 +1,192 @@
+schema_version: 1
+canon_status: LOCKED CANON
+default_threshold_set_id: teacher-v2026-r1
+migration_notes:
+  - LOCKED CANON: benchmark families operationalize the accepted teacher system without changing the historical/live split.
+  - LOCKED CANON: the 19-core roster remains authoritative; Curriculum Architect stays auxiliary.
+subjects:
+  coder:
+    canon_status: LOCKED CANON
+    regimen_ref: Coder Expert
+    default_dimensions: {correctness: 0.26, groundedness: 0.12, safety: 0.10, tool_discipline: 0.18, structured_output_conformance: 0.14, efficiency_latency_budget: 0.08, disagreement_severity: 0.06, dream_contamination_sensitivity: 0.06}
+    families:
+      - {name: repo navigation, stage_refs: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast]}
+      - {name: multi-file patching, stage_refs: [stage_2_dual_teacher_contrast, stage_3_skeptical_examination]}
+      - {name: tests green after edits, stage_refs: [stage_3_skeptical_examination, stage_4_dream_self_evolution]}
+      - {name: terminal recovery, stage_refs: [stage_2_dual_teacher_contrast, stage_4_dream_self_evolution]}
+      - {name: codebase-scale context use, stage_refs: [stage_1_domain_professor_distillation, stage_4_dream_self_evolution]}
+  strategist:
+    canon_status: LOCKED CANON
+    regimen_ref: Strategist Expert
+    default_dimensions: {correctness: 0.28, groundedness: 0.16, safety: 0.08, structured_output_conformance: 0.14, efficiency_latency_budget: 0.08, disagreement_severity: 0.08, dream_contamination_sensitivity: 0.08, native_vs_teacher_delta: 0.10}
+    families:
+      - {name: task decomposition, stage_refs: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast]}
+      - {name: objective trees, stage_refs: [stage_1_domain_professor_distillation, stage_3_skeptical_examination]}
+      - {name: dependency planning, stage_refs: [stage_2_dual_teacher_contrast, stage_3_skeptical_examination]}
+      - {name: long-horizon planning consistency, stage_refs: [stage_3_skeptical_examination, stage_4_dream_self_evolution]}
+  analyst:
+    canon_status: LOCKED CANON
+    regimen_ref: Analyst Expert
+    default_dimensions: {correctness: 0.30, groundedness: 0.18, safety: 0.08, structured_output_conformance: 0.12, disagreement_severity: 0.08, dream_contamination_sensitivity: 0.08, native_vs_teacher_delta: 0.08, rollbackability: 0.08}
+    families:
+      - {name: evidence weighting, stage_refs: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast]}
+      - {name: diagnosis, stage_refs: [stage_1_domain_professor_distillation, stage_3_skeptical_examination]}
+      - {name: structured comparison, stage_refs: [stage_2_dual_teacher_contrast, stage_3_skeptical_examination]}
+      - {name: benchmark-grade evaluation, stage_refs: [stage_3_skeptical_examination, stage_4_dream_self_evolution]}
+  researcher:
+    canon_status: LOCKED CANON
+    regimen_ref: Researcher Expert
+    default_dimensions: {correctness: 0.24, groundedness: 0.22, safety: 0.08, structured_output_conformance: 0.10, efficiency_latency_budget: 0.06, disagreement_severity: 0.08, dream_contamination_sensitivity: 0.10, native_vs_teacher_delta: 0.12}
+    families:
+      - {name: multi-source synthesis, stage_refs: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast]}
+      - {name: contradiction handling, stage_refs: [stage_2_dual_teacher_contrast, stage_3_skeptical_examination]}
+      - {name: document reasoning, stage_refs: [stage_1_domain_professor_distillation, stage_3_skeptical_examination]}
+      - {name: long-context study tasks, stage_refs: [stage_3_skeptical_examination, stage_4_dream_self_evolution]}
+  critique:
+    canon_status: LOCKED CANON
+    regimen_ref: Critique Expert
+    default_dimensions: {correctness: 0.22, groundedness: 0.18, safety: 0.18, structured_output_conformance: 0.10, disagreement_severity: 0.12, dream_contamination_sensitivity: 0.10, native_vs_teacher_delta: 0.05, rollbackability: 0.05}
+    families:
+      - {name: adversarial judging, stage_refs: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast]}
+      - {name: rubric scoring, stage_refs: [stage_1_domain_professor_distillation, stage_3_skeptical_examination]}
+      - {name: promotion gate review, stage_refs: [stage_3_skeptical_examination, stage_4_dream_self_evolution]}
+      - {name: rollback criticism, stage_refs: [stage_3_skeptical_examination, stage_4_dream_self_evolution]}
+  conversationalist:
+    canon_status: LOCKED CANON
+    regimen_ref: Conversationalist Expert
+    default_dimensions: {correctness: 0.24, groundedness: 0.12, safety: 0.10, structured_output_conformance: 0.14, efficiency_latency_budget: 0.10, disagreement_severity: 0.08, dream_contamination_sensitivity: 0.10, native_vs_teacher_delta: 0.12}
+    families:
+      - {name: tone control, stage_refs: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast]}
+      - {name: dialog continuity, stage_refs: [stage_1_domain_professor_distillation, stage_3_skeptical_examination]}
+      - {name: persona stability, stage_refs: [stage_2_dual_teacher_contrast, stage_4_dream_self_evolution]}
+      - {name: helpfulness without drift, stage_refs: [stage_3_skeptical_examination, stage_4_dream_self_evolution]}
+  toolsmith:
+    canon_status: LOCKED CANON
+    regimen_ref: Toolsmith Expert
+    default_dimensions: {correctness: 0.22, groundedness: 0.10, safety: 0.12, tool_discipline: 0.22, structured_output_conformance: 0.16, efficiency_latency_budget: 0.08, disagreement_severity: 0.05, dream_contamination_sensitivity: 0.05}
+    families:
+      - {name: strict JSON / tool schemas, stage_refs: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast]}
+      - {name: tool chain recovery, stage_refs: [stage_2_dual_teacher_contrast, stage_3_skeptical_examination]}
+      - {name: sandbox-safe execution, stage_refs: [stage_3_skeptical_examination, stage_4_dream_self_evolution]}
+      - {name: API/tool invocation discipline, stage_refs: [stage_1_domain_professor_distillation, stage_4_dream_self_evolution]}
+  security:
+    canon_status: LOCKED CANON
+    regimen_ref: Security Expert
+    default_dimensions: {correctness: 0.18, groundedness: 0.12, safety: 0.24, tool_discipline: 0.14, structured_output_conformance: 0.08, disagreement_severity: 0.08, dream_contamination_sensitivity: 0.08, rollbackability: 0.08}
+    families:
+      - {name: misuse-case generation, stage_refs: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast]}
+      - {name: safe tool use, stage_refs: [stage_2_dual_teacher_contrast, stage_3_skeptical_examination]}
+      - {name: secure patching, stage_refs: [stage_3_skeptical_examination, stage_4_dream_self_evolution]}
+      - {name: exploit-to-mitigation reasoning, stage_refs: [stage_1_domain_professor_distillation, stage_4_dream_self_evolution]}
+  memory-weaver:
+    canon_status: LOCKED CANON
+    regimen_ref: Memory Weaver Expert
+    default_dimensions: {correctness: 0.18, groundedness: 0.16, safety: 0.10, efficiency_latency_budget: 0.14, disagreement_severity: 0.08, dream_contamination_sensitivity: 0.08, native_vs_teacher_delta: 0.12, rollbackability: 0.14}
+    families:
+      - {name: episodic/semantic linkage, stage_refs: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast]}
+      - {name: compression, stage_refs: [stage_1_domain_professor_distillation, stage_3_skeptical_examination]}
+      - {name: retrieval budgeting, stage_refs: [stage_2_dual_teacher_contrast, stage_3_skeptical_examination]}
+      - {name: decay policy correctness, stage_refs: [stage_3_skeptical_examination, stage_4_dream_self_evolution]}
+      - {name: memory-safe context stitching, stage_refs: [stage_2_dual_teacher_contrast, stage_4_dream_self_evolution]}
+  meta-reasoner:
+    canon_status: LOCKED CANON
+    regimen_ref: Meta Reasoner Expert
+    default_dimensions: {correctness: 0.24, groundedness: 0.16, safety: 0.10, structured_output_conformance: 0.12, disagreement_severity: 0.14, dream_contamination_sensitivity: 0.10, native_vs_teacher_delta: 0.08, rollbackability: 0.06}
+    families:
+      - {name: self-reflection, stage_refs: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast]}
+      - {name: multi-expert synthesis, stage_refs: [stage_2_dual_teacher_contrast, stage_3_skeptical_examination]}
+      - {name: conflict arbitration, stage_refs: [stage_3_skeptical_examination, stage_4_dream_self_evolution]}
+      - {name: policy-aware reasoning, stage_refs: [stage_1_domain_professor_distillation, stage_4_dream_self_evolution]}
+  router:
+    canon_status: LOCKED CANON
+    regimen_ref: Router Expert
+    default_dimensions: {correctness: 0.18, groundedness: 0.10, safety: 0.12, tool_discipline: 0.12, structured_output_conformance: 0.12, efficiency_latency_budget: 0.18, disagreement_severity: 0.08, dream_contamination_sensitivity: 0.05, native_vs_teacher_delta: 0.05}
+    families:
+      - {name: route selection, stage_refs: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast]}
+      - {name: budget/risk/output typing, stage_refs: [stage_1_domain_professor_distillation, stage_3_skeptical_examination]}
+      - {name: fallback choice, stage_refs: [stage_2_dual_teacher_contrast, stage_3_skeptical_examination]}
+      - {name: long-context routing, stage_refs: [stage_2_dual_teacher_contrast, stage_4_dream_self_evolution]}
+      - {name: capsule gating, stage_refs: [stage_3_skeptical_examination, stage_4_dream_self_evolution]}
+  linguist:
+    canon_status: LOCKED CANON
+    regimen_ref: Linguist Expert
+    default_dimensions: {correctness: 0.24, groundedness: 0.12, safety: 0.08, structured_output_conformance: 0.18, efficiency_latency_budget: 0.06, disagreement_severity: 0.08, dream_contamination_sensitivity: 0.08, native_vs_teacher_delta: 0.16}
+    families:
+      - {name: multilingual generation, stage_refs: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast]}
+      - {name: translation nuance, stage_refs: [stage_1_domain_professor_distillation, stage_3_skeptical_examination]}
+      - {name: dialect/register control, stage_refs: [stage_2_dual_teacher_contrast, stage_4_dream_self_evolution]}
+      - {name: cross-lingual paraphrase, stage_refs: [stage_3_skeptical_examination, stage_4_dream_self_evolution]}
+  vision:
+    canon_status: LOCKED CANON
+    regimen_ref: Vision Expert
+    default_dimensions: {correctness: 0.22, groundedness: 0.18, safety: 0.08, structured_output_conformance: 0.12, efficiency_latency_budget: 0.08, disagreement_severity: 0.08, dream_contamination_sensitivity: 0.10, native_vs_teacher_delta: 0.14}
+    families:
+      - {name: OCR/layout grounding, stage_refs: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast]}
+      - {name: chart/UI/screenshot reasoning, stage_refs: [stage_2_dual_teacher_contrast, stage_3_skeptical_examination]}
+      - {name: image task grounding, stage_refs: [stage_1_domain_professor_distillation, stage_4_dream_self_evolution]}
+  audio:
+    canon_status: LOCKED CANON
+    regimen_ref: Audio Expert
+    default_dimensions: {correctness: 0.22, groundedness: 0.16, safety: 0.10, structured_output_conformance: 0.12, efficiency_latency_budget: 0.10, disagreement_severity: 0.08, dream_contamination_sensitivity: 0.08, native_vs_teacher_delta: 0.14}
+    families:
+      - {name: ASR, stage_refs: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast]}
+      - {name: spoken instruction grounding, stage_refs: [stage_1_domain_professor_distillation, stage_3_skeptical_examination]}
+      - {name: audio-to-task routing, stage_refs: [stage_2_dual_teacher_contrast, stage_4_dream_self_evolution]}
+      - {name: timestamp sensitivity, stage_refs: [stage_3_skeptical_examination, stage_4_dream_self_evolution]}
+  simulation:
+    canon_status: LOCKED CANON
+    regimen_ref: Simulation Expert
+    default_dimensions: {correctness: 0.22, groundedness: 0.16, safety: 0.10, efficiency_latency_budget: 0.10, disagreement_severity: 0.12, dream_contamination_sensitivity: 0.12, native_vs_teacher_delta: 0.10, rollbackability: 0.08}
+    families:
+      - {name: world-model rollouts, stage_refs: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast]}
+      - {name: counterfactuals, stage_refs: [stage_2_dual_teacher_contrast, stage_3_skeptical_examination]}
+      - {name: planning under uncertainty, stage_refs: [stage_1_domain_professor_distillation, stage_4_dream_self_evolution]}
+      - {name: dream scenario generation, stage_refs: [stage_3_skeptical_examination, stage_4_dream_self_evolution]}
+  builder:
+    canon_status: LOCKED CANON
+    regimen_ref: Builder Expert
+    default_dimensions: {correctness: 0.24, groundedness: 0.12, safety: 0.10, tool_discipline: 0.12, structured_output_conformance: 0.12, efficiency_latency_budget: 0.08, disagreement_severity: 0.08, dream_contamination_sensitivity: 0.06, native_vs_teacher_delta: 0.08}
+    families:
+      - {name: feature assembly, stage_refs: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast]}
+      - {name: API/UI scaffolding, stage_refs: [stage_2_dual_teacher_contrast, stage_3_skeptical_examination]}
+      - {name: build-debug-rebuild loops, stage_refs: [stage_3_skeptical_examination, stage_4_dream_self_evolution]}
+      - {name: artifact validation, stage_refs: [stage_1_domain_professor_distillation, stage_4_dream_self_evolution]}
+  instructor:
+    canon_status: LOCKED CANON
+    regimen_ref: Instructor Expert
+    default_dimensions: {correctness: 0.22, groundedness: 0.14, safety: 0.10, structured_output_conformance: 0.14, efficiency_latency_budget: 0.08, disagreement_severity: 0.08, dream_contamination_sensitivity: 0.10, native_vs_teacher_delta: 0.14}
+    families:
+      - {name: Socratic questioning, stage_refs: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast]}
+      - {name: scaffolding, stage_refs: [stage_1_domain_professor_distillation, stage_3_skeptical_examination]}
+      - {name: remediation, stage_refs: [stage_2_dual_teacher_contrast, stage_4_dream_self_evolution]}
+      - {name: mastery checks, stage_refs: [stage_3_skeptical_examination, stage_4_dream_self_evolution]}
+      - {name: lesson pacing, stage_refs: [stage_2_dual_teacher_contrast, stage_4_dream_self_evolution]}
+  intent-mapper:
+    canon_status: LOCKED CANON
+    regimen_ref: Intent Mapper Expert
+    default_dimensions: {correctness: 0.24, groundedness: 0.16, safety: 0.10, structured_output_conformance: 0.12, efficiency_latency_budget: 0.08, disagreement_severity: 0.08, dream_contamination_sensitivity: 0.08, native_vs_teacher_delta: 0.14}
+    families:
+      - {name: intent classification, stage_refs: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast]}
+      - {name: ambiguity reduction, stage_refs: [stage_2_dual_teacher_contrast, stage_3_skeptical_examination]}
+      - {name: risk/domain typing, stage_refs: [stage_3_skeptical_examination, stage_4_dream_self_evolution]}
+      - {name: plan normalization, stage_refs: [stage_1_domain_professor_distillation, stage_4_dream_self_evolution]}
+  critic-historian:
+    canon_status: LOCKED CANON
+    regimen_ref: Critic Historian Expert
+    default_dimensions: {correctness: 0.24, groundedness: 0.20, safety: 0.10, structured_output_conformance: 0.10, disagreement_severity: 0.10, dream_contamination_sensitivity: 0.08, native_vs_teacher_delta: 0.10, rollbackability: 0.08}
+    families:
+      - {name: chronology repair, stage_refs: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast]}
+      - {name: source conflict resolution, stage_refs: [stage_2_dual_teacher_contrast, stage_3_skeptical_examination]}
+      - {name: temporal consistency, stage_refs: [stage_1_domain_professor_distillation, stage_4_dream_self_evolution]}
+      - {name: evidence-weighted historical critique, stage_refs: [stage_3_skeptical_examination, stage_4_dream_self_evolution]}
+  curriculum-architect:
+    canon_status: STRONG ACCEPTED DIRECTION
+    regimen_ref: Curriculum Architect
+    auxiliary: true
+    default_dimensions: {correctness: 0.20, groundedness: 0.14, safety: 0.08, tool_discipline: 0.10, structured_output_conformance: 0.10, efficiency_latency_budget: 0.10, disagreement_severity: 0.08, dream_contamination_sensitivity: 0.10, native_vs_teacher_delta: 0.10}
+    families:
+      - {name: synthetic task generation, stage_refs: [stage_1_domain_professor_distillation, stage_2_dual_teacher_contrast]}
+      - {name: dynamic difficulty escalation, stage_refs: [stage_2_dual_teacher_contrast, stage_3_skeptical_examination]}
+      - {name: tool-aware curriculum generation, stage_refs: [stage_3_skeptical_examination, stage_4_dream_self_evolution]}
+      - {name: co-evolution metrics, stage_refs: [stage_2_dual_teacher_contrast, stage_4_dream_self_evolution]}
+      - {name: benchmark family synthesis, stage_refs: [stage_3_skeptical_examination, stage_4_dream_self_evolution]}

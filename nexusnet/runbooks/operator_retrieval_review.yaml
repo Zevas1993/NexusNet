@@ -1,0 +1,41 @@
+recipe_id: runbook-retrieval-review
+kind: runbook
+label: Retrieval Promotion Review Runbook
+description: Operator procedure for inspecting rerank evidence, threshold drift, and evaluator linkage before promotion review.
+version: "1.0"
+ao_targets:
+  - EvalsAO
+skill_ids:
+  - retrieval-audit
+gateway_policy: ask
+approved_tool_sets:
+  - readonly-research
+approved_tools:
+  - retrieval.query
+  - governance.audit
+roots_scope:
+  - "{project_root}/runtime/artifacts"
+tags:
+  - retrieval
+  - promotion-review
+  - ops
+parameters:
+  - name: candidate_id
+    type: string
+    required: true
+    description: Promotion candidate under review.
+steps:
+  - step_id: open-evidence
+    action: tool-bundle
+    description: Open rerank evidence bundle, scorecards, and review markdown.
+    approved_tools:
+      - retrieval.query
+  - step_id: compare-thresholds
+    action: review
+    description: Compare threshold set, evaluator artifacts, and candidate shifts.
+    metadata:
+      report_kind: rerank-promotion-review
+  - step_id: conclude
+    action: ao-dispatch
+    description: Hand the review package to EvalsAO for external assessment.
+    ao_id: EvalsAO

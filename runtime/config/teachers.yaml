@@ -1,7 +1,19 @@
-enabled: false
-per_capsule:
-  code: ["qwen2.5-coder", "deepseek-coder"]
-  math: ["qwen2.5-math"]
-defaults:
-  max_items: 100
-  difficulty: ["easy","medium","hard"]
+schema_version: 2
+status_label: LOCKED CANON
+migration_notes:
+  - Teacher canon is split into historical and live registry layers under nexusnet/teachers/.
+  - This file is a compatibility manifest for loader discovery and project-local overrides.
+  - Historical canon remains best-ensemble-per-role; the live v2026 layer is operational primary-secondary routing.
+default_registry_layer: v2026_live
+registry_files:
+  historical: nexusnet/teachers/teacher_registry_historical.yaml
+  live: nexusnet/teachers/teacher_registry_v2026_live.yaml
+  regimens: nexusnet/teachers/expert_training_regimens.yaml
+  routing_policy: nexusnet/teachers/teacher_routing_policy.yaml
+  benchmarks: nexusnet/teachers/teacher_benchmark_families.yaml
+  thresholds: nexusnet/teachers/teacher_benchmark_thresholds.yaml
+  fleets: nexusnet/teachers/teacher_benchmark_fleets.yaml
+compatibility:
+  preserve_historical_layer: true
+  preserve_live_layer: true
+  do_not_flatten_registry_layers: true

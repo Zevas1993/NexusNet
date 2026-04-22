@@ -7,6 +7,9 @@ llama_cpp:
   n_gpu_layers: 0
 vllm:
   endpoint: null  # e.g., http://localhost:8000
+onnx_genai:
+  model_path: null  # portable local model path when enabled
+  endpoint: null
 policy:
   prefer_local: true
   allow_cloud: false

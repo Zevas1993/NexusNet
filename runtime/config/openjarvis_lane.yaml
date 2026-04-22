@@ -1,0 +1,94 @@
+canon_status: STRONG ACCEPTED DIRECTION
+enabled: true
+local_first_default: true
+doctor:
+  runtime_preference_order:
+    - transformers
+    - llama.cpp
+    - onnx-genai
+    - vllm
+  cloud_only_when_necessary: true
+presets:
+  deep-research:
+    label: Deep Research
+    description: Multi-hop local-first research with retrieval fusion, citations, and broader context handling.
+    wrapper_mode: hermes-agent
+    agent_id: hermes-agent
+    retrieval_policy: lexical+graph-memory-temporal-rerank
+    scheduled: false
+    preferred_runtimes: [transformers, llama.cpp, vllm]
+    recommended_tasks: [research, synthesis, long-context]
+    cloud_fallback_allowed: true
+  code-assistant:
+    label: Code Assistant
+    description: Code-heavy assistant path with gateway approvals, file inspection, and tool discipline.
+    wrapper_mode: openclaw
+    agent_id: openclaw-agent
+    retrieval_policy: lexical+graph-memory-temporal-rerank
+    scheduled: false
+    preferred_runtimes: [transformers, llama.cpp]
+    recommended_tasks: [coding, debugging, review]
+    cloud_fallback_allowed: true
+  scheduled-monitor:
+    label: Scheduled Monitor
+    description: Persistent monitoring workflow with memory, summaries, and governed approvals.
+    wrapper_mode: scheduled-monitor
+    agent_id: monitor-operative-agent
+    retrieval_policy: lexical+graph-memory-temporal-rerank
+    scheduled: true
+    preferred_runtimes: [transformers, onnx-genai, llama.cpp]
+    recommended_tasks: [monitoring, digest, alerts]
+    cloud_fallback_allowed: false
+  simple-chat:
+    label: Simple Chat
+    description: Lightweight local-first chat path with no heavy tool or retrieval requirements.
+    wrapper_mode: standard-chat
+    agent_id: standard-wrapper-agent
+    retrieval_policy: lexical
+    scheduled: false
+    preferred_runtimes: [transformers, llama.cpp, onnx-genai]
+    recommended_tasks: [chat, quick-qa, low-power]
+    cloud_fallback_allowed: false
+skills:
+  import_sources:
+    - source_id: nexusnet-local
+      label: NexusNet Local Skills
+      category: core
+      sync_modes: [chat, ops, research]
+      trust_level: locked-canon
+    - source_id: hermes
+      label: Hermes Curated Skills
+      category: research
+      sync_modes: [research, docs, planning]
+      trust_level: curated-import
+    - source_id: openclaw-community
+      label: OpenClaw Community Skills
+      category: operations
+      sync_modes: [ops, monitoring]
+      trust_level: allowlist-only
+scheduled_agents:
+  - workflow_id: scheduled-monitor
+    label: Scheduled Monitor
+    cadence: every-30m
+    persistent_state: true
+    memory_plane: episodic+semantic
+    traceability: full
+    approval_policy: ask
+  - workflow_id: morning-digest
+    label: Morning Digest
+    cadence: daily
+    persistent_state: true
+    memory_plane: semantic
+    traceability: full
+    approval_policy: allow
+cost_energy:
+  defaults:
+    local_energy_wh_per_latency_ms: 0.00014
+    remote_energy_wh_per_latency_ms: 0.00028
+    local_flops_per_latency_ms: 850000000
+    remote_flops_per_latency_ms: 1200000000
+    local_dollar_per_latency_ms: 0.0
+    remote_dollar_per_latency_ms: 0.000015
+  remote_runtime_hints:
+    - openai-compatible
+    - cloud

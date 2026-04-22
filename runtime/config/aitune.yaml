@@ -1,0 +1,94 @@
+canon_status: EXPLORATORY / PROTOTYPE
+enabled: false
+allow_live_invoke: false
+feature_flag_path: features.runtime.aitune
+provider_name: aitune
+compatibility:
+  python_max_minor: 12
+  platform_allowlist: [Linux]
+  require_nvidia_gpu: true
+  require_torch: true
+  recommended_distros: ["Ubuntu 22.04+"]
+applicability:
+  allowed_runtimes: [transformers]
+  blocked_runtimes: [llama.cpp, vllm, onnx-genai, ollama, lmstudio, openai-compatible, mock]
+  blocked_quantizations: [gguf]
+  dedicated_serving_backends: [TensorRT-LLM, vLLM, SGLang]
+  target_registry:
+    - target_id: transformers-text
+      module_kind: pytorch-native-transformers
+      repo_paths: [core/engines/transformers_engine.py]
+      portability: host-specific
+    - target_id: edge-vision-lane
+      module_kind: vision
+      repo_paths: [nexusnet/vision/edge_vlm]
+      portability: host-specific
+    - target_id: teacher-foundry-helpers
+      module_kind: teacher_foundry
+      repo_paths: [nexusnet/distillation, nexusnet/foundry]
+      portability: host-specific
+  target_hints:
+    vision: [vision, visual, image, clip, blip, sam, fdvs]
+    multimodal: [multimodal, vl, audio, speech, whisper]
+    teacher_foundry: [teacher, foundry, distill, dataset, curriculum]
+backend_preferences:
+  order: [tensorrt, torch-tensorrt, torchao, torch-inductor]
+benchmark_defaults:
+  correctness_floor: 0.98
+  latency_budget_ms: 150.0
+  throughput_floor: 1.0
+rollout:
+  require_external_evaluation: true
+  require_promotion_approval: true
+  require_rollback_reference: true
+  host_specific_default: true
+validation_matrix:
+  scenarios:
+    - scenario_id: windows-py313-default
+      expected_status: skipped
+      notes:
+        - Preserve default Windows/Python 3.13 workflows with graceful skip behavior.
+    - scenario_id: linux-nvidia-supported
+      expected_status: validation-ready
+      notes:
+        - Primary future live validation lane for Linux + NVIDIA + supported Python.
+    - scenario_id: linux-cpu-no-nvidia
+      expected_status: skipped
+      notes:
+        - Capability detection must explain NVIDIA-gated skip without breaking startup.
+supported_lane:
+  status: ready-on-supported-host
+  runner_command: python -m nexusnet.runtime.qes.aitune_runner --model <model_id>
+  mock_validation_command: python -m nexusnet.runtime.qes.aitune_runner --model <model_id> --simulate --json
+  execution_modes: [skip-safe, simulate, live]
+  host_requirements:
+    - Linux host from the compatibility allowlist.
+    - Python 3.12 or earlier.
+    - NVIDIA GPU visible through PyTorch CUDA or nvidia-smi.
+    - AITune importable with a supported callable surface.
+  container_guidance:
+    - Use Ubuntu 22.04 or newer with NVIDIA Container Toolkit and visible CUDA devices.
+    - Install Python 3.12 or earlier, PyTorch with CUDA, and the AITune package in the validation container.
+  devcontainer_guidance:
+    - Base on Linux, not Windows, and expose GPU devices to the container runtime.
+    - Keep default Windows/Python 3.13 developer flows on the host and run AITune validation only inside the supported container or host lane.
+  ci_guidance:
+    - Run live AITune validation only on Linux plus NVIDIA runners.
+    - Keep unsupported CI jobs in skip-safe or mock validation mode.
+  artifact_expectations:
+    - compatibility report
+    - validation report
+    - runner report
+    - execution plan artifact
+    - execution plan markdown
+    - benchmark evidence
+    - tuned artifact metadata
+  preflight_commands:
+    - python -c "import sys,platform; print(platform.platform()); print(sys.version)"
+    - python -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.device_count())"
+    - nvidia-smi
+  artifact_collection_commands:
+    - find runtime/artifacts/runtime/aitune -maxdepth 3 -type f
+  docs:
+    - docs/aitune_supported_lane.md
+    - docs/aitune_linux_nvidia_validation.md

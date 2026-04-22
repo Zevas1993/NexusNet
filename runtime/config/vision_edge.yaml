@@ -1,0 +1,81 @@
+canon_status: EXPLORATORY / PROTOTYPE
+enabled: true
+default_provider: lfm2.5-vl-450m
+providers:
+  lfm2.5-vl-450m:
+    provider_name: lfm2.5-vl-450m
+    model_ref: LiquidAI/LFM2.5-VL-450M
+    provider_type: edge-vlm
+    candidate_teacher_id: lfm2.5-vl-450m::vision-edge
+    candidate_teacher_subject: vision
+    candidate_modes: [low-power, safe-mode, edge-lane]
+    structured_outputs: true
+    grounding_boxes: true
+    multilingual_languages: [ar, zh, en, fr, de, ja, ko, pt, es]
+    function_calling: true
+    design_lessons:
+      - compact edge-first design
+      - more pretraining instead of only scaling size
+      - preference optimization plus reinforcement learning for reliability
+      - structured outputs
+      - grounding and bounding boxes
+      - multilingual support
+      - function calling
+      - device-aware latency and quality budgets
+latency_profiles:
+  safe_cpu:
+    max_resolution: 384
+    latency_budget_ms: 450
+    quality_bias: reliability
+    intended_modes: [safe-mode, cpu]
+  balanced_gpu:
+    max_resolution: 512
+    latency_budget_ms: 220
+    quality_bias: balanced
+    intended_modes: [low-power, local-gpu]
+  edge_accelerated:
+    max_resolution: 768
+    latency_budget_ms: 160
+    quality_bias: accuracy
+    intended_modes: [edge-lane, device-accelerated]
+function_catalog:
+  - inspect_bounding_boxes
+  - summarize_document_layout
+  - read_text_regions
+  - propose_visual_tool_call
+grounding_schema:
+  format: bbox-v1
+  coordinates: xyxy
+  normalized: true
+operationalization:
+  benchmark_cases:
+    - case_id: safe-mode-grounding-en
+      profile_id: safe_cpu
+      locale: en
+      expected_function: inspect_bounding_boxes
+      require_structured_output: true
+      require_safe_mode: true
+      max_resolution: 384
+      sample_boxes:
+        - label: button
+          bbox: [0.12, 0.18, 0.44, 0.52]
+    - case_id: balanced-layout-fr
+      profile_id: balanced_gpu
+      locale: fr
+      expected_function: summarize_document_layout
+      require_structured_output: true
+      require_safe_mode: false
+      max_resolution: 512
+      sample_boxes:
+        - label: heading
+          bbox: [0.08, 0.06, 0.88, 0.18]
+    - case_id: edge-toolcall-es
+      profile_id: edge_accelerated
+      locale: es
+      expected_function: propose_visual_tool_call
+      require_structured_output: true
+      require_safe_mode: false
+      max_resolution: 768
+      sample_boxes:
+        - label: chart
+          bbox: [0.22, 0.24, 0.78, 0.74]

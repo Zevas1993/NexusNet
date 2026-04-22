@@ -28,7 +28,22 @@ models/
 runtime/rag/
 cache/
 logs/
+runtime/logs/
 *.log
+
+# Local runtime state and generated artifacts
+data/*.duckdb
+runtime/artifacts/
+runtime/manual-test-root/
+runtime/quantlab/
+runtime/state/*
+!runtime/state/.gitkeep
+runtime/test-fixtures/
+runtime/test-tmp-run/
+
+# Test scratch directories
+.pytest-tmp/
+pytest-cache-files-*/
 
 # Node (future UI bindings)
 node_modules/

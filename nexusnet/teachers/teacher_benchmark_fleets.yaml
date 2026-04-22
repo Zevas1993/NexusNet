@@ -1,0 +1,196 @@
+schema_version: 1
+canon_status: LOCKED CANON
+default_window_id: medium
+migration_notes:
+  - LOCKED CANON: fleet governance extends teacher trend governance without changing the historical/live split.
+  - LOCKED CANON: fleets remain traceable to expert capsules, teacher pairs, and threshold versions.
+governance_windows:
+  short:
+    window_id: short
+    canon_status: LOCKED CANON
+    description: short horizon operator window for recent validation pressure
+    lookback_runs: 6
+    minimum_sample_count: 3
+    maximum_age_days: 7
+  medium:
+    window_id: medium
+    canon_status: LOCKED CANON
+    description: primary governance window for promotion and takeover review
+    lookback_runs: 12
+    minimum_sample_count: 5
+    maximum_age_days: 21
+  long:
+    window_id: long
+    canon_status: LOCKED CANON
+    description: longer horizon window for replacement confidence and regression review
+    lookback_runs: 24
+    minimum_sample_count: 8
+    maximum_age_days: 60
+fleets:
+  local_reasoning_fleet:
+    canon_status: LOCKED CANON
+    description: local-first reasoning and judgment workloads across strategic and analytic expert capsules
+    subjects: [strategist, analyst, researcher, critique, meta-reasoner]
+    benchmark_families:
+      - task decomposition
+      - objective trees
+      - dependency planning
+      - evidence weighting
+      - diagnosis
+      - benchmark-grade evaluation
+      - multi-source synthesis
+      - contradiction handling
+      - adversarial judging
+      - promotion gate review
+      - self-reflection
+      - policy-aware reasoning
+    budget_classes: [STANDARD, DEEP, LONG_CONTEXT]
+    output_forms: [STRUCTURED_PLAN, LONGFORM, EVAL_JUDGE]
+    risk_tiers: [medium, high]
+    localities: [local_first, mixed_local_then_remote]
+    hardware_classes: [desktop_gpu, mobile_flagship, cpu_safe]
+    lineage: [live-derived, dream-derived, blended-derived]
+    threshold_set_id: teacher-v2026-r1
+  coding_agent_fleet:
+    canon_status: LOCKED CANON
+    description: tool-using coding and build execution workloads across coder, toolsmith, builder, and security capsules
+    subjects: [coder, toolsmith, builder, security]
+    benchmark_families:
+      - repo navigation
+      - multi-file patching
+      - tests green after edits
+      - terminal recovery
+      - codebase-scale context use
+      - strict JSON / tool schemas
+      - tool chain recovery
+      - sandbox-safe execution
+      - API/tool invocation discipline
+      - feature assembly
+      - API/UI scaffolding
+      - build-debug-rebuild loops
+      - secure patching
+      - safe tool use
+    teacher_pairs:
+      - devstral-2::qwen3-coder-next
+      - code-llama-secure::devstral-2
+      - devstral-2::mistral-small-4
+    budget_classes: [FASTPATH, STANDARD, DEEP]
+    output_forms: [TOOL_CALL_STRICT_JSON, CODE_PATCH, STRUCTURED_PLAN]
+    risk_tiers: [medium, high]
+    localities: [local_first]
+    hardware_classes: [desktop_gpu, mobile_flagship, cpu_safe]
+    lineage: [live-derived, dream-derived, blended-derived]
+    threshold_set_id: teacher-v2026-r1
+  multimodal_fleet:
+    canon_status: STRONG ACCEPTED DIRECTION
+    description: multimodal image and audio grounding workloads
+    subjects: [vision, audio]
+    benchmark_families:
+      - OCR/layout grounding
+      - chart/UI/screenshot reasoning
+      - image task grounding
+      - ASR
+      - spoken instruction grounding
+      - audio-to-task routing
+      - timestamp sensitivity
+    budget_classes: [STANDARD, DEEP]
+    output_forms: [SHORT_ANSWER, LONGFORM, RETRIEVAL_QUERY]
+    risk_tiers: [low, medium]
+    localities: [local_first, mixed_local_then_remote]
+    hardware_classes: [desktop_gpu, mobile_flagship]
+    lineage: [live-derived, dream-derived]
+    threshold_set_id: teacher-v2026-r1
+  low_hardware_fleet:
+    canon_status: LOCKED CANON
+    description: constrained local hardware execution where teacher efficiency and bounded LFM2 lanes matter
+    subjects: [router, toolsmith, memory-weaver, conversationalist]
+    benchmark_families:
+      - route selection
+      - budget/risk/output typing
+      - fallback choice
+      - strict JSON / tool schemas
+      - tool chain recovery
+      - retrieval budgeting
+      - compression
+      - tone control
+      - dialog continuity
+    budget_classes: [FASTPATH, EDGE_CONSTRAINED]
+    output_forms: [SHORT_ANSWER, TOOL_CALL_STRICT_JSON, STRUCTURED_PLAN]
+    risk_tiers: [low, medium]
+    localities: [local_first]
+    hardware_classes: [mobile_flagship, cpu_safe]
+    lineage: [live-derived, dream-derived]
+    threshold_set_id: teacher-v2026-r1
+  edge_constrained_fleet:
+    canon_status: LOCKED CANON
+    description: edge-safe, latency-bounded, safe-mode sensitive execution
+    subjects: [router, toolsmith, security, conversationalist]
+    benchmark_families:
+      - route selection
+      - budget/risk/output typing
+      - sandbox-safe execution
+      - safe tool use
+      - tone control
+    budget_classes: [FASTPATH, EDGE_CONSTRAINED]
+    output_forms: [SHORT_ANSWER, TOOL_CALL_STRICT_JSON]
+    risk_tiers: [medium, high]
+    localities: [local_first]
+    hardware_classes: [mobile_flagship, cpu_safe]
+    lineage: [live-derived]
+    threshold_set_id: teacher-v2026-r1
+  long_context_fleet:
+    canon_status: LOCKED CANON
+    description: long-context memory and study workloads that need stable retrieval and planning behavior
+    subjects: [researcher, memory-weaver, strategist, router]
+    benchmark_families:
+      - long-context study tasks
+      - episodic/semantic linkage
+      - retrieval budgeting
+      - memory-safe context stitching
+      - long-horizon planning consistency
+      - long-context routing
+    budget_classes: [LONG_CONTEXT, DEEP]
+    output_forms: [LONGFORM, RETRIEVAL_QUERY, STRUCTURED_PLAN]
+    risk_tiers: [medium, high]
+    localities: [local_first, mixed_local_then_remote]
+    hardware_classes: [desktop_gpu, mobile_flagship]
+    lineage: [live-derived, dream-derived, blended-derived]
+    threshold_set_id: teacher-v2026-r1
+  takeover_validation_fleet:
+    canon_status: LOCKED CANON
+    description: governance fleet for native-vs-teacher comparison and replacement readiness
+    subjects: [toolsmith, builder, strategist, analyst, critique]
+    benchmark_families:
+      - strict JSON / tool schemas
+      - tool chain recovery
+      - tests green after edits
+      - task decomposition
+      - benchmark-grade evaluation
+      - promotion gate review
+      - rollback criticism
+    budget_classes: [STANDARD, DEEP]
+    output_forms: [STRUCTURED_PLAN, CODE_PATCH, EVAL_JUDGE]
+    risk_tiers: [medium, high]
+    localities: [local_first, mixed_local_then_remote]
+    hardware_classes: [desktop_gpu, mobile_flagship, cpu_safe]
+    lineage: [live-derived, dream-derived, blended-derived]
+    threshold_set_id: teacher-v2026-r1
+  safety_sensitive_fleet:
+    canon_status: LOCKED CANON
+    description: safety, misuse, and rollback-sensitive workloads across critique and security surfaces
+    subjects: [security, critique, toolsmith]
+    benchmark_families:
+      - misuse-case generation
+      - safe tool use
+      - exploit-to-mitigation reasoning
+      - adversarial judging
+      - promotion gate review
+      - rollback criticism
+      - sandbox-safe execution
+    budget_classes: [STANDARD, DEEP]
+    output_forms: [EVAL_JUDGE, TOOL_CALL_STRICT_JSON, LONGFORM]
+    risk_tiers: [high]
+    localities: [local_first, mixed_local_then_remote]
+    hardware_classes: [desktop_gpu, mobile_flagship, cpu_safe]
+    lineage: [live-derived, dream-derived, blended-derived]
+    threshold_set_id: teacher-v2026-r1

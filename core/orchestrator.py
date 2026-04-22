@@ -16,7 +16,14 @@ except Exception:
     record_router_pair = None
 
 from .hw.scan import suggest
-from .engines.transformers_engine import TransformersEngine
+try:
+    from .engines.transformers_engine import TransformersEngine
+except Exception:
+    TransformersEngine = None
+try:
+    from .engines.local_backend import Engine as LocalTransformersEngine
+except Exception:
+    LocalTransformersEngine = None
 from .engines.vllm_http_engine import VLLMHttpEngine
 from .engines.ollama_engine import OllamaEngine
 from .engines.lmstudio_engine import LMStudioEngine
@@ -95,7 +102,10 @@ class Orchestrator:
         for name in order:
             try:
                 if name == "transformers":
-                    self.engine = TransformersEngine(model_id, device=hw["device"])
+                    if TransformersEngine is not None:
+                        self.engine = TransformersEngine(model_id, device=hw["device"])
+                    elif LocalTransformersEngine is not None:
+                        self.engine = LocalTransformersEngine()
                 elif name == "vllm_http":
                     self.engine = VLLMHttpEngine()
                 elif name == "ollama":
@@ -189,6 +199,10 @@ class Orchestrator:
 
     def rag_ingest(self, texts):
         return self.rag.ingest(texts)
+
+    def generate(self, prompt: str, capsule: str | None = None, **kw) -> str:
+        result = self.chat(prompt, rag=kw.pop("rag", False), **kw)
+        return result.get("text", "")
 
 
 

@@ -1,6 +1,6 @@
-import os
-
 from __future__ import annotations
+
+import os
 from typing import List, Dict, Any
 from .tkg import TKG
 

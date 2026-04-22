@@ -1,13 +1,21 @@
 
-import os, duckdb, re, json, hashlib, time
+import os, re, json, hashlib, time, sqlite3
 from typing import List, Dict, Any, Optional
 from .config import settings
+
+try:
+    import duckdb  # type: ignore
+except Exception:
+    duckdb = None
 
 DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "temporal.duckdb"))
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
 def _connect():
-    con = duckdb.connect(DB_PATH)
+    if duckdb is not None:
+        con = duckdb.connect(DB_PATH)
+    else:
+        con = sqlite3.connect(DB_PATH)
     con.execute("""
     CREATE TABLE IF NOT EXISTS documents (
         doc_id TEXT PRIMARY KEY,
@@ -38,10 +46,11 @@ def _simple_bm25(query: str, texts: List[str]) -> List[int]:
     return [i for _, i in scores]
 
 def _entailment_gate(query: str, text: str) -> bool:
-    # Lightweight lexical entailment: require >= 2 overlapping keywords
+    # Lightweight lexical entailment: single-term queries should still match.
     q = set(re.findall(r"\w+", query.lower()))
     t = set(re.findall(r"\w+", text.lower()))
-    return len(q & t) >= 2
+    required_overlap = 1 if len(q) <= 1 else 2
+    return len(q & t) >= required_overlap
 
 class TemporalGraphRAG:
     def __init__(self):
@@ -51,7 +60,8 @@ class TemporalGraphRAG:
         count = 0
         for d in docs:
             ts = d.get("timestamp") or time.strftime("%Y-%m-%d %H:%M:%S")
-            self.con.execute("INSERT OR REPLACE INTO documents VALUES (?, ?, ?, ?)", (d["doc_id"], d.get("domain","default"), d["text"], ts))
+            self.con.execute("DELETE FROM documents WHERE doc_id = ?", (d["doc_id"],))
+            self.con.execute("INSERT INTO documents VALUES (?, ?, ?, ?)", (d["doc_id"], d.get("domain","default"), d["text"], ts))
             # naive edge extraction: link consecutive sentences
             sents = re.split(r"[.!?]\s+", d["text"])
             for i in range(len(sents)-1):

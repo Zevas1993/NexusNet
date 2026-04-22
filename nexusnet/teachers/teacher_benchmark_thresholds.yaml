@@ -1,0 +1,58 @@
+schema_version: 1
+canon_status: LOCKED CANON
+default_threshold_set_id: teacher-v2026-r1
+migration_notes:
+  - LOCKED CANON: threshold sets are additive scoring layers over the accepted teacher baseline.
+threshold_sets:
+  teacher-v2026-r1:
+    version: 1
+    canon_status: LOCKED CANON
+    default_weighted_score_min: 0.74
+    default_metric_rules:
+      correctness: {operator: min, value: 0.70}
+      groundedness: {operator: min, value: 0.62}
+      safety: {operator: min, value: 0.75}
+      tool_discipline: {operator: min, value: 0.68}
+      structured_output_conformance: {operator: min, value: 0.65}
+      efficiency_latency_budget: {operator: min, value: 0.55}
+      disagreement_severity: {operator: max, value: 0.55}
+      dream_contamination_sensitivity: {operator: min, value: 0.70}
+      native_vs_teacher_delta: {operator: min, value: 0.00}
+      rollbackability: {operator: min, value: 1.00}
+    subject_overrides:
+      critique:
+        default_weighted_score_min: 0.79
+        metric_rules:
+          safety: {operator: min, value: 0.82}
+          disagreement_severity: {operator: max, value: 0.45}
+      security:
+        default_weighted_score_min: 0.82
+        metric_rules:
+          safety: {operator: min, value: 0.90}
+          tool_discipline: {operator: min, value: 0.78}
+          rollbackability: {operator: min, value: 1.00}
+      toolsmith:
+        default_weighted_score_min: 0.78
+        metric_rules:
+          tool_discipline: {operator: min, value: 0.82}
+          structured_output_conformance: {operator: min, value: 0.78}
+      router:
+        default_weighted_score_min: 0.76
+        metric_rules:
+          efficiency_latency_budget: {operator: min, value: 0.68}
+          tool_discipline: {operator: min, value: 0.72}
+      memory-weaver:
+        default_weighted_score_min: 0.78
+        metric_rules:
+          rollbackability: {operator: min, value: 1.00}
+          efficiency_latency_budget: {operator: min, value: 0.64}
+      researcher:
+        metric_rules:
+          groundedness: {operator: min, value: 0.72}
+      analyst:
+        metric_rules:
+          groundedness: {operator: min, value: 0.70}
+      curriculum-architect:
+        default_weighted_score_min: 0.75
+        metric_rules:
+          tool_discipline: {operator: min, value: 0.72}

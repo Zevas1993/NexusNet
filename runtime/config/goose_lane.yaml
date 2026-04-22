@@ -1,0 +1,156 @@
+canon_status: STRONG ACCEPTED DIRECTION
+enabled: true
+local_first_default: true
+recipes:
+  loader:
+    roots:
+      - nexusnet/aos/recipes
+      - nexusnet/runbooks
+    allow_workspace_overrides: true
+  default_gateway_policy: ask
+  approved_tool_sets:
+    readonly-research:
+      - retrieval.query
+      - governance.audit
+      - filesystem.readonly
+    scheduled-monitor:
+      - retrieval.query
+      - governance.audit
+  schedule_defaults:
+    timezone: America/New_York
+    persistent_state: true
+extensions:
+  catalog:
+    - extension_id: mcp-filesystem
+      label: MCP Filesystem Bridge
+      source: nexusnet-extension
+      enabled: true
+      extension_kind: mcp
+      workspace_scopes: [default, "*"]
+      roots:
+        - "{project_root}"
+      notes:
+        - Roots-aware MCP-compatible filesystem bridge.
+        - Read-only by policy unless explicitly elevated through NexusNet controls.
+    - extension_id: local-retrieval-pack
+      label: Local Retrieval Pack
+      source: nexusnet-extension
+      enabled: true
+      extension_kind: skill-pack
+      workspace_scopes: [default, "*"]
+      roots:
+        - "{project_root}/runtime"
+      notes:
+        - Reusable retrieval-focused skill and tool bundle.
+    - extension_id: acp-coding-lane
+      label: ACP Coding Lane
+      source: nexusnet-extension
+      enabled: false
+      extension_kind: acp-provider
+      workspace_scopes: [default]
+      roots:
+        - "{project_root}"
+      notes:
+        - Optional ACP bridge lane for external coding agents/providers.
+skills:
+  catalog_sync:
+    allow_import: true
+    benchmark_window: 120
+    optimization_requires_review: true
+acp:
+  enabled: false
+  providers:
+    - provider_id: acp-local-coder
+      label: ACP Local Coder
+      provider_kind: coding-agent
+      endpoint: null
+      enabled: false
+      governance:
+        requires_evalsao: true
+        requires_safetyao: true
+        direct_control_plane: false
+    - provider_id: acp-review-assistant
+      label: ACP Review Assistant
+      provider_kind: review-agent
+      endpoint: null
+      enabled: false
+      governance:
+        requires_evalsao: true
+        requires_safetyao: false
+        direct_control_plane: false
+subagents:
+  max_parallel: 4
+  default_tool_inheritance: intersection
+  temporary_lifecycle: true
+  governance_mutation_allowed: false
+security:
+  permission_modes:
+    - mode_id: workspace-write
+      label: Workspace Write
+      default: true
+      sandbox_profile: workspace-write
+      allow_network: false
+      allow_workspace_writes: true
+      high_risk_requires_review: true
+    - mode_id: read-only
+      label: Read Only
+      default: false
+      sandbox_profile: read-only
+      allow_network: false
+      allow_workspace_writes: false
+      high_risk_requires_review: true
+    - mode_id: restricted-review
+      label: Restricted Review
+      default: false
+      sandbox_profile: restricted-review
+      allow_network: false
+      allow_workspace_writes: false
+      high_risk_requires_review: true
+  sandbox_profiles:
+    - profile_id: workspace-write
+      label: Workspace Write Sandbox
+      filesystem_scope: workspace-only
+      network_access: blocked
+      shell_access: bounded
+    - profile_id: read-only
+      label: Read Only Sandbox
+      filesystem_scope: readonly
+      network_access: blocked
+      shell_access: bounded
+    - profile_id: restricted-review
+      label: Restricted Review Sandbox
+      filesystem_scope: readonly
+      network_access: blocked
+      shell_access: minimal
+  adversary_review:
+    failure_policy: fail-closed-or-escalate
+    escalation_targets:
+      - SafetyAO
+      - CritiqueAO
+      - manual-approval
+    high_risk_tools:
+      - shell.exec
+      - filesystem.write
+      - network.external
+      - provider.acp
+    reviewer_roles:
+      - adversary-reviewer
+      - safetyao-shadow
+  persistent_guardrails:
+    - guardrail_id: fail-closed-high-risk-review
+      label: Fail Closed High-Risk Review
+      enabled: true
+      applies_to:
+        - shell.exec
+        - filesystem.write
+        - provider.acp
+      instruction: High-risk runtime paths must fail closed or escalate if the adversary reviewer is unavailable.
+    - guardrail_id: preserve-brain-first-identity
+      label: Preserve Brain-First Identity
+      enabled: true
+      applies_to:
+        - recipes
+        - subagents
+        - extensions
+        - acp
+      instruction: Goose-inspired lanes remain subordinate to NexusNet and must not introduce a second control plane.

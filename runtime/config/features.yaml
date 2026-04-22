@@ -1,0 +1,21 @@
+runtime:
+  aitune: false
+  gateway: true
+  tensorrt_llm: false
+  flashinfer: false
+  modelopt: false
+  openvino_genai: false
+  sglang: false
+retrieval:
+  cross_encoder_rerank: true
+vision:
+  edge_lane: true
+federation:
+  skill_evolution: false
+teachers:
+  minimax_m27_lane: false
+graph:
+  neo4j_provider: false
+research:
+  native_core_lab: false
+  triattention: false

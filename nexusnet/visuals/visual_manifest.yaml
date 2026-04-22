@@ -1,0 +1,137 @@
+schema_version: visuals-2026.1
+status_label: LOCKED CANON
+visualizer_id: nexusnet-neural-visualizer
+title: NexusNet Neural Visualizer
+description: Canonical living-neural visualization for the NexusNet brain, expert capsules, critique loops, and governed growth overlays.
+default_mode_id: engineering
+default_renderer: svg-canvas
+core:
+  node_id: nexus-core
+  label: NexusNet Core
+  ring_radii: [88, 148, 214]
+  neural_layer_labels: [wake, synthesize, arbitrate]
+  neural_bus_count: 6
+  sculpture_density: 48
+capsules:
+  authoritative_core_roster:
+    - coder
+    - strategist
+    - analyst
+    - researcher
+    - critique
+    - conversationalist
+    - toolsmith
+    - security
+    - memory-weaver
+    - meta-reasoner
+    - router
+    - linguist
+    - vision
+    - audio
+    - simulation
+    - builder
+    - instructor
+    - intent-mapper
+    - critic-historian
+  auxiliary_off_by_default:
+    - curriculum-architect
+layout:
+  center: [0, 0]
+  capsule_orbit_radius_x: 760
+  capsule_orbit_radius_y: 510
+  capsule_radius: 96
+  capsule_inner_scale: 0.76
+  critique_broadcast_subject: critique
+collaboration_groups:
+  - group_id: build-chain
+    subjects: [coder, toolsmith, builder, security]
+    link_type: collaboration
+  - group_id: reasoning-spine
+    subjects: [strategist, analyst, meta-reasoner, critique]
+    link_type: collaboration
+  - group_id: research-memory
+    subjects: [researcher, critic-historian, linguist, memory-weaver]
+    link_type: collaboration
+  - group_id: multimodal-band
+    subjects: [vision, audio, conversationalist]
+    link_type: collaboration
+  - group_id: routing-band
+    subjects: [router, intent-mapper, memory-weaver]
+    link_type: collaboration
+  - group_id: simulation-planning
+    subjects: [simulation, strategist, researcher, meta-reasoner]
+    link_type: collaboration
+loop_definitions:
+  - loop_id: dream-loop
+    loop_type: dream
+    label: Recursive Dreaming
+    orbit_radius: 335
+    target_subjects: [simulation, researcher, meta-reasoner, memory-weaver]
+  - loop_id: critique-loop
+    loop_type: critique
+    label: Skeptical Critique
+    orbit_radius: 420
+    target_subjects: [critique, strategist, analyst, coder, security]
+  - loop_id: consequence-loop
+    loop_type: consequence
+    label: Consequence Feedback
+    orbit_radius: 505
+    target_subjects: [router, intent-mapper, builder, instructor, critic-historian]
+overlay_channels:
+  - binding_id: registry-layer
+    label: Registry Layer
+    source_ref: teachers.visibility.recent_teacher_traces
+    target_id: nexus-core
+    channel: registry-layer
+  - binding_id: teacher-arbitration
+    label: Critique Arbitration
+    source_ref: teachers.visibility.recent_teacher_traces
+    target_id: capsule:critique
+    channel: arbitration
+  - binding_id: promotion-cues
+    label: Promotion Evidence
+    source_ref: promotions.items
+    target_id: nexus-core
+    channel: promotion
+  - binding_id: takeover-cues
+    label: Foundry Takeover
+    source_ref: foundry.native_takeover
+    target_id: nexus-core
+    channel: takeover
+  - binding_id: runtime-posture
+    label: Runtime Posture
+    source_ref: runtime.device_profile
+    target_id: nexus-core
+    channel: runtime
+  - binding_id: safe-mode
+    label: Safe Mode Physiology
+    source_ref: runtime.device_profile
+    target_id: nexus-core
+    channel: physiology
+safe_mode_channels:
+  - safe_mode
+  - thermal_mode
+  - vram_pressure
+  - retry_state
+render_policy:
+  default_path: svg-canvas
+  enhancement_path: repo-local-threejs
+  external_cdn_allowed: false
+  competing_visualizers_allowed: false
+legend:
+  node_types:
+    - {id: core, label: Core neural structure}
+    - {id: capsule, label: Expert mini-brain}
+    - {id: subnode, label: Internal neural substructure}
+  link_types:
+    - {id: core, label: Core-to-capsule channel}
+    - {id: collaboration, label: Capsule-to-capsule hive link}
+    - {id: critique, label: Critique broadcast / challenge line}
+  loops:
+    - {id: dream, label: Recursive Dreaming loop}
+    - {id: critique, label: Skeptical Critique loop}
+    - {id: consequence, label: Consequence Feedback loop}
+  overlays:
+    - {id: promotion, label: Promotion / governance overlay}
+    - {id: takeover, label: Foundry / native takeover overlay}
+    - {id: physiology, label: Safe mode / thermal / VRAM physiology}

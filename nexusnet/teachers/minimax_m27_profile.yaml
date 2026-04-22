@@ -1,0 +1,17 @@
+teacher_id: minimax-m27-reference
+canonical_name: MiniMax M2.7 Reference Lane
+role: benchmark-teacher
+lineage: live-derived
+status_label: EXPLORATORY / PROTOTYPE
+registry_layers: [prototype_reference]
+specialties:
+  - dynamic tool search
+  - scaffold self-improvement
+  - memory-assisted repair
+  - agent-team coordination
+notes:
+  - teacher/reference only
+  - not a required or default local runtime
+source_refs:
+  - https://developer.nvidia.com/blog/minimax-m2-7-advances-scalable-agentic-workflows-on-nvidia-platforms-for-complex-ai-applications/
+  - https://build.nvidia.com/minimaxai/minimax-m2.7/modelcard

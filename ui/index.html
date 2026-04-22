@@ -1,55 +1,592 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>NexusNet Chat</title>
+  <title>NexusNet Wrapper Surface</title>
   <style>
-    body { font-family: system-ui, sans-serif; margin: 0; padding: 0; }
-    #app { display: grid; grid-template-rows: 1fr auto; height: 100vh; }
-    #log { padding: 16px; overflow-y: auto; }
-    #bar { display: flex; gap: 8px; padding: 8px; border-top: 1px solid #ccc; }
-    #bar input { flex: 1; padding: 8px; }
+    :root {
+      --bg: #f3f0e8;
+      --panel: #fffdf7;
+      --ink: #111111;
+      --muted: #5d5a52;
+      --line: #d8d1c3;
+      --accent: #16324f;
+      --accent-soft: #dce6f0;
+      --warn: #7b3f00;
+      --shadow: 0 12px 28px rgba(17, 17, 17, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at top left, #fff7da 0, transparent 36%),
+        radial-gradient(circle at bottom right, #dce6f0 0, transparent 30%),
+        var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+    }
+    .shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 340px 1fr 340px;
+      gap: 16px;
+      padding: 16px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .panel-header {
+      padding: 16px 18px 10px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(22, 50, 79, 0.06), rgba(22, 50, 79, 0));
+    }
+    .eyebrow {
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 26px; line-height: 1.1; }
+    h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.06em; }
+    p { color: var(--muted); line-height: 1.45; }
+    .panel-body { padding: 16px 18px 18px; }
+    .stack { display: grid; gap: 14px; }
+    .controls { display: grid; gap: 12px; }
+    label {
+      display: grid;
+      gap: 6px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+    select, input, textarea, button {
+      font: inherit;
+    }
+    select, input, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: #ffffff;
+      color: var(--ink);
+    }
+    button {
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: white;
+      border-radius: 999px;
+      padding: 10px 14px;
+      cursor: pointer;
+      transition: transform 120ms ease, opacity 120ms ease;
+    }
+    button.secondary {
+      background: transparent;
+      color: var(--accent);
+    }
+    button:hover { transform: translateY(-1px); }
+    button:disabled { opacity: 0.55; cursor: default; transform: none; }
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .chip-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .chip {
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 12px;
+      border: 1px solid rgba(22, 50, 79, 0.12);
+    }
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+      background: #fff;
+    }
+    .metric strong {
+      display: block;
+      font-size: 24px;
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+    .metric span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .chat-panel {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-height: calc(100vh - 32px);
+    }
+    .log {
+      padding: 18px;
+      overflow-y: auto;
+      display: grid;
+      gap: 12px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.25), rgba(255,255,255,0.05)),
+        repeating-linear-gradient(180deg, transparent, transparent 22px, rgba(17,17,17,0.02) 23px);
+    }
+    .entry {
+      max-width: 90%;
+      padding: 12px 14px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: #ffffff;
+      box-shadow: 0 4px 14px rgba(17, 17, 17, 0.04);
+    }
+    .entry.user {
+      margin-left: auto;
+      background: #fff6e0;
+    }
+    .entry.system {
+      background: #eef5fb;
+    }
+    .entry .meta {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .composer {
+      padding: 14px 18px 18px;
+      border-top: 1px solid var(--line);
+      display: grid;
+      gap: 10px;
+      background: rgba(255, 255, 255, 0.8);
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+    .mono {
+      font-family: Consolas, "SFMono-Regular", monospace;
+      font-size: 12px;
+    }
+    .list {
+      display: grid;
+      gap: 10px;
+    }
+    .list-item {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+      background: #fff;
+    }
+    .small {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .warning {
+      color: var(--warn);
+    }
+    @media (max-width: 1200px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+      .chat-panel {
+        min-height: 72vh;
+      }
+    }
   </style>
 </head>
 <body>
-<div id="app">
-  <div id="log"></div>
-  <div id="bar">
-    <input id="text" placeholder="Type message..." />
-    <button id="send">Send</button>
+  <div class="shell">
+    <aside class="panel">
+      <div class="panel-header">
+        <div class="eyebrow">NexusNet</div>
+        <h1>Wrapper Surface</h1>
+        <p>Brain-first shell for teacher attachment, agent modes, memory, and governed self-improvement.</p>
+      </div>
+      <div class="panel-body stack">
+        <div class="controls">
+          <label>
+            Wrapper Mode
+            <select id="mode"></select>
+          </label>
+          <label>
+            Teacher / Attached Model
+            <select id="teacher"></select>
+          </label>
+          <div class="button-row">
+            <button id="activateTeacher">Activate Teacher</button>
+            <button id="refresh" class="secondary">Refresh Surface</button>
+            <a href="/ui/visualizer/" style="display:inline-flex;align-items:center;justify-content:center;padding:10px 14px;border-radius:999px;border:1px solid var(--accent);text-decoration:none;color:var(--accent);background:transparent;">Open Neural Visualizer</a>
+          </div>
+        </div>
+        <div class="list">
+          <div class="list-item">
+            <div class="eyebrow">Active Brain Path</div>
+            <div id="activeSummary" class="small">Loading wrapper state...</div>
+          </div>
+          <div class="list-item">
+            <div class="eyebrow">Teacher Lineage</div>
+            <div id="teacherSummary" class="small">No teacher attached yet.</div>
+          </div>
+          <div class="list-item">
+            <div class="eyebrow">AO Spine</div>
+            <div id="aoList" class="chip-grid"></div>
+          </div>
+          <div class="list-item">
+            <div class="eyebrow">Agent Surface</div>
+            <div id="agentSummary" class="small">Agent provenance pending.</div>
+          </div>
+          <div class="list-item">
+            <div class="eyebrow">Live Retrieval</div>
+            <div id="retrievalSummary" class="small">No retrieval policy recorded yet.</div>
+          </div>
+          <div class="list-item">
+            <div class="eyebrow">Memory Plane Notes</div>
+            <div id="memoryNotes" class="small"></div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="panel chat-panel">
+      <div class="panel-header">
+        <div class="eyebrow">User-Facing Wrapper UI</div>
+        <h2>All execution stays inside NexusNet’s cognition layer</h2>
+      </div>
+      <div id="log" class="log"></div>
+      <div class="composer">
+        <textarea id="text" rows="4" placeholder="Run a task through the active teacher and wrapper mode."></textarea>
+        <div class="row">
+          <div class="small mono" id="sessionLabel"></div>
+          <div class="button-row">
+            <button id="reflect" class="secondary">Refresh Reflection</button>
+            <button id="dream" class="secondary">Run Dream</button>
+            <button id="assess" class="secondary">Assess Curriculum</button>
+            <button id="send">Send Through NexusNet</button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <aside class="panel">
+      <div class="panel-header">
+        <div class="eyebrow">Brain Telemetry</div>
+        <h2>Memory, reflection, curriculum, and runtime posture</h2>
+      </div>
+      <div class="panel-body stack">
+        <div class="metric-grid" id="runtimeMetrics"></div>
+        <div class="list">
+          <div class="list-item">
+            <div class="eyebrow">Reflection</div>
+            <div id="reflection" class="small">No reflection loaded.</div>
+          </div>
+          <div class="list-item">
+            <div class="eyebrow">Curriculum Transcript</div>
+            <div id="curriculum" class="small">No curriculum records loaded.</div>
+          </div>
+          <div class="list-item">
+            <div class="eyebrow">Memory Projections</div>
+            <div id="memoryProjection" class="small">No memory projection loaded.</div>
+          </div>
+          <div class="list-item">
+            <div class="eyebrow">External Evaluator</div>
+            <div id="evaluator" class="small">No report generated yet.</div>
+          </div>
+          <div class="list-item">
+            <div class="eyebrow">Promotion Gates</div>
+            <div id="promotions" class="small">No promotion candidates yet.</div>
+          </div>
+          <div class="list-item">
+            <div class="eyebrow">Federated / Foundry</div>
+            <div id="federationFoundry" class="small">No federated or foundry state loaded.</div>
+          </div>
+        </div>
+      </div>
+    </aside>
   </div>
-</div>
-<script>
-const log = document.getElementById('log');
-const input = document.getElementById('text');
-const btn = document.getElementById('send');
-const sessionId = localStorage.getItem('nn_session') || crypto.randomUUID();
-localStorage.setItem('nn_session', sessionId);
 
-function add(role, content) {
-  const div = document.createElement('div');
-  div.textContent = role.toUpperCase()+": "+content;
-  log.appendChild(div);
-  log.scrollTop = log.scrollHeight;
-}
+  <script>
+    const log = document.getElementById("log");
+    const input = document.getElementById("text");
+    const sendButton = document.getElementById("send");
+    const teacherSelect = document.getElementById("teacher");
+    const modeSelect = document.getElementById("mode");
+    const sessionId = localStorage.getItem("nn_session") || crypto.randomUUID();
+    localStorage.setItem("nn_session", sessionId);
+    document.getElementById("sessionLabel").textContent = "Session: " + sessionId;
 
-btn.onclick = async () => {
-  const content = input.value.trim();
-  if (!content) return;
-  add('user', content);
-  input.value = '';
-  const payload = {
-    session_id: sessionId,
-    messages: [{role:'user', content}]
-  };
-  const res = await fetch('/chat', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(payload)
-  });
-  const data = await res.json();
-  add('assistant', data.reply + "  [expert="+data.expert+" backend="+data.backend+"]");
-};
-</script>
+    function escapeHtml(text) {
+      return String(text)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    function addEntry(kind, title, body, meta = "") {
+      const div = document.createElement("div");
+      div.className = "entry " + kind;
+      div.innerHTML = `
+        <div class="meta">${escapeHtml(title)}${meta ? " · " + escapeHtml(meta) : ""}</div>
+        <div>${escapeHtml(body)}</div>
+      `;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    async function fetchJSON(url, options) {
+      const response = await fetch(url, options);
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(detail || response.statusText);
+      }
+      return response.json();
+    }
+
+    function renderTeachers(teachers) {
+      const active = teachers.active_teacher ? teachers.active_teacher.teacher_id : "";
+      const options = [];
+      for (const teacher of teachers.profiles) {
+        const label = `${teacher.canonical_name} [${teacher.role}]`;
+        options.push(`<option value="${teacher.teacher_id}" ${teacher.teacher_id === active ? "selected" : ""}>${escapeHtml(label)}</option>`);
+      }
+      teacherSelect.innerHTML = options.join("");
+
+      if (teachers.active_teacher) {
+        const provenance = teachers.active_teacher.provenance || {};
+        document.getElementById("teacherSummary").innerHTML = `
+          <div><strong>${escapeHtml(provenance.canonical_name || teachers.active_teacher.teacher_id)}</strong></div>
+          <div>${escapeHtml(provenance.lineage || "")}</div>
+          <div class="mono">${escapeHtml(teachers.active_teacher.model_id)}</div>
+        `;
+      } else {
+        document.getElementById("teacherSummary").textContent = "No active teacher attached.";
+      }
+    }
+
+    function renderModes(modes, activeMode) {
+      modeSelect.innerHTML = modes.map((mode) => `
+        <option value="${mode.mode_id}" ${mode.mode_id === activeMode ? "selected" : ""}>${escapeHtml(mode.label)}</option>
+      `).join("");
+    }
+
+    function renderAOs(snapshot) {
+      const aoList = document.getElementById("aoList");
+      aoList.innerHTML = snapshot.active_aos
+        .map((ao) => `<span class="chip" title="${escapeHtml(ao.description)}">${escapeHtml(ao.name)}</span>`)
+        .join("");
+    }
+
+    function renderRuntime(runtime, brainRuntime) {
+      const device = runtime.device_profile;
+      const budget = runtime.token_budget_profile;
+      const decision = brainRuntime.selection_decision || {};
+      document.getElementById("runtimeMetrics").innerHTML = `
+        <div class="metric"><strong>${escapeHtml(device.cpu_count)}</strong><span>CPU Threads</span></div>
+        <div class="metric"><strong>${escapeHtml(brainRuntime.capability_cards.length)}</strong><span>Backend Cards</span></div>
+        <div class="metric"><strong>${escapeHtml(runtime.quantization_decision.selected_quantization)}</strong><span>Quantization</span></div>
+        <div class="metric"><strong>${escapeHtml(decision.selected_runtime_name || "pending")}</strong><span>Selected Runtime</span></div>
+        <div class="metric"><strong>${escapeHtml(Math.round(budget.summary_fraction * 100))}%</strong><span>Summary Budget</span></div>
+      `;
+    }
+
+    function renderReflection(report) {
+      const findings = (report.findings || []).slice(0, 4).map((finding) => `
+        <div><strong>${escapeHtml(finding.category)}</strong>: ${escapeHtml(finding.detail)}</div>
+      `).join("");
+      document.getElementById("reflection").innerHTML = findings || "No recent reflection findings.";
+    }
+
+    function renderCurriculum(records) {
+      const items = (records.transcript || []).slice(0, 4).map((record) => `
+        <div><strong>${escapeHtml(record.course)}</strong>: ${escapeHtml(record.status)} (${escapeHtml(record.subject)})</div>
+      `).join("");
+      document.getElementById("curriculum").innerHTML = items || "No curriculum transcript entries yet.";
+    }
+
+    function renderMemoryProjection(view) {
+      const blocks = Object.entries(view.grouped_records || {}).map(([plane, records]) => `
+        <div><strong>${escapeHtml(plane)}</strong>: ${records.length} record(s)</div>
+      `).join("");
+      document.getElementById("memoryProjection").innerHTML = blocks || "No projection records yet.";
+    }
+
+    function renderEvaluator(report) {
+      document.getElementById("evaluator").innerHTML = `
+        <div><strong>${escapeHtml(report.decision.decision)}</strong></div>
+        <div>Traces reviewed: ${escapeHtml(report.metrics.trace_count)}</div>
+        <div>Average latency: ${escapeHtml(report.metrics.avg_brain_latency_ms)} ms</div>
+      `;
+    }
+
+    function renderPromotions(promotions) {
+      const items = (promotions.items || []).slice(0, 4).map((item) => {
+        const candidate = item.candidate || {};
+        const latest = item.latest_decision || item.latest_evaluation || {};
+        return `<div><strong>${escapeHtml(candidate.subject_id || candidate.candidate_kind || "candidate")}</strong>: ${escapeHtml((latest.decision || candidate.review_status || "shadow"))}</div>`;
+      }).join("");
+      document.getElementById("promotions").innerHTML = items || "No promotion candidates yet.";
+    }
+
+    function renderFederationFoundry(surface) {
+      const federation = surface.federation || {};
+      const foundry = surface.foundry || {};
+      const native = (foundry.native_takeover || []).length;
+      document.getElementById("federationFoundry").innerHTML = `
+        <div><strong>Federated candidates:</strong> ${escapeHtml(federation.candidate_global_improvements || 0)}</div>
+        <div><strong>Foundry takeovers:</strong> ${escapeHtml(native)}</div>
+      `;
+    }
+
+    async function loadSurface() {
+      const [surface, teachers, reflection, curriculum, projection] = await Promise.all([
+        fetchJSON(`/ops/brain/wrapper-surface?session_id=${encodeURIComponent(sessionId)}`),
+        fetchJSON("/ops/brain/teachers"),
+        fetchJSON("/ops/brain/reflection"),
+        fetchJSON(`/ops/brain/curriculum?subject=${encodeURIComponent("foundation:general")}`),
+        fetchJSON(`/ops/brain/memory/projections/semantic?session_id=${encodeURIComponent(sessionId)}`),
+      ]);
+
+      renderModes(surface.state.modes, modeSelect.value || "standard-chat");
+      renderTeachers(teachers);
+      renderAOs(surface.aos);
+      renderRuntime(surface.runtime, surface.brain_runtime);
+      renderReflection(reflection);
+      renderCurriculum(curriculum);
+      renderMemoryProjection(projection);
+      renderPromotions(surface.promotions || {items: []});
+      renderFederationFoundry(surface);
+
+      document.getElementById("activeSummary").innerHTML = `
+        <div><strong>AO:</strong> ${escapeHtml(surface.state.active_ao || "pending")}</div>
+        <div><strong>Agent:</strong> ${escapeHtml(surface.state.active_agent_id || "pending")}</div>
+        <div><strong>Model:</strong> <span class="mono">${escapeHtml(surface.state.active_model_id || "none")}</span></div>
+        <div><strong>Teacher:</strong> ${escapeHtml(surface.state.active_teacher_id || "none")}</div>
+        <div><strong>Runtime:</strong> ${escapeHtml(surface.state.selected_runtime_name || "pending")}</div>
+      `;
+
+      const sessionProvenance = surface.agents.session_provenance;
+      document.getElementById("agentSummary").innerHTML = sessionProvenance
+        ? `
+          <div><strong>${escapeHtml(sessionProvenance.active_agent_id || "pending")}</strong></div>
+          <div>Executions: ${escapeHtml(sessionProvenance.executions.length)}</div>
+        `
+        : "No agent execution recorded yet.";
+
+      const recentTrace = surface.recent_trace || {};
+      document.getElementById("retrievalSummary").innerHTML = recentTrace.trace_id
+        ? `
+          <div><strong>Policy:</strong> ${escapeHtml(recentTrace.retrieval_policy || "lexical-baseline")}</div>
+          <div><strong>Graph contribution:</strong> ${escapeHtml((recentTrace.metrics || {}).graph_contribution_count || 0)}</div>
+          <div><strong>Promotion refs:</strong> ${escapeHtml((recentTrace.promotion_references || []).join(", ") || "none")}</div>
+        `
+        : "No retrieval policy recorded yet.";
+
+      const notes = surface.memory_planes.metadata.migration_notes || [];
+      document.getElementById("memoryNotes").innerHTML = notes.map((note) => `<div>${escapeHtml(note)}</div>`).join("");
+    }
+
+    async function activateTeacher() {
+      if (!teacherSelect.value) {
+        return;
+      }
+      await fetchJSON("/ops/brain/teachers/select", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({teacher_id: teacherSelect.value, set_active: true})
+      });
+      await loadSurface();
+    }
+
+    async function sendMessage() {
+      const content = input.value.trim();
+      if (!content) {
+        return;
+      }
+      addEntry("user", "User", content, modeSelect.selectedOptions[0]?.textContent || "");
+      input.value = "";
+      sendButton.disabled = true;
+      try {
+        const payload = {
+          session_id: sessionId,
+          teacher_id: teacherSelect.value || null,
+          wrapper_mode: modeSelect.value,
+          messages: [{role: "user", content}]
+        };
+        const data = await fetchJSON("/chat", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload),
+        });
+        const meta = [data.ao, data.expert, data.teacher_id, data.runtime].filter(Boolean).join(" · ");
+        addEntry("system", "NexusNet", data.reply, meta);
+        await loadSurface();
+      } catch (error) {
+        addEntry("system", "Error", error.message, "warning");
+      } finally {
+        sendButton.disabled = false;
+      }
+    }
+
+    async function runDream() {
+      const seed = input.value.trim() || "Run a canonical wrapper-surface rehearsal.";
+      const dream = await fetchJSON("/ops/brain/dream", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({seed, variant_count: 2})
+      });
+      addEntry("system", "DreamAO", `Shadow dream ${dream.dream_id} produced ${dream.variants.length} variant(s).`, "dreaming");
+    }
+
+    async function assessCurriculum() {
+      const assessment = await fetchJSON("/ops/brain/curriculum/assess", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({phase: "foundation", subject: "general", model_hint: null})
+      });
+      addEntry("system", "Curriculum", `Mastery score ${assessment.mastery_score} across ${assessment.total_courses} course(s).`, "assessment");
+      await loadSurface();
+    }
+
+    async function refreshReflection() {
+      const report = await fetchJSON("/ops/brain/reflection");
+      renderReflection(report);
+      const external = await fetchJSON("/ops/brain/evals/report");
+      renderEvaluator(external);
+    }
+
+    document.getElementById("activateTeacher").addEventListener("click", activateTeacher);
+    document.getElementById("refresh").addEventListener("click", loadSurface);
+    document.getElementById("send").addEventListener("click", sendMessage);
+    document.getElementById("dream").addEventListener("click", runDream);
+    document.getElementById("assess").addEventListener("click", assessCurriculum);
+    document.getElementById("reflect").addEventListener("click", refreshReflection);
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+        sendMessage();
+      }
+    });
+
+    addEntry("system", "NexusNet", "Wrapper surface online. Load a teacher, choose a mode, and route tasks through the brain-first path.");
+    loadSurface().then(refreshReflection).catch((error) => {
+      addEntry("system", "Error", error.message, "bootstrap");
+    });
+  </script>
 </body>
 </html>

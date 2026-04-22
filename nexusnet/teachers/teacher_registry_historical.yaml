@@ -1,0 +1,99 @@
+schema_version: 1
+registry_layer: historical
+canon_status: LOCKED CANON
+migration_notes:
+  - Historical teacher canon is preserved as a separate registry layer and is not overwritten by the live v2026 layer.
+  - Historical routing preserves best-ensemble-per-role and does not collapse into pair-only operational routing.
+historical_principles:
+  best_ensemble_per_role: true
+  one_teacher_per_role: false
+  teachers_discarded_after_surpass: true
+  post_bootstrap_transition:
+    - Recursive Neural Dreaming
+    - Federated Learning
+    - Consequence Feedback Routing
+central_brain_mentor_ensemble:
+  teacher_names: [Mixtral-8x7B, Yi-1.5-9B, Qwen-0.5B-MoE, LLaMA-3-8B]
+  teacher_ids: [mixtral-8x7b, yi-1.5-9b, qwen-0.5b-moe, llama-3-8b]
+teacher_profiles:
+  mixtral-8x7b: {canonical_name: "Mixtral-8x7B", model_hints: [ollama/mixtral:8x7b-instruct, openai/mixtral-8x7b-instruct]}
+  yi-1.5-9b: {canonical_name: "Yi-1.5-9B", model_hints: [ollama/yi:9b, openai/yi-1.5-9b]}
+  qwen-0.5b-moe: {canonical_name: "Qwen-0.5B-MoE", model_hints: [ollama/qwen2.5:0.5b, openai/qwen-0.5b-moe]}
+  llama-3-8b: {canonical_name: "LLaMA-3-8B", model_hints: [ollama/llama3.1:8b, openai/llama-3-8b]}
+  codestral: {canonical_name: "CodeStral", model_hints: [ollama/codestral:22b, openai/codestral]}
+  code-llama-7b-13b: {canonical_name: "Code LLaMA 7B/13B", model_hints: [openai/code-llama-7b, openai/code-llama-13b]}
+  starcoder: {canonical_name: "StarCoder", model_hints: [openai/starcoder]}
+  deepseek-coder: {canonical_name: "DeepSeek-Coder", model_hints: [openai/deepseek-coder]}
+  polycoder: {canonical_name: "PolyCoder", model_hints: [openai/polycoder]}
+  gpt4all-strategy-tuned: {canonical_name: "GPT4All-Strategy-tuned", model_hints: [openai/gpt4all-strategy-tuned]}
+  openhermes-2.5: {canonical_name: "OpenHermes-2.5", model_hints: [ollama/openhermes, openai/openhermes-2.5]}
+  mpt-instruct: {canonical_name: "MPT-Instruct", model_hints: [openai/mpt-instruct]}
+  falcon-instruct: {canonical_name: "Falcon-Instruct", model_hints: [openai/falcon-instruct]}
+  orca-2: {canonical_name: "Orca-2", model_hints: [openai/orca-2]}
+  scibert: {canonical_name: "SciBERT", model_hints: [openai/scibert]}
+  biomedlm: {canonical_name: "BioMedLM", model_hints: [openai/biomedlm]}
+  galactica: {canonical_name: "Galactica", model_hints: [openai/galactica]}
+  llama-3-8b-research-tuned: {canonical_name: "LLaMA-3-8B research-tuned", model_hints: [openai/llama-3-8b-research-tuned]}
+  claude-eval-finetunes: {canonical_name: "Claude-Eval fine-tunes", model_hints: [openai/claude-eval-finetunes]}
+  alpaca-eval-tuned-llama: {canonical_name: "Alpaca-Eval-tuned LLaMA", model_hints: [openai/alpaca-eval-tuned-llama]}
+  openhermes-critique: {canonical_name: "OpenHermes-Critique", model_hints: [openai/openhermes-critique]}
+  vicuna-13b: {canonical_name: "Vicuna-13B", model_hints: [openai/vicuna-13b]}
+  openchat-3.5: {canonical_name: "OpenChat-3.5", model_hints: [openai/openchat-3.5]}
+  mistral-instruct: {canonical_name: "Mistral-Instruct", model_hints: [ollama/mistral, openai/mistral-instruct]}
+  toolbench-trained-llama: {canonical_name: "ToolBench-trained LLaMA", model_hints: [openai/toolbench-trained-llama]}
+  gorilla-api-agent: {canonical_name: "Gorilla API-Agent model", model_hints: [openai/gorilla-api-agent]}
+  mistral-toolformer: {canonical_name: "Mistral-Toolformer", model_hints: [openai/mistral-toolformer]}
+  cyberseceval-llms: {canonical_name: "CyberSecEval LLMs", model_hints: [openai/cyberseceval-llms]}
+  gpt-j-security-finetunes: {canonical_name: "GPT-J security fine-tunes", model_hints: [openai/gpt-j-security-finetunes]}
+  code-llama-secure: {canonical_name: "Code LLaMA-Secure", model_hints: [openai/code-llama-secure]}
+  memgpt: {canonical_name: "MemGPT", model_hints: [openai/memgpt]}
+  longlora-llama-3-8b: {canonical_name: "LongLoRA LLaMA-3-8B", model_hints: [openai/longlora-llama-3-8b]}
+  recurrentgemma-memory-tuned: {canonical_name: "RecurrentGemma memory-tuned", model_hints: [openai/recurrentgemma-memory-tuned]}
+  deepseek-r1: {canonical_name: "DeepSeek-R1", model_hints: [openai/deepseek-r1]}
+  llama-3-70b-distilled-outputs: {canonical_name: "LLaMA-3-70B distilled outputs", model_hints: [openai/llama-3-70b-distilled-outputs]}
+  moe-router-llama: {canonical_name: "MoE-Router-LLaMA", model_hints: [openai/moe-router-llama]}
+  switch-transformers: {canonical_name: "Switch-Transformers", model_hints: [openai/switch-transformers]}
+  qwen-moe-0.5b: {canonical_name: "Qwen-MoE-0.5B", model_hints: [openai/qwen-moe-0.5b]}
+  mpt-storywriter: {canonical_name: "MPT-Storywriter", model_hints: [openai/mpt-storywriter]}
+  bloomz: {canonical_name: "BLOOMZ", model_hints: [openai/bloomz]}
+  openclip: {canonical_name: "OpenCLIP", model_hints: [openai/openclip], modalities: [image]}
+  blip-2: {canonical_name: "BLIP-2", model_hints: [openai/blip-2], modalities: [image, text]}
+  sam: {canonical_name: "SAM", model_hints: [openai/sam], modalities: [image]}
+  eva-clip: {canonical_name: "EVA-CLIP", model_hints: [openai/eva-clip], modalities: [image]}
+  whisper-large-v3: {canonical_name: "Whisper-Large-V3", model_hints: [openai/whisper-large-v3], modalities: [audio, text]}
+  wav2vec-2-0: {canonical_name: "Wav2Vec 2.0", model_hints: [openai/wav2vec-2.0], modalities: [audio]}
+  audiolm: {canonical_name: "AudioLM", model_hints: [openai/audiolm], modalities: [audio]}
+  bark-tts: {canonical_name: "Bark-TTS", model_hints: [openai/bark-tts], modalities: [audio]}
+  muzero: {canonical_name: "MuZero", model_hints: [openai/muzero]}
+  dreamer-v3: {canonical_name: "Dreamer-V3", model_hints: [openai/dreamer-v3]}
+  world-models: {canonical_name: "World Models", model_hints: [openai/world-models]}
+  gensimrl: {canonical_name: "GenSimRL", model_hints: [openai/gensimrl]}
+  wizardcoder-builder: {canonical_name: "WizardCoder-Builder", model_hints: [openai/wizardcoder-builder]}
+  openhermes-2.5-instruct: {canonical_name: "OpenHermes-2.5-Instruct", model_hints: [openai/openhermes-2.5-instruct]}
+  vicuna-13b-instruct: {canonical_name: "Vicuna-13B-Instruct", model_hints: [openai/vicuna-13b-instruct]}
+  yi-1.5-instruct: {canonical_name: "Yi-1.5-Instruct", model_hints: [openai/yi-1.5-instruct]}
+  intent-bert: {canonical_name: "Intent-BERT", model_hints: [openai/intent-bert]}
+  distilbert-intent: {canonical_name: "DistilBERT-Intent", model_hints: [openai/distilbert-intent]}
+  claude-eval-historical: {canonical_name: "Claude-Eval-Historical", model_hints: [openai/claude-eval-historical]}
+  llama-historian-tuned: {canonical_name: "LLaMA-Historian-tuned", model_hints: [openai/llama-historian-tuned]}
+  alpaca-eval: {canonical_name: "Alpaca-Eval", model_hints: [openai/alpaca-eval]}
+expert_role_ensembles:
+  "Coder Expert": {subject: coder, teacher_names: [CodeStral, Code LLaMA 7B/13B, StarCoder, DeepSeek-Coder, PolyCoder], teacher_ids: [codestral, code-llama-7b-13b, starcoder, deepseek-coder, polycoder]}
+  "Strategist Expert": {subject: strategist, teacher_names: [Mixtral-8x7B, GPT4All-Strategy-tuned, Yi-1.5-9B, OpenHermes-2.5], teacher_ids: [mixtral-8x7b, gpt4all-strategy-tuned, yi-1.5-9b, openhermes-2.5]}
+  "Analyst Expert": {subject: analyst, teacher_names: [LLaMA-3-8B, MPT-Instruct, Falcon-Instruct, Orca-2], teacher_ids: [llama-3-8b, mpt-instruct, falcon-instruct, orca-2]}
+  "Researcher Expert": {subject: researcher, teacher_names: [SciBERT, BioMedLM, Galactica, LLaMA-3-8B research-tuned], teacher_ids: [scibert, biomedlm, galactica, llama-3-8b-research-tuned]}
+  "Critique Expert": {subject: critique, teacher_names: [Claude-Eval fine-tunes, Alpaca-Eval-tuned LLaMA, OpenHermes-Critique], teacher_ids: [claude-eval-finetunes, alpaca-eval-tuned-llama, openhermes-critique]}
+  "Conversationalist Expert": {subject: conversationalist, teacher_names: [Yi-1.5-9B, Vicuna-13B, OpenChat-3.5, Mistral-Instruct], teacher_ids: [yi-1.5-9b, vicuna-13b, openchat-3.5, mistral-instruct]}
+  "Toolsmith Expert": {subject: toolsmith, teacher_names: [ToolBench-trained LLaMA, Gorilla API-Agent model, Mistral-Toolformer], teacher_ids: [toolbench-trained-llama, gorilla-api-agent, mistral-toolformer]}
+  "Security Expert": {subject: security, teacher_names: [CyberSecEval LLMs, GPT-J security fine-tunes, Code LLaMA-Secure], teacher_ids: [cyberseceval-llms, gpt-j-security-finetunes, code-llama-secure]}
+  "Memory Weaver Expert": {subject: memory-weaver, teacher_names: [MemGPT, LongLoRA LLaMA-3-8B, RecurrentGemma memory-tuned], teacher_ids: [memgpt, longlora-llama-3-8b, recurrentgemma-memory-tuned]}
+  "Meta Reasoner Expert": {subject: meta-reasoner, teacher_names: [Mixtral-8x7B, DeepSeek-R1, LLaMA-3-70B distilled outputs], teacher_ids: [mixtral-8x7b, deepseek-r1, llama-3-70b-distilled-outputs]}
+  "Router Expert": {subject: router, teacher_names: [MoE-Router-LLaMA, Switch-Transformers, Qwen-MoE-0.5B], teacher_ids: [moe-router-llama, switch-transformers, qwen-moe-0.5b]}
+  "Linguist Expert": {subject: linguist, teacher_names: [MPT-Storywriter, Falcon-Instruct, Yi-1.5-9B, BLOOMZ], teacher_ids: [mpt-storywriter, falcon-instruct, yi-1.5-9b, bloomz]}
+  "Vision Expert": {subject: vision, teacher_names: [OpenCLIP, BLIP-2, SAM, EVA-CLIP], teacher_ids: [openclip, blip-2, sam, eva-clip]}
+  "Audio Expert": {subject: audio, teacher_names: [Whisper-Large-V3, Wav2Vec 2.0, AudioLM, Bark-TTS], teacher_ids: [whisper-large-v3, wav2vec-2-0, audiolm, bark-tts]}
+  "Simulation Expert": {subject: simulation, teacher_names: [MuZero, Dreamer-V3, World Models, GenSimRL], teacher_ids: [muzero, dreamer-v3, world-models, gensimrl]}
+  "Builder Expert": {subject: builder, teacher_names: [LLaMA-3-8B, Mistral-Instruct, WizardCoder-Builder], teacher_ids: [llama-3-8b, mistral-instruct, wizardcoder-builder]}
+  "Instructor Expert": {subject: instructor, teacher_names: [OpenHermes-2.5-Instruct, Vicuna-13B-Instruct, Yi-1.5-Instruct], teacher_ids: [openhermes-2.5-instruct, vicuna-13b-instruct, yi-1.5-instruct]}
+  "Intent Mapper Expert": {subject: intent-mapper, teacher_names: [Intent-BERT, Qwen-0.5B-MoE, DistilBERT-Intent], teacher_ids: [intent-bert, qwen-0.5b-moe, distilbert-intent]}
+  "Critic Historian Expert": {subject: critic-historian, teacher_names: [Claude-Eval-Historical, LLaMA-Historian-tuned, Alpaca-Eval], teacher_ids: [claude-eval-historical, llama-historian-tuned, alpaca-eval]}

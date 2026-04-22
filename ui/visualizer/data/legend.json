@@ -1,0 +1,58 @@
+{
+  "node_types": [
+    {
+      "id": "core",
+      "label": "Core neural structure"
+    },
+    {
+      "id": "capsule",
+      "label": "Expert mini-brain"
+    },
+    {
+      "id": "subnode",
+      "label": "Internal neural substructure"
+    }
+  ],
+  "link_types": [
+    {
+      "id": "core",
+      "label": "Core-to-capsule channel"
+    },
+    {
+      "id": "collaboration",
+      "label": "Capsule-to-capsule hive link"
+    },
+    {
+      "id": "critique",
+      "label": "Critique broadcast / challenge line"
+    }
+  ],
+  "loops": [
+    {
+      "id": "dream",
+      "label": "Recursive Dreaming loop"
+    },
+    {
+      "id": "critique",
+      "label": "Skeptical Critique loop"
+    },
+    {
+      "id": "consequence",
+      "label": "Consequence Feedback loop"
+    }
+  ],
+  "overlays": [
+    {
+      "id": "promotion",
+      "label": "Promotion / governance overlay"
+    },
+    {
+      "id": "takeover",
+      "label": "Foundry / native takeover overlay"
+    },
+    {
+      "id": "physiology",
+      "label": "Safe mode / thermal / VRAM physiology"
+    }
+  ]
+}
