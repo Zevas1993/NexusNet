@@ -15,12 +15,12 @@ This document explains how the accepted teacher-system baseline now participates
 
 The split is preserved in:
 
-- [runtime/config/teachers.yaml](../runtime/config/teachers.yaml:1)
-- [nexusnet/teachers/teacher_registry_historical.yaml](../nexusnet/teachers/teacher_registry_historical.yaml:1)
-- [nexusnet/teachers/teacher_registry_v2026_live.yaml](../nexusnet/teachers/teacher_registry_v2026_live.yaml:1)
+- [runtime/config/teachers.yaml](../runtime/config/teachers.yaml)
+- [nexusnet/teachers/teacher_registry_historical.yaml](../nexusnet/teachers/teacher_registry_historical.yaml)
+- [nexusnet/teachers/teacher_registry_v2026_live.yaml](../nexusnet/teachers/teacher_registry_v2026_live.yaml)
 
 ### 2. Curriculum Execution
-- [nexusnet/curriculum/engine.py](../nexusnet/curriculum/engine.py:1) now consumes the teacher regimens directly.
+- [nexusnet/curriculum/engine.py](../nexusnet/curriculum/engine.py) now consumes the teacher regimens directly.
 - If a subject has a teacher regimen, curriculum assessment executes:
   - Stage 1 Domain Professor Distillation
   - Stage 2 Dual-Teacher Contrast
@@ -33,8 +33,8 @@ The split is preserved in:
   - dream/eval lineage
 
 ### 3. Foundry and Native Growth
-- [nexusnet/distillation/refinery.py](../nexusnet/distillation/refinery.py:1) aggregates teacher evidence from traces and curriculum records.
-- [nexusnet/foundry/benchmarks.py](../nexusnet/foundry/benchmarks.py:1) now scores:
+- [nexusnet/distillation/refinery.py](../nexusnet/distillation/refinery.py) aggregates teacher evidence from traces and curriculum records.
+- [nexusnet/foundry/benchmarks.py](../nexusnet/foundry/benchmarks.py) now scores:
   - `dependency_ratio`
   - `native_generation`
   - `teacher_disagreement_delta`
@@ -44,7 +44,7 @@ The split is preserved in:
 - Native-takeover candidates carry teacher evidence into promotion traceability.
 
 ### 4. Promotion Evidence
-- [nexusnet/promotions/service.py](../nexusnet/promotions/service.py:1) now passes candidate traceability into EvalsAO.
+- [nexusnet/promotions/service.py](../nexusnet/promotions/service.py) now passes candidate traceability into EvalsAO.
 - Native-takeover candidates can reference:
   - selected teachers
   - arbitration path
@@ -53,7 +53,7 @@ The split is preserved in:
   - teacher replacement evidence
 
 ### 5. EvalsAO
-- [nexusnet/evals/service.py](../nexusnet/evals/service.py:1) now runs teacher-aware scenario checks in addition to recent-trace review.
+- [nexusnet/evals/service.py](../nexusnet/evals/service.py) now runs teacher-aware scenario checks in addition to recent-trace review.
 - Current teacher-aware scenarios:
   - `primary-vs-secondary-disagreement`
   - `critique-arbitration-validation`
@@ -62,7 +62,7 @@ The split is preserved in:
   - `dream-derived-trace-contamination`
 
 ### 6. Wrapper and Ops Visibility
-- [nexusnet/ui_surface/surface.py](../nexusnet/ui_surface/surface.py:1) exposes:
+- [nexusnet/ui_surface/surface.py](../nexusnet/ui_surface/surface.py) exposes:
   - teacher registry layer visibility
   - selected teacher roles
   - arbitration visibility
