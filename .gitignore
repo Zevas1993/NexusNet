@@ -44,6 +44,7 @@ runtime/test-tmp-run/
 # Test scratch directories
 .pytest-tmp/
 pytest-cache-files-*/
+.worktrees/
 
 # Node (future UI bindings)
 node_modules/
