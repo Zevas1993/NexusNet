@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from ..schemas import ApprovalRequest, ChatRequest, RetrievalIngestRequest, RetrievalRequest
 from ..services import NexusServices, build_services
 from nexusnet.core.ebt import EBTScoreRequest
-from nexusnet.protocols import ProtocolConsentRequest, ProtocolServerDefinition, ToolAttempt
+from nexusnet.protocols import ProtocolAdapterPolicyRequest, ProtocolConsentRequest, ProtocolServerDefinition, ToolAttempt
 from nexusnet.schemas import CurriculumAssessmentRequest, DistillationExportRequest, DreamCycleRequest, GraphIngestRequest, ModelAttachRequest
 from nexusnet.training import TrainingDataExportRecord
 
@@ -291,6 +291,7 @@ def create_app(project_root: str | None = None) -> FastAPI:
             "status": "registry_backed",
             "candidates": [candidate.model_dump(mode="json") for candidate in services.brain_canon.research_candidates()],
             "audit_log": services.brain_canon.assimilation_audit_log(),
+            "license_summary": services.brain_canon.license_summary(),
         }
 
     @application.post("/ops/brain/research-candidates/{candidate_id}/status")
@@ -302,6 +303,19 @@ def create_app(project_root: str | None = None) -> FastAPI:
                 maturity=payload.get("maturity"),
                 notes=payload.get("notes"),
                 evidence=payload.get("evidence"),
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="research candidate not found") from exc
+
+    @application.post("/ops/brain/research-candidates/{candidate_id}/license-review")
+    def ops_brain_research_candidate_license_review(candidate_id: str, payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_canon.review_candidate_license(
+                candidate_id=candidate_id,
+                license_status=str(payload.get("license_status") or "requires_review"),
+                reviewer=str(payload.get("reviewer") or "operator"),
+                rationale=str(payload.get("rationale") or ""),
+                evidence=str(payload.get("evidence") or ""),
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="research candidate not found") from exc
@@ -330,6 +344,23 @@ def create_app(project_root: str | None = None) -> FastAPI:
     @application.get("/ops/brain/product-sweep/status")
     def ops_brain_product_sweep_status():
         return services.brain_product_sweep_gatekeeper.status_payload()
+
+    @application.get("/ops/brain/protocol/adapters")
+    def ops_brain_protocol_adapters():
+        return services.brain_protocol_adapters.list_adapters()
+
+    @application.get("/ops/brain/protocol/adapters/{adapter_id}")
+    def ops_brain_protocol_adapter(adapter_id: str):
+        adapter = services.brain_protocol_adapters.get_adapter(adapter_id)
+        if adapter is None:
+            raise HTTPException(status_code=404, detail="protocol adapter not found")
+        return {"adapter": adapter.model_dump(mode="json")}
+
+    @application.post("/ops/brain/protocol/adapters/{adapter_id}/policy")
+    def ops_brain_protocol_adapter_policy(adapter_id: str, request: ProtocolAdapterPolicyRequest):
+        if services.brain_protocol_adapters.get_adapter(adapter_id) is None:
+            raise HTTPException(status_code=404, detail="protocol adapter not found")
+        return services.brain_protocol_adapters.apply_policy(adapter_id, request)
 
     @application.post("/ops/brain/product-sweep/shadow-simulation")
     def ops_brain_product_sweep_shadow_simulation(payload: dict[str, Any] = Body(...)):

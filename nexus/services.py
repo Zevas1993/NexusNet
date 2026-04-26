@@ -56,7 +56,7 @@ from nexusnet.foundry.takeover_trends import TakeoverTrendAnalyzer
 from nexusnet.graph.store import LocalGraphStore
 from nexusnet.memory import MemoryNode, MemoryPlaneRegistry
 from nexusnet.memory.operating_system import MemoryOperatingSystem
-from nexusnet.protocols import ProtocolSecurityLayer
+from nexusnet.protocols import GovernedProtocolAdapterRegistry, ProtocolSecurityLayer
 from nexusnet.promotions import PromotionCohortGate, PromotionService, TeacherEvidenceService
 from nexusnet.promotions.trend_gating import PromotionTrendGate
 from nexusnet.product_sweep import ProductSweepGatekeeper
@@ -132,6 +132,7 @@ class NexusServices:
     brain_memory_os: MemoryOperatingSystem
     brain_runtime_registry: BrainRuntimeRegistry
     brain_protocol_security: ProtocolSecurityLayer
+    brain_protocol_adapters: GovernedProtocolAdapterRegistry
     brain_product_runtime_profiles: ProductRuntimeProfileRegistry
     brain_training_exporter: TrainingDatasetExporter
     brain_product_sweep_gatekeeper: ProductSweepGatekeeper
@@ -240,12 +241,14 @@ def build_services(project_root: str | None = None) -> NexusServices:
     brain_trace_evals = TraceFirstEvalRegistry()
     brain_memory_os = MemoryOperatingSystem(paths.artifacts_dir / "memory" / "memory_os_records.json")
     brain_protocol_security = ProtocolSecurityLayer()
+    brain_protocol_adapters = GovernedProtocolAdapterRegistry(brain_protocol_security)
     brain_product_runtime_profiles = ProductRuntimeProfileRegistry()
     brain_training_exporter = TrainingDatasetExporter(paths.artifacts_dir)
     brain_product_sweep_gatekeeper = ProductSweepGatekeeper(
         canon=brain_canon,
         memory_os=brain_memory_os,
         protocol_security=brain_protocol_security,
+        protocol_adapters=brain_protocol_adapters,
         runtime_profiles=brain_product_runtime_profiles,
         trace_evals=brain_trace_evals,
     )
@@ -663,6 +666,7 @@ def build_services(project_root: str | None = None) -> NexusServices:
         brain_memory_os=brain_memory_os,
         brain_runtime_registry=brain_runtime_registry,
         brain_protocol_security=brain_protocol_security,
+        brain_protocol_adapters=brain_protocol_adapters,
         brain_product_runtime_profiles=brain_product_runtime_profiles,
         brain_training_exporter=brain_training_exporter,
         brain_product_sweep_gatekeeper=brain_product_sweep_gatekeeper,

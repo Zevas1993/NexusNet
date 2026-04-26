@@ -27,12 +27,14 @@ class ProductSweepGatekeeper:
         canon: Any,
         memory_os: Any,
         protocol_security: Any,
+        protocol_adapters: Any | None = None,
         runtime_profiles: Any,
         trace_evals: Any,
     ):
         self.canon = canon
         self.memory_os = memory_os
         self.protocol_security = protocol_security
+        self.protocol_adapters = protocol_adapters
         self.runtime_profiles = runtime_profiles
         self.trace_evals = trace_evals
 
@@ -50,9 +52,13 @@ class ProductSweepGatekeeper:
                 phase_id="phase-1",
                 title="Canon And Research Lock",
                 status="implemented_living",
-                acceptance_tests=["tests/test_full_product_sweep_scaffold.py", "tests/test_product_sweep_deepening.py"],
+                acceptance_tests=[
+                    "tests/test_full_product_sweep_scaffold.py",
+                    "tests/test_product_sweep_deepening.py",
+                    "tests/test_assimilation_license_governance.py",
+                ],
                 operator_surfaces=["/ops/brain/canon", "/ops/brain/research-candidates"],
-                evidence=["NexusNetCanonRegistry", "audited Assimilation Registry overlays"],
+                evidence=["NexusNetCanonRegistry", "audited Assimilation Registry overlays", "audited candidate license reviews"],
             ),
             ProductSweepPhaseGate(
                 phase_id="phase-2",
@@ -83,9 +89,13 @@ class ProductSweepGatekeeper:
                 phase_id="phase-5",
                 title="Secure Protocol Stack",
                 status="implemented_gated",
-                acceptance_tests=["tests/test_product_sweep_operationalization.py", "tests/test_product_sweep_deepening.py"],
-                operator_surfaces=["/ops/brain/security/protocol/*"],
-                evidence=["ProtocolSecurityLayer", "signed server registration", "accept/decline/cancel consent"],
+                acceptance_tests=[
+                    "tests/test_product_sweep_operationalization.py",
+                    "tests/test_product_sweep_deepening.py",
+                    "tests/test_protocol_adapter_governance.py",
+                ],
+                operator_surfaces=["/ops/brain/security/protocol/*", "/ops/brain/protocol/adapters"],
+                evidence=["ProtocolSecurityLayer", "GovernedProtocolAdapterRegistry", "signed server registration", "accept/decline/cancel consent"],
                 blocked_by=["external_protocols_disabled_until_policy_allows"],
             ),
             ProductSweepPhaseGate(
@@ -173,6 +183,9 @@ class ProductSweepGatekeeper:
                     "fact_count": memory_summary.get("fact_count", 0),
                 },
                 "protocol_security": self.protocol_security.summary(),
+                "protocol_adapters": self.protocol_adapters.list_adapters()
+                if self.protocol_adapters is not None
+                else {"external_execution_default": "deny_until_user_consent", "adapters": []},
                 "runtime": {
                     "status": runtime_summary["status"],
                     "raw_million_token_context": runtime_summary["raw_million_token_context"],

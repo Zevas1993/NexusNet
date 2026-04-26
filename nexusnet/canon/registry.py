@@ -54,6 +54,7 @@ class ResearchCandidate(BaseModel):
     maturity: str = "candidate"
     replacement_target: str = Field(min_length=1)
     notes: str = Field(min_length=1)
+    license_review: dict[str, Any] = Field(default_factory=dict)
 
 
 class ExpertCapsule(EvidenceBackedRecord):
@@ -327,6 +328,54 @@ class NexusNetCanonRegistry:
         self._persist_registry()
         return {"candidate": updated.model_dump(mode="json"), "audit_event": audit_event}
 
+    def review_candidate_license(
+        self,
+        *,
+        candidate_id: str,
+        license_status: str,
+        reviewer: str,
+        rationale: str,
+        evidence: str,
+    ) -> dict[str, Any]:
+        candidate = self.research_candidate(candidate_id)
+        if candidate is None:
+            raise KeyError(candidate_id)
+        review = {
+            "license_status": license_status,
+            "reviewer": reviewer,
+            "rationale": rationale,
+            "evidence": evidence,
+            "reviewed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        updates: dict[str, Any] = {"license_review": review}
+        if license_status == "blocked":
+            updates["integration_status"] = "disabled"
+        elif license_status == "approved" and candidate.integration_status == "disabled":
+            updates["integration_status"] = "candidate"
+        self._candidate_overrides[candidate_id] = {
+            **self._candidate_overrides.get(candidate_id, {}),
+            **updates,
+        }
+        updated = self._apply_candidate_override(candidate)
+        audit_event = {
+            "action": "assimilation.license.reviewed",
+            "candidate_id": candidate_id,
+            "license_status": license_status,
+            "reviewer": reviewer,
+            "evidence": evidence,
+            "created_at": review["reviewed_at"],
+        }
+        self._audit_events.append(audit_event)
+        self._persist_registry()
+        return {"candidate": updated.model_dump(mode="json"), "audit_event": audit_event}
+
+    def license_summary(self) -> dict[str, int]:
+        summary = {"unreviewed": 0, "approved": 0, "requires_review": 0, "blocked": 0}
+        for candidate in self.research_candidates():
+            status = str((candidate.license_review or {}).get("license_status") or "unreviewed")
+            summary[status] = summary.get(status, 0) + 1
+        return summary
+
     def assimilation_audit_log(self) -> list[dict[str, Any]]:
         return list(self._audit_events)
 
@@ -400,7 +449,11 @@ class NexusNetCanonRegistry:
     def product_status(self) -> dict[str, Any]:
         return {
             "canon": {"status": "locked_with_candidates", "unresolved_count": len(self.unresolved_decisions())},
-            "research": {"candidate_count": len(self.research_candidates()), "openrlhf_status": "candidate_requires_pin"},
+            "research": {
+                "candidate_count": len(self.research_candidates()),
+                "openrlhf_status": "candidate_requires_pin",
+                "license_summary": self.license_summary(),
+            },
             "memory": {"status": "locked", "controller": "MemoryOperatingSystem", "temporal_truth": True},
             "security": {"status": "locked_policy_candidate_protocols", "external_tools_default": "deny_until_policy_allows"},
             "runtime": {"status": "candidate_profiles", "raw_million_token_context": "unresolved"},
