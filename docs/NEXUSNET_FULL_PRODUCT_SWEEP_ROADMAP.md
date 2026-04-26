@@ -53,3 +53,4 @@ Status source of truth: `nexusnet.canon.NexusNetCanonRegistry`, `nexusnet.produc
 - `/ops/brain/evals/scenarios` exposes trace-first eval scenarios for route choice, tool correctness, memory recall, critique quality, and policy violations.
 - `/ops/brain/training/export-record` validates training export records and keeps checkpoint promotion gated behind eval, license, security, and provenance proof.
 - `/ops/brain/training/export-dataset` writes JSONL and manifest artifacts before any checkpoint promotion is considered.
+- `/ops/brain/training/reward-spec`, `/ops/brain/training/eval-report`, and `/ops/brain/training/artifacts` turn the Phase 8 training path into inspectable reward/eval artifacts while keeping promotion on hold until license and security gates pass.

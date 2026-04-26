@@ -110,9 +110,19 @@ class ProductSweepGatekeeper:
                 phase_id="phase-8",
                 title="Training And Assimilation",
                 status="gated",
-                acceptance_tests=["tests/test_product_sweep_operationalization.py", "tests/test_product_sweep_deepening.py"],
-                operator_surfaces=["/ops/brain/training/export-record", "/ops/brain/training/export-dataset"],
-                evidence=["TrainingDataExportRecord", "TrainingDatasetExporter artifacts"],
+                acceptance_tests=[
+                    "tests/test_product_sweep_operationalization.py",
+                    "tests/test_product_sweep_deepening.py",
+                    "tests/test_product_sweep_training_artifacts.py",
+                ],
+                operator_surfaces=[
+                    "/ops/brain/training/export-record",
+                    "/ops/brain/training/export-dataset",
+                    "/ops/brain/training/reward-spec",
+                    "/ops/brain/training/eval-report",
+                    "/ops/brain/training/artifacts",
+                ],
+                evidence=["TrainingDataExportRecord", "TrainingDatasetExporter artifacts", "reward spec and eval report manifests"],
                 blocked_by=["eval_report_required", "approved_license_required", "security_gate_pass_required"],
             ),
             ProductSweepPhaseGate(

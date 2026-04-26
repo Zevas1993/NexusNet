@@ -482,6 +482,32 @@ def create_app(project_root: str | None = None) -> FastAPI:
             records=records,
         )
 
+    @application.post("/ops/brain/training/reward-spec")
+    def ops_brain_training_reward_spec(payload: dict[str, Any] = Body(...)):
+        return services.brain_training_exporter.export_reward_spec(
+            name=str(payload.get("name") or "reward-spec"),
+            objectives=[str(item) for item in payload.get("objectives", [])],
+            metrics=dict(payload.get("metrics") or {}),
+            safety_constraints=[str(item) for item in payload.get("safety_constraints", [])],
+            provenance=[dict(item) for item in payload.get("provenance", [])],
+        )
+
+    @application.post("/ops/brain/training/eval-report")
+    def ops_brain_training_eval_report(payload: dict[str, Any] = Body(...)):
+        return services.brain_training_exporter.export_eval_report(
+            name=str(payload.get("name") or "eval-report"),
+            dataset_artifact_path=str(payload.get("dataset_artifact_path") or ""),
+            reward_spec_path=payload.get("reward_spec_path"),
+            scenario_ids=[str(item) for item in payload.get("scenario_ids", [])],
+            results=dict(payload.get("results") or {}),
+            license_status=str(payload.get("license_status") or "not_reviewed"),
+            security_gate_status=str(payload.get("security_gate_status") or "not_run"),
+        )
+
+    @application.get("/ops/brain/training/artifacts")
+    def ops_brain_training_artifacts():
+        return services.brain_training_exporter.list_artifacts()
+
     @application.get("/ops/brain/core")
     def ops_brain_core(
         model_hint: str | None = None,
