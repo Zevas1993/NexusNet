@@ -29,6 +29,7 @@ from nexusnet.agents.subagents import SubagentExecutionService
 from nexusnet.agents import BrainAgentRegistry
 from nexusnet.agents.scheduled import ScheduledAgentService
 from nexusnet.aos import build_default_ao_registry as build_brain_ao_registry
+from nexusnet.canon import NexusNetCanonRegistry
 from nexusnet.core import CoreEvidenceBridge, NexusBrain
 from nexusnet.curriculum import CurriculumEngine
 from nexusnet.curriculum.skill_refinement import SkillRefinementService
@@ -53,6 +54,8 @@ from nexusnet.foundry import (
 from nexusnet.foundry.takeover_trends import TakeoverTrendAnalyzer
 from nexusnet.graph.store import LocalGraphStore
 from nexusnet.memory import MemoryNode, MemoryPlaneRegistry
+from nexusnet.memory.operating_system import MemoryOperatingSystem
+from nexusnet.protocols import ProtocolSecurityLayer
 from nexusnet.promotions import PromotionCohortGate, PromotionService, TeacherEvidenceService
 from nexusnet.promotions.trend_gating import PromotionTrendGate
 from nexusnet.memory.graph_bridge import MemoryGraphBridge
@@ -69,6 +72,7 @@ from nexusnet.runtime import BrainRuntimeRegistry
 from nexusnet.runtime.doctor import RuntimeDoctorService
 from nexusnet.runtime.gateway import LocalRuntimeGateway
 from nexusnet.runtime.init import RuntimeBootstrapService
+from nexusnet.runtime.product_profiles import ProductRuntimeProfileRegistry
 from nexusnet.runtime.sandbox import SandboxPolicyService
 from nexusnet.runtime_optimizer import AdaptiveRuntimeProfiler
 from nexusnet.teachers import (
@@ -113,13 +117,17 @@ class NexusServices:
     dreaming: DreamShadowPool
     foundry: DatasetRefinery
     tool_registry: ToolRegistry
+    brain_canon: NexusNetCanonRegistry
     brain: NexusBrain
     brain_teachers: TeacherRegistry
     brain_aos: Any
     brain_agent_registry: BrainAgentRegistry
     brain_memory_node: MemoryNode
     brain_memory_planes: MemoryPlaneRegistry
+    brain_memory_os: MemoryOperatingSystem
     brain_runtime_registry: BrainRuntimeRegistry
+    brain_protocol_security: ProtocolSecurityLayer
+    brain_product_runtime_profiles: ProductRuntimeProfileRegistry
     brain_gateway: Any
     brain_runtime_optimizer: AdaptiveRuntimeProfiler
     brain_runtime_init: Any
@@ -217,6 +225,10 @@ def build_services(project_root: str | None = None) -> NexusServices:
     brain_memory_node = MemoryNode(project_root=paths.project_root, runtime_configs=runtime_configs)
     runtime_configs["planes"] = brain_memory_node.summary()["raw_config"]
     brain_memory_planes = brain_memory_node.registry
+    brain_canon = NexusNetCanonRegistry()
+    brain_memory_os = MemoryOperatingSystem()
+    brain_protocol_security = ProtocolSecurityLayer()
+    brain_product_runtime_profiles = ProductRuntimeProfileRegistry()
     brain_runtime_registry = BrainRuntimeRegistry(
         runtime_registry=runtime_registry,
         model_registry=model_registry,
@@ -618,13 +630,17 @@ def build_services(project_root: str | None = None) -> NexusServices:
         dreaming=dreaming,
         foundry=foundry,
         tool_registry=tool_registry,
+        brain_canon=brain_canon,
         brain=brain,
         brain_teachers=brain_teachers,
         brain_aos=brain_aos,
         brain_agent_registry=brain_agent_registry,
         brain_memory_node=brain_memory_node,
         brain_memory_planes=brain_memory_planes,
+        brain_memory_os=brain_memory_os,
         brain_runtime_registry=brain_runtime_registry,
+        brain_protocol_security=brain_protocol_security,
+        brain_product_runtime_profiles=brain_product_runtime_profiles,
         brain_gateway=brain_gateway,
         brain_runtime_optimizer=brain_runtime_optimizer,
         brain_runtime_init=brain_runtime_init,

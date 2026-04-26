@@ -272,6 +272,25 @@ def create_app(project_root: str | None = None) -> FastAPI:
             },
         }
 
+    @application.get("/ops/brain/canon")
+    def ops_brain_canon():
+        return services.brain_canon.status_payload()
+
+    @application.get("/ops/brain/research-candidates")
+    def ops_brain_research_candidates():
+        return {
+            "status": "registry_backed",
+            "candidates": [candidate.model_dump(mode="json") for candidate in services.brain_canon.research_candidates()],
+        }
+
+    @application.get("/ops/brain/product-status")
+    def ops_brain_product_status():
+        return {
+            **services.brain_canon.product_status(),
+            "runtime": services.brain_product_runtime_profiles.summary(),
+            "protocol_security": services.brain_protocol_security.summary(),
+        }
+
     @application.get("/ops/brain/core")
     def ops_brain_core(
         model_hint: str | None = None,
