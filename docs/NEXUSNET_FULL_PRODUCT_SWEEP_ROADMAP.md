@@ -1,6 +1,6 @@
 # NexusNet Full Product Sweep Roadmap
 
-Status source of truth: `nexusnet.canon.NexusNetCanonRegistry` and the `/ops/brain/canon`, `/ops/brain/research-candidates`, `/ops/brain/memory-os`, `/ops/brain/security/protocol/*`, `/ops/brain/runtime/context-assembly`, `/ops/brain/training/*`, and `/ops/brain/product-status` API surfaces.
+Status source of truth: `nexusnet.canon.NexusNetCanonRegistry`, `nexusnet.product_sweep.ProductSweepGatekeeper`, and the `/ops/brain/canon`, `/ops/brain/research-candidates`, `/ops/brain/memory-os`, `/ops/brain/security/protocol/*`, `/ops/brain/runtime/context-assembly`, `/ops/brain/training/*`, `/ops/brain/product-sweep/*`, and `/ops/brain/product-status` API surfaces.
 
 ## Locked
 
@@ -28,6 +28,7 @@ Status source of truth: `nexusnet.canon.NexusNetCanonRegistry` and the `/ops/bra
 - Real model training is gated until canon, traces, evals, memory provenance, license metadata, and protocol security pass.
 - External tools are denied or held until signed/allowlisted server definitions, identity metadata, sandboxing, permissions, user consent, and audit logging pass.
 - Dream, simulation, and consequence loops remain shadow-only and cannot mutate production memory or models.
+- Council and shadow-simulation outputs are advisory artifacts; NexusBrain remains the decision authority.
 
 ## Operator Checks
 
@@ -35,10 +36,15 @@ Status source of truth: `nexusnet.canon.NexusNetCanonRegistry` and the `/ops/bra
 - `tests/test_full_product_sweep_scaffold.py` validates the product sweep contracts.
 - `tests/test_product_sweep_operationalization.py` validates the operational Memory OS, protocol security, EBT, eval, and training-gate surfaces.
 - `tests/test_product_sweep_deepening.py` validates durable Memory OS persistence, audited assimilation updates, protocol server registration/consent gates, effective-context assembly, and artifact-backed training dataset export.
+- `tests/test_product_sweep_gatekeeper.py` validates the 10-phase product-sweep gate matrix, live status aggregation, bounded expert-council advisory output, and non-mutating shadow simulation.
 - `/ops/brain/product-status` distinguishes locked, candidate, unresolved, disabled, diagnostic-only, and research-only surfaces.
 
 ## Operational Surfaces
 
+- `/ops/brain/product-sweep/gates` exposes all Phase 0 through Phase 9 acceptance gates, blockers, tests, evidence, and operator surfaces.
+- `/ops/brain/product-sweep/status` aggregates canon, Memory OS, protocol security, runtime, eval, and training readiness without overclaiming readiness.
+- `/ops/brain/product-sweep/shadow-simulation` records non-mutating shadow simulation artifacts for plan-risk analysis.
+- `/ops/brain/expert-council/deliberate` records bounded expert proposals and votes as advisory-only evidence with `decision_authority=NexusBrain`.
 - `/ops/brain/research-candidates/{candidate_id}/status` records audited living Assimilation Registry updates with status, maturity, evidence, and notes.
 - `/ops/brain/memory-os/*` stores, persists, updates, retrieves, archives, discards, dereferences, and audits provenance for controller-level memory facts.
 - `/ops/brain/security/protocol/*` evaluates MCP/A2A/AG-UI tool attempts, registers signed/allowlisted protocol servers, records accept/decline/cancel consent decisions, and exposes audit events without executing denied or held tools.

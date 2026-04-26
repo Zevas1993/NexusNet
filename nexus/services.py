@@ -39,6 +39,7 @@ from nexusnet.evals.cost_energy import CostEnergyEvaluationService
 from nexusnet.evals.red_team import RedTeamEvidenceService
 from nexusnet.evals.red_team.gateway_scenarios import GatewayScenarioCatalog
 from nexusnet.evals import ExternalBehaviorEvaluator, TraceFirstEvalRegistry
+from nexusnet.experts.council import ExpertCouncil
 from nexusnet.federation import FederatedReviewGate, GlobalRolloutPlanner
 from nexusnet.federation.skills import GovernedSkillRepository
 from nexusnet.federation.flower import FlowerCoordinator, FlowerSimulationHarness
@@ -58,6 +59,7 @@ from nexusnet.memory.operating_system import MemoryOperatingSystem
 from nexusnet.protocols import ProtocolSecurityLayer
 from nexusnet.promotions import PromotionCohortGate, PromotionService, TeacherEvidenceService
 from nexusnet.promotions.trend_gating import PromotionTrendGate
+from nexusnet.product_sweep import ProductSweepGatekeeper
 from nexusnet.memory.graph_bridge import MemoryGraphBridge
 from nexusnet.guardrails.persistent_instructions import PersistentGuardrailService
 from nexusnet.providers.acp import ACPProviderCatalog
@@ -132,6 +134,8 @@ class NexusServices:
     brain_protocol_security: ProtocolSecurityLayer
     brain_product_runtime_profiles: ProductRuntimeProfileRegistry
     brain_training_exporter: TrainingDatasetExporter
+    brain_product_sweep_gatekeeper: ProductSweepGatekeeper
+    brain_expert_council: ExpertCouncil
     brain_gateway: Any
     brain_runtime_optimizer: AdaptiveRuntimeProfiler
     brain_runtime_init: Any
@@ -238,6 +242,14 @@ def build_services(project_root: str | None = None) -> NexusServices:
     brain_protocol_security = ProtocolSecurityLayer()
     brain_product_runtime_profiles = ProductRuntimeProfileRegistry()
     brain_training_exporter = TrainingDatasetExporter(paths.artifacts_dir)
+    brain_product_sweep_gatekeeper = ProductSweepGatekeeper(
+        canon=brain_canon,
+        memory_os=brain_memory_os,
+        protocol_security=brain_protocol_security,
+        runtime_profiles=brain_product_runtime_profiles,
+        trace_evals=brain_trace_evals,
+    )
+    brain_expert_council = ExpertCouncil()
     brain_runtime_registry = BrainRuntimeRegistry(
         runtime_registry=runtime_registry,
         model_registry=model_registry,
@@ -653,6 +665,8 @@ def build_services(project_root: str | None = None) -> NexusServices:
         brain_protocol_security=brain_protocol_security,
         brain_product_runtime_profiles=brain_product_runtime_profiles,
         brain_training_exporter=brain_training_exporter,
+        brain_product_sweep_gatekeeper=brain_product_sweep_gatekeeper,
+        brain_expert_council=brain_expert_council,
         brain_gateway=brain_gateway,
         brain_runtime_optimizer=brain_runtime_optimizer,
         brain_runtime_init=brain_runtime_init,

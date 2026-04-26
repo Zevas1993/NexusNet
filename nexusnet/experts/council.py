@@ -8,6 +8,7 @@ from nexus.schemas import new_id
 class CouncilDecision(BaseModel):
     decision_id: str = Field(default_factory=lambda: new_id("council"))
     status: str = "shadow_only"
+    decision_authority: str = "NexusBrain"
     selected_experts: list[str] = Field(default_factory=list)
     proposals: list[dict] = Field(default_factory=list)
     votes: dict[str, str] = Field(default_factory=dict)

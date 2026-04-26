@@ -323,6 +323,21 @@ def create_app(project_root: str | None = None) -> FastAPI:
             "protocol_security": services.brain_protocol_security.summary(),
         }
 
+    @application.get("/ops/brain/product-sweep/gates")
+    def ops_brain_product_sweep_gates():
+        return services.brain_product_sweep_gatekeeper.gate_payload()
+
+    @application.get("/ops/brain/product-sweep/status")
+    def ops_brain_product_sweep_status():
+        return services.brain_product_sweep_gatekeeper.status_payload()
+
+    @application.post("/ops/brain/product-sweep/shadow-simulation")
+    def ops_brain_product_sweep_shadow_simulation(payload: dict[str, Any] = Body(...)):
+        return services.brain_product_sweep_gatekeeper.shadow_simulation(
+            name=str(payload.get("name") or "shadow-simulation"),
+            target=str(payload.get("target") or "product-sweep"),
+        )
+
     @application.get("/ops/brain/memory-os")
     def ops_brain_memory_os():
         return services.brain_memory_os.summarize()
@@ -432,6 +447,14 @@ def create_app(project_root: str | None = None) -> FastAPI:
     @application.get("/ops/brain/evals/scenarios")
     def ops_brain_eval_scenarios():
         return services.brain_trace_evals.summary()
+
+    @application.post("/ops/brain/expert-council/deliberate")
+    def ops_brain_expert_council_deliberate(payload: dict[str, Any] = Body(...)):
+        decision = services.brain_expert_council.deliberate(
+            prompt=str(payload.get("prompt") or ""),
+            selected_experts=[str(expert) for expert in payload.get("selected_experts", [])],
+        )
+        return decision.model_dump(mode="json")
 
     @application.post("/ops/brain/runtime/context-assembly")
     def ops_brain_runtime_context_assembly(payload: dict[str, Any] = Body(...)):
