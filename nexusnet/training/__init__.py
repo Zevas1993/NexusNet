@@ -1,3 +1,3 @@
-from .contracts import TrainingDataExportRecord
+from .contracts import TrainingDataExportRecord, TrainingDatasetExporter
 
-__all__ = ["TrainingDataExportRecord"]
+__all__ = ["TrainingDataExportRecord", "TrainingDatasetExporter"]

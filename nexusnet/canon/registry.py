@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -49,6 +51,7 @@ class ResearchCandidate(BaseModel):
     license: str = Field(min_length=1)
     evidence_level: str = Field(min_length=1)
     integration_status: RegistryStatus
+    maturity: str = "candidate"
     replacement_target: str = Field(min_length=1)
     notes: str = Field(min_length=1)
 
@@ -150,11 +153,15 @@ class EBTScore(EvidenceBackedRecord):
 class NexusNetCanonRegistry:
     verified_at = "2026-04-26"
 
-    def __init__(self, *, live_teacher_registry_path: Path | None = None):
+    def __init__(self, *, live_teacher_registry_path: Path | None = None, persistence_path: Path | str | None = None):
         self.live_teacher_registry_path = live_teacher_registry_path or (
             Path(__file__).resolve().parents[1] / "teachers" / "teacher_registry_v2026_live.yaml"
         )
+        self.persistence_path = Path(persistence_path) if persistence_path else None
+        self._candidate_overrides: dict[str, dict[str, Any]] = {}
+        self._audit_events: list[dict[str, Any]] = []
         self._live_teacher_payload = self._load_live_teacher_payload()
+        self._load_persisted_registry()
 
     def validate(self) -> dict[str, Any]:
         locked_decisions = [decision for decision in self.locked_decisions() if decision.status == "locked"]
@@ -260,7 +267,7 @@ class NexusNetCanonRegistry:
             ("openai-agent-evals", "OpenAI Agent Evals", "evals", "https://developers.openai.com/api/docs/guides/agent-evals", "documentation", "candidate", "agent eval workflow", "Reference eval approach for trace-labeled scenarios."),
             ("openrlhf", "OpenRLHF", "training", "https://github.com/OpenRLHF/OpenRLHF", "Apache-2.0", "candidate_requires_pin", "RLHF training", "README contains future-dated entries relative to 2026-04-26; pin before use."),
         ]
-        return [
+        candidates = [
             ResearchCandidate(
                 id=row[0],
                 name=row[1],
@@ -275,6 +282,53 @@ class NexusNetCanonRegistry:
             )
             for row in rows
         ]
+        return [self._apply_candidate_override(candidate) for candidate in candidates]
+
+    def research_candidate(self, candidate_id: str) -> ResearchCandidate | None:
+        return next((candidate for candidate in self.research_candidates() if candidate.id == candidate_id), None)
+
+    def update_research_candidate(
+        self,
+        *,
+        candidate_id: str,
+        integration_status: RegistryStatus | None = None,
+        maturity: str | None = None,
+        notes: str | None = None,
+        evidence: str | None = None,
+    ) -> dict[str, Any]:
+        candidate = self.research_candidate(candidate_id)
+        if candidate is None:
+            raise KeyError(candidate_id)
+
+        updates: dict[str, Any] = {}
+        if integration_status is not None:
+            updates["integration_status"] = integration_status
+        if maturity is not None:
+            updates["maturity"] = maturity
+        if notes is not None:
+            updates["notes"] = notes
+        if evidence is not None:
+            updates["evidence_level"] = evidence
+
+        self._candidate_overrides[candidate_id] = {
+            **self._candidate_overrides.get(candidate_id, {}),
+            **updates,
+        }
+        updated = self._apply_candidate_override(candidate)
+        audit_event = {
+            "action": "assimilation.candidate.updated",
+            "candidate_id": candidate_id,
+            "integration_status": updated.integration_status,
+            "maturity": updated.maturity,
+            "evidence": evidence,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._audit_events.append(audit_event)
+        self._persist_registry()
+        return {"candidate": updated.model_dump(mode="json"), "audit_event": audit_event}
+
+    def assimilation_audit_log(self) -> list[dict[str, Any]]:
+        return list(self._audit_events)
 
     def expert_roster(self) -> list[ExpertCapsule]:
         pairs = (self._live_teacher_payload.get("live_expert_pairs") or {})
@@ -378,3 +432,29 @@ class NexusNetCanonRegistry:
         with self.live_teacher_registry_path.open("r", encoding="utf-8") as handle:
             payload = yaml.safe_load(handle)
         return payload if isinstance(payload, dict) else {}
+
+    def _apply_candidate_override(self, candidate: ResearchCandidate) -> ResearchCandidate:
+        overrides = self._candidate_overrides.get(candidate.id)
+        if not overrides:
+            return candidate
+        return candidate.model_copy(update=overrides)
+
+    def _load_persisted_registry(self) -> None:
+        if self.persistence_path is None or not self.persistence_path.exists():
+            return
+        payload = json.loads(self.persistence_path.read_text(encoding="utf-8"))
+        overrides = payload.get("candidate_overrides") or {}
+        self._candidate_overrides = overrides if isinstance(overrides, dict) else {}
+        audit_events = payload.get("audit_events") or []
+        self._audit_events = audit_events if isinstance(audit_events, list) else []
+
+    def _persist_registry(self) -> None:
+        if self.persistence_path is None:
+            return
+        self.persistence_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "schema_version": 1,
+            "candidate_overrides": self._candidate_overrides,
+            "audit_events": self._audit_events,
+        }
+        self.persistence_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")

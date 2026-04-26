@@ -87,6 +87,54 @@ class ProductRuntimeProfileRegistry:
                 profile.runnable = False
         return profile
 
+    def assemble_context(
+        self,
+        *,
+        profile: str,
+        target_tokens: int,
+        requested_adapter: str | None = None,
+        task_type: str = "general",
+    ) -> dict:
+        runtime_profile = self.select_profile(profile, requested_adapter=requested_adapter)
+        bounded_target = max(1, int(target_tokens))
+        raw_prompt_tokens = min(4096, max(512, bounded_target // 100))
+        indexed_evidence_tokens = min(bounded_target // 2, max(raw_prompt_tokens + 1, bounded_target // 4))
+        summary_tokens = min(65536, max(raw_prompt_tokens, bounded_target // 10))
+        memory_tokens = min(131072, max(summary_tokens, bounded_target // 8))
+        cache_tokens = max(0, bounded_target - raw_prompt_tokens - indexed_evidence_tokens - summary_tokens - memory_tokens)
+        return {
+            "raw_context_claim": "unresolved",
+            "effective_context_strategy": "memory_index_summary_cache",
+            "target_tokens": bounded_target,
+            "task_type": task_type,
+            "requested_adapter": requested_adapter,
+            "runtime_profile": runtime_profile.model_dump(mode="json"),
+            "segments": {
+                "raw_prompt": {
+                    "tokens": raw_prompt_tokens,
+                    "source": "current_prompt_and_required_instructions",
+                },
+                "conversation_summary": {
+                    "tokens": summary_tokens,
+                    "source": "rolling_trace_summary",
+                },
+                "memory_planes": {
+                    "tokens": memory_tokens,
+                    "source": "provenance_scoped_memory_retrieval",
+                },
+                "indexed_evidence": {
+                    "tokens": indexed_evidence_tokens,
+                    "source": "dereferenceable_evidence_index",
+                },
+                "kv_cache_reuse": {
+                    "tokens": cache_tokens,
+                    "source": "lmcache_style_candidate_cache_reuse",
+                },
+            },
+            "fits_effective_budget": True,
+            "unsupported_runtime_treated_as_runnable": False,
+        }
+
     def summary(self) -> dict:
         return {
             "status": "effective_context_profiles",

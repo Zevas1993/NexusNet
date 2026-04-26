@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from ..schemas import ApprovalRequest, ChatRequest, RetrievalIngestRequest, RetrievalRequest
 from ..services import NexusServices, build_services
 from nexusnet.core.ebt import EBTScoreRequest
-from nexusnet.protocols import ToolAttempt
+from nexusnet.protocols import ProtocolConsentRequest, ProtocolServerDefinition, ToolAttempt
 from nexusnet.schemas import CurriculumAssessmentRequest, DistillationExportRequest, DreamCycleRequest, GraphIngestRequest, ModelAttachRequest
 from nexusnet.training import TrainingDataExportRecord
 
@@ -290,7 +290,28 @@ def create_app(project_root: str | None = None) -> FastAPI:
         return {
             "status": "registry_backed",
             "candidates": [candidate.model_dump(mode="json") for candidate in services.brain_canon.research_candidates()],
+            "audit_log": services.brain_canon.assimilation_audit_log(),
         }
+
+    @application.post("/ops/brain/research-candidates/{candidate_id}/status")
+    def ops_brain_research_candidate_status(candidate_id: str, payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_canon.update_research_candidate(
+                candidate_id=candidate_id,
+                integration_status=payload.get("integration_status"),
+                maturity=payload.get("maturity"),
+                notes=payload.get("notes"),
+                evidence=payload.get("evidence"),
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="research candidate not found") from exc
+
+    @application.get("/ops/brain/research-candidates/{candidate_id}")
+    def ops_brain_research_candidate(candidate_id: str):
+        candidate = services.brain_canon.research_candidate(candidate_id)
+        if candidate is None:
+            raise HTTPException(status_code=404, detail="research candidate not found")
+        return {"candidate": candidate.model_dump(mode="json")}
 
     @application.get("/ops/brain/product-status")
     def ops_brain_product_status():
@@ -301,6 +322,10 @@ def create_app(project_root: str | None = None) -> FastAPI:
             "runtime": services.brain_product_runtime_profiles.summary(),
             "protocol_security": services.brain_protocol_security.summary(),
         }
+
+    @application.get("/ops/brain/memory-os")
+    def ops_brain_memory_os():
+        return services.brain_memory_os.summarize()
 
     @application.post("/ops/brain/memory-os/store")
     def ops_brain_memory_os_store(payload: dict[str, Any] = Body(...)):
@@ -371,6 +396,22 @@ def create_app(project_root: str | None = None) -> FastAPI:
         decision = services.brain_protocol_security.evaluate(attempt)
         return decision.model_dump(mode="json")
 
+    @application.post("/ops/brain/security/protocol/servers")
+    def ops_brain_security_protocol_register_server(definition: ProtocolServerDefinition):
+        return services.brain_protocol_security.register_server(definition)
+
+    @application.get("/ops/brain/security/protocol/servers")
+    def ops_brain_security_protocol_servers():
+        return {
+            "servers": services.brain_protocol_security.servers(),
+            "summary": services.brain_protocol_security.summary(),
+        }
+
+    @application.post("/ops/brain/security/protocol/consent")
+    def ops_brain_security_protocol_consent(request: ProtocolConsentRequest):
+        decision = services.brain_protocol_security.consent(request)
+        return decision.model_dump(mode="json")
+
     @application.get("/ops/brain/security/protocol/audit")
     def ops_brain_security_protocol_audit():
         events = services.brain_protocol_security.audit_log()
@@ -392,6 +433,15 @@ def create_app(project_root: str | None = None) -> FastAPI:
     def ops_brain_eval_scenarios():
         return services.brain_trace_evals.summary()
 
+    @application.post("/ops/brain/runtime/context-assembly")
+    def ops_brain_runtime_context_assembly(payload: dict[str, Any] = Body(...)):
+        return services.brain_product_runtime_profiles.assemble_context(
+            profile=str(payload.get("profile") or "local"),
+            target_tokens=int(payload.get("target_tokens") or 8192),
+            requested_adapter=payload.get("requested_adapter"),
+            task_type=str(payload.get("task_type") or "general"),
+        )
+
     @application.post("/ops/brain/training/export-record")
     def ops_brain_training_export_record(record: TrainingDataExportRecord):
         payload = record.export_payload()
@@ -400,6 +450,14 @@ def create_app(project_root: str | None = None) -> FastAPI:
             "real_training_status": "gated",
             "promotion_gate": "canon_traces_evals_memory_provenance_licenses_security",
         }
+
+    @application.post("/ops/brain/training/export-dataset")
+    def ops_brain_training_export_dataset(payload: dict[str, Any] = Body(...)):
+        records = [TrainingDataExportRecord.model_validate(record) for record in payload.get("records", [])]
+        return services.brain_training_exporter.export_dataset(
+            name=str(payload.get("name") or "training-dataset"),
+            records=records,
+        )
 
     @application.get("/ops/brain/core")
     def ops_brain_core(

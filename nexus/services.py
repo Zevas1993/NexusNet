@@ -87,6 +87,7 @@ from nexusnet.tools import ExtensionCatalogService, GatewayApprovalService, Gate
 from nexusnet.tools.adversary_review import AdversaryReviewService
 from nexusnet.tools.permissions import ToolPermissionService
 from nexusnet.tools.skill_evolution import SkillEvolutionLab
+from nexusnet.training import TrainingDatasetExporter
 from nexusnet.ui_surface import WrapperSurfaceService
 from nexusnet.visuals import NexusVisualizerService
 from nexusnet.vision import EdgeVisionLaneService
@@ -130,6 +131,7 @@ class NexusServices:
     brain_runtime_registry: BrainRuntimeRegistry
     brain_protocol_security: ProtocolSecurityLayer
     brain_product_runtime_profiles: ProductRuntimeProfileRegistry
+    brain_training_exporter: TrainingDatasetExporter
     brain_gateway: Any
     brain_runtime_optimizer: AdaptiveRuntimeProfiler
     brain_runtime_init: Any
@@ -227,12 +229,15 @@ def build_services(project_root: str | None = None) -> NexusServices:
     brain_memory_node = MemoryNode(project_root=paths.project_root, runtime_configs=runtime_configs)
     runtime_configs["planes"] = brain_memory_node.summary()["raw_config"]
     brain_memory_planes = brain_memory_node.registry
-    brain_canon = NexusNetCanonRegistry()
+    brain_canon = NexusNetCanonRegistry(
+        persistence_path=paths.artifacts_dir / "canon" / "assimilation_registry_overrides.json"
+    )
     brain_ebt = EBTScoringContract()
     brain_trace_evals = TraceFirstEvalRegistry()
-    brain_memory_os = MemoryOperatingSystem()
+    brain_memory_os = MemoryOperatingSystem(paths.artifacts_dir / "memory" / "memory_os_records.json")
     brain_protocol_security = ProtocolSecurityLayer()
     brain_product_runtime_profiles = ProductRuntimeProfileRegistry()
+    brain_training_exporter = TrainingDatasetExporter(paths.artifacts_dir)
     brain_runtime_registry = BrainRuntimeRegistry(
         runtime_registry=runtime_registry,
         model_registry=model_registry,
@@ -647,6 +652,7 @@ def build_services(project_root: str | None = None) -> NexusServices:
         brain_runtime_registry=brain_runtime_registry,
         brain_protocol_security=brain_protocol_security,
         brain_product_runtime_profiles=brain_product_runtime_profiles,
+        brain_training_exporter=brain_training_exporter,
         brain_gateway=brain_gateway,
         brain_runtime_optimizer=brain_runtime_optimizer,
         brain_runtime_init=brain_runtime_init,

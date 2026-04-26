@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -28,9 +30,11 @@ class MemoryRecord(BaseModel):
 class MemoryOperatingSystem:
     """Lifecycle controller above memory planes with provenance and temporal truth."""
 
-    def __init__(self):
+    def __init__(self, persistence_path: Path | str | None = None):
         self._versions: dict[str, list[MemoryRecord]] = {}
         self._by_memory_id: dict[str, MemoryRecord] = {}
+        self.persistence_path = Path(persistence_path) if persistence_path else None
+        self._load()
 
     def store(
         self,
@@ -96,6 +100,7 @@ class MemoryOperatingSystem:
         return {
             "fact_count": len(fact_ids),
             "version_count": sum(len(self._versions.get(item, [])) for item in fact_ids),
+            "persistence_path": str(self.persistence_path) if self.persistence_path else None,
             "facts": {
                 item: {
                     "current": (self.retrieve(item, include_archived=True, include_discarded=True).model_dump(mode="json") if self.retrieve(item, include_archived=True, include_discarded=True) else None),
@@ -109,12 +114,16 @@ class MemoryOperatingSystem:
         current = self.retrieve(fact_id, include_archived=True, include_discarded=True)
         for record in self._versions.get(fact_id, []):
             record.archived = True
+        if current is not None:
+            self._persist()
         return current
 
     def discard(self, fact_id: str) -> MemoryRecord | None:
         current = self.retrieve(fact_id, include_archived=True, include_discarded=True)
         for record in self._versions.get(fact_id, []):
             record.discarded = True
+        if current is not None:
+            self._persist()
         return current
 
     def dereference(self, memory_id: str) -> dict[str, Any]:
@@ -138,7 +147,28 @@ class MemoryOperatingSystem:
             "latest": versions[-1].memory_id if versions else None,
         }
 
-    def _append(self, record: MemoryRecord) -> None:
+    def _append(self, record: MemoryRecord, *, persist: bool = True) -> None:
         self._versions.setdefault(record.fact_id, []).append(record)
         self._versions[record.fact_id].sort(key=lambda item: (item.effective_at, item.stored_at))
         self._by_memory_id[record.memory_id] = record
+        if persist:
+            self._persist()
+
+    def _load(self) -> None:
+        if self.persistence_path is None or not self.persistence_path.exists():
+            return
+        payload = json.loads(self.persistence_path.read_text(encoding="utf-8"))
+        for item in payload.get("records", []):
+            self._append(MemoryRecord.model_validate(item), persist=False)
+
+    def _persist(self) -> None:
+        if self.persistence_path is None:
+            return
+        self.persistence_path.parent.mkdir(parents=True, exist_ok=True)
+        records = [
+            record.model_dump(mode="json")
+            for fact_versions in self._versions.values()
+            for record in fact_versions
+        ]
+        payload = {"schema_version": 1, "records": records}
+        self.persistence_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
