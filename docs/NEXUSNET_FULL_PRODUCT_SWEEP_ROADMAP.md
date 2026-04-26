@@ -31,4 +31,13 @@ Status source of truth: `nexusnet.canon.NexusNetCanonRegistry` and the read-only
 
 - `python -m pytest --collect-only -q` is the baseline import and collection gate.
 - `tests/test_full_product_sweep_scaffold.py` validates the product sweep contracts.
+- `tests/test_product_sweep_operationalization.py` validates the operational Memory OS, protocol security, EBT, eval, and training-gate surfaces.
 - `/ops/brain/product-status` distinguishes locked, candidate, unresolved, disabled, diagnostic-only, and research-only surfaces.
+
+## Operational Surfaces
+
+- `/ops/brain/memory-os/*` stores, updates, retrieves, archives, discards, dereferences, and audits provenance for controller-level memory facts.
+- `/ops/brain/security/protocol/*` evaluates MCP/A2A/AG-UI tool attempts and exposes audit events without executing denied or held tools.
+- `/ops/brain/ebt/*` exposes the pluggable EBT contract and diagnostic route scoring while formula weights remain unresolved.
+- `/ops/brain/evals/scenarios` exposes trace-first eval scenarios for route choice, tool correctness, memory recall, critique quality, and policy violations.
+- `/ops/brain/training/export-record` validates training export records and keeps checkpoint promotion gated behind eval, license, security, and provenance proof.

@@ -30,7 +30,7 @@ from nexusnet.agents import BrainAgentRegistry
 from nexusnet.agents.scheduled import ScheduledAgentService
 from nexusnet.aos import build_default_ao_registry as build_brain_ao_registry
 from nexusnet.canon import NexusNetCanonRegistry
-from nexusnet.core import CoreEvidenceBridge, NexusBrain
+from nexusnet.core import CoreEvidenceBridge, EBTScoringContract, NexusBrain
 from nexusnet.curriculum import CurriculumEngine
 from nexusnet.curriculum.skill_refinement import SkillRefinementService
 from nexusnet.distillation import DistillationDatasetBuilder
@@ -38,7 +38,7 @@ from nexusnet.dreaming import RecursiveDreamEngine
 from nexusnet.evals.cost_energy import CostEnergyEvaluationService
 from nexusnet.evals.red_team import RedTeamEvidenceService
 from nexusnet.evals.red_team.gateway_scenarios import GatewayScenarioCatalog
-from nexusnet.evals import ExternalBehaviorEvaluator
+from nexusnet.evals import ExternalBehaviorEvaluator, TraceFirstEvalRegistry
 from nexusnet.federation import FederatedReviewGate, GlobalRolloutPlanner
 from nexusnet.federation.skills import GovernedSkillRepository
 from nexusnet.federation.flower import FlowerCoordinator, FlowerSimulationHarness
@@ -118,6 +118,8 @@ class NexusServices:
     foundry: DatasetRefinery
     tool_registry: ToolRegistry
     brain_canon: NexusNetCanonRegistry
+    brain_ebt: EBTScoringContract
+    brain_trace_evals: TraceFirstEvalRegistry
     brain: NexusBrain
     brain_teachers: TeacherRegistry
     brain_aos: Any
@@ -226,6 +228,8 @@ def build_services(project_root: str | None = None) -> NexusServices:
     runtime_configs["planes"] = brain_memory_node.summary()["raw_config"]
     brain_memory_planes = brain_memory_node.registry
     brain_canon = NexusNetCanonRegistry()
+    brain_ebt = EBTScoringContract()
+    brain_trace_evals = TraceFirstEvalRegistry()
     brain_memory_os = MemoryOperatingSystem()
     brain_protocol_security = ProtocolSecurityLayer()
     brain_product_runtime_profiles = ProductRuntimeProfileRegistry()
@@ -631,6 +635,8 @@ def build_services(project_root: str | None = None) -> NexusServices:
         foundry=foundry,
         tool_registry=tool_registry,
         brain_canon=brain_canon,
+        brain_ebt=brain_ebt,
+        brain_trace_evals=brain_trace_evals,
         brain=brain,
         brain_teachers=brain_teachers,
         brain_aos=brain_aos,

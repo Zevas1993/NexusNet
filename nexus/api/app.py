@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +12,10 @@ from fastapi.staticfiles import StaticFiles
 
 from ..schemas import ApprovalRequest, ChatRequest, RetrievalIngestRequest, RetrievalRequest
 from ..services import NexusServices, build_services
+from nexusnet.core.ebt import EBTScoreRequest
+from nexusnet.protocols import ToolAttempt
 from nexusnet.schemas import CurriculumAssessmentRequest, DistillationExportRequest, DreamCycleRequest, GraphIngestRequest, ModelAttachRequest
+from nexusnet.training import TrainingDataExportRecord
 
 
 def create_app(project_root: str | None = None) -> FastAPI:
@@ -49,6 +53,11 @@ def create_app(project_root: str | None = None) -> FastAPI:
             for extension_id in step.get("requested_extensions", []) or []:
                 requested.add(extension_id)
         return sorted(requested)
+
+    def _parse_optional_datetime(value: str | None) -> datetime | None:
+        if not value:
+            return None
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
     def _recipe_allowed_tools(item: dict[str, Any]) -> list[str]:
         recipes_config = ((services.runtime_configs.get("goose_lane") or {}).get("recipes") or {})
@@ -287,8 +296,109 @@ def create_app(project_root: str | None = None) -> FastAPI:
     def ops_brain_product_status():
         return {
             **services.brain_canon.product_status(),
+            "ebt": services.brain_ebt.contract(),
+            "evals": services.brain_trace_evals.summary(),
             "runtime": services.brain_product_runtime_profiles.summary(),
             "protocol_security": services.brain_protocol_security.summary(),
+        }
+
+    @application.post("/ops/brain/memory-os/store")
+    def ops_brain_memory_os_store(payload: dict[str, Any] = Body(...)):
+        record = services.brain_memory_os.store(
+            fact_id=str(payload["fact_id"]),
+            content=str(payload["content"]),
+            source=str(payload["source"]),
+            evidence=dict(payload.get("evidence") or {}),
+            effective_at=_parse_optional_datetime(payload.get("effective_at")),
+        )
+        return record.model_dump(mode="json")
+
+    @application.post("/ops/brain/memory-os/update")
+    def ops_brain_memory_os_update(payload: dict[str, Any] = Body(...)):
+        record = services.brain_memory_os.update(
+            fact_id=str(payload["fact_id"]),
+            content=str(payload["content"]),
+            source=str(payload["source"]),
+            evidence=dict(payload.get("evidence") or {}),
+            effective_at=_parse_optional_datetime(payload.get("effective_at")),
+        )
+        return record.model_dump(mode="json")
+
+    @application.get("/ops/brain/memory-os/retrieve/{fact_id}")
+    def ops_brain_memory_os_retrieve(
+        fact_id: str,
+        as_of: str | None = None,
+        include_archived: bool = False,
+        include_discarded: bool = False,
+    ):
+        record = services.brain_memory_os.retrieve(
+            fact_id,
+            as_of=_parse_optional_datetime(as_of),
+            include_archived=include_archived,
+            include_discarded=include_discarded,
+        )
+        if record is None:
+            raise HTTPException(status_code=404, detail="memory fact not found")
+        return record.model_dump(mode="json")
+
+    @application.post("/ops/brain/memory-os/archive/{fact_id}")
+    def ops_brain_memory_os_archive(fact_id: str):
+        record = services.brain_memory_os.archive(fact_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="memory fact not found")
+        return record.model_dump(mode="json")
+
+    @application.post("/ops/brain/memory-os/discard/{fact_id}")
+    def ops_brain_memory_os_discard(fact_id: str):
+        record = services.brain_memory_os.discard(fact_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="memory fact not found")
+        return record.model_dump(mode="json")
+
+    @application.get("/ops/brain/memory-os/dereference/{memory_id}")
+    def ops_brain_memory_os_dereference(memory_id: str):
+        try:
+            return services.brain_memory_os.dereference(memory_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="memory record not found") from exc
+
+    @application.get("/ops/brain/memory-os/provenance/{fact_id}")
+    def ops_brain_memory_os_provenance(fact_id: str):
+        return services.brain_memory_os.provenance_lookup(fact_id)
+
+    @application.post("/ops/brain/security/protocol/evaluate")
+    def ops_brain_security_protocol_evaluate(attempt: ToolAttempt):
+        decision = services.brain_protocol_security.evaluate(attempt)
+        return decision.model_dump(mode="json")
+
+    @application.get("/ops/brain/security/protocol/audit")
+    def ops_brain_security_protocol_audit():
+        events = services.brain_protocol_security.audit_log()
+        return {
+            "audit_event_count": len(events),
+            "events": events,
+            "summary": services.brain_protocol_security.summary(),
+        }
+
+    @application.get("/ops/brain/ebt/contract")
+    def ops_brain_ebt_contract():
+        return services.brain_ebt.contract()
+
+    @application.post("/ops/brain/ebt/score")
+    def ops_brain_ebt_score(request: EBTScoreRequest):
+        return services.brain_ebt.score(request)
+
+    @application.get("/ops/brain/evals/scenarios")
+    def ops_brain_eval_scenarios():
+        return services.brain_trace_evals.summary()
+
+    @application.post("/ops/brain/training/export-record")
+    def ops_brain_training_export_record(record: TrainingDataExportRecord):
+        payload = record.export_payload()
+        return {
+            **payload,
+            "real_training_status": "gated",
+            "promotion_gate": "canon_traces_evals_memory_provenance_licenses_security",
         }
 
     @application.get("/ops/brain/core")
