@@ -172,3 +172,29 @@ def test_approval_queue_secrets_broker_and_prompt_firewall_are_recorded(tmp_path
     assert "approval.requested" in summary.event_types
     assert "secret.reference_bound" in summary.event_types
     assert "prompt_firewall.scanned" in summary.event_types
+
+
+def test_trust_bridge_skill_candidate_and_persistent_governor_are_recorded(tmp_path: Path):
+    service = ComputerFabricService(artifacts_dir=tmp_path / "artifacts")
+
+    summary = service.start_session(
+        ComputerSessionRequest(
+            goal="Run a daily research monitor and promote reusable workflow",
+            task_type="scheduled daily report",
+            requested_tools=["network.public_read", "filesystem.write"],
+            privacy_class="project-internal",
+            schedule="daily",
+        )
+    )
+
+    trust_bridge = summary.session_dir / "artifact-trust-bridge.json"
+    skill_candidate = summary.session_dir / "skill-candidate.json"
+    governor = summary.session_dir / "persistent-governor.json"
+    assert trust_bridge.exists()
+    assert skill_candidate.exists()
+    assert governor.exists()
+    assert "artifact.final_bundle_created" in summary.event_types
+    assert "artifact.trust_bridge_scanned" in summary.event_types
+    assert "skill.candidate_compiled" in summary.event_types
+    assert "persistent.governor_recorded" in summary.event_types
+    assert summary.trust_summary["bridge"]["scan_order"] == "final-bundle-before-trust-scan"

@@ -10,10 +10,13 @@ from nexus.schemas import utcnow
 
 from .approvals import ApprovalQueue
 from .firewall import PromptInjectionFirewall
+from .governor import PersistentComputerGovernor
 from .models import ComputerSessionRequest, ComputerSessionSummary, EnvironmentClass
 from .providers import ProviderRegistry
 from .secrets import SecretsBroker
+from .skills import ComputerSkillCompiler
 from .snapshots import SnapshotRewindRecorder
+from .trust import ArtifactTrustBridge
 
 
 class ComputerFabricService:
@@ -34,6 +37,9 @@ class ComputerFabricService:
         self.approvals = ApprovalQueue()
         self.secrets = SecretsBroker()
         self.firewall = PromptInjectionFirewall()
+        self.trust_bridge = ArtifactTrustBridge()
+        self.skills = ComputerSkillCompiler()
+        self.governor = PersistentComputerGovernor()
 
     def start_session(self, request: ComputerSessionRequest) -> ComputerSessionSummary:
         session_id = f"computer_{uuid4().hex[:12]}"
@@ -123,10 +129,29 @@ class ComputerFabricService:
                 },
             )
             self._record_event(events, "persistent.health_recorded", {"health_ref": "persistent-health.json"})
+            self.governor.record(session_dir=session_dir, session_id=session_id, schedule=request.schedule)
+            self._record_event(events, "persistent.governor_recorded", {"governor_ref": "persistent-governor.json"})
 
         snapshot_record = self.snapshots.record(session_dir=session_dir, artifact_paths=artifact_paths, policy=policy)
         self._record_event(events, "snapshot.created", {"checkpoint_id": snapshot_record["snapshot"]["checkpoint_id"]})
         self._record_event(events, "cleanup.proof_recorded", {"proof_status": snapshot_record["cleanup"]["proof_status"]})
+
+        artifact_index = {"artifacts": artifacts}
+        trust_bridge = self.trust_bridge.scan_after_final_bundle(
+            session_dir=session_dir,
+            session_id=session_id,
+            artifact_index=artifact_index,
+        )
+        self._record_event(events, "artifact.final_bundle_created", {"bundle_ref": "final-artifact-bundle.json"})
+        self._record_event(events, "artifact.trust_bridge_scanned", {"bridge_ref": "artifact-trust-bridge.json"})
+        skill_candidate = self.skills.compile(
+            session_dir=session_dir,
+            session_id=session_id,
+            request=request,
+            artifacts=artifacts,
+            blocked_reasons=blocked_reasons,
+        )
+        self._record_event(events, "skill.candidate_compiled", {"skill_candidate_id": skill_candidate["skill_candidate_id"]})
 
         trust_summary = {
             "session_id": session_id,
@@ -134,9 +159,10 @@ class ComputerFabricService:
             "blocked_artifact_count": len([item for item in artifacts if item["trust_status"] == "blocked"]),
             "promotion_allowed": False,
             "promotion_boundary": "no-production-mutation-without-review",
+            "bridge": trust_bridge,
         }
         self._write_events(session_dir / "events.jsonl", events)
-        self._write_json(session_dir / "artifact-index.json", {"artifacts": artifacts})
+        self._write_json(session_dir / "artifact-index.json", artifact_index)
         self._write_json(session_dir / "trust-scan-summary.json", trust_summary)
         self._write_json(
             session_dir / "session-summary.json",
