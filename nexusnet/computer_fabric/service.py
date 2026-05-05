@@ -123,6 +123,46 @@ class ComputerFabricService:
             trust_summary=trust_summary,
         )
 
+    def scorecard(self) -> dict[str, Any]:
+        session_summaries = self._read_session_summaries()
+        environment_counts = {item.value: 0 for item in EnvironmentClass}
+        trusted_artifact_count = 0
+        blocked_artifact_count = 0
+        latest_session = None
+        for summary in session_summaries:
+            environment = str(summary.get("environment_class", ""))
+            if environment in environment_counts:
+                environment_counts[environment] += 1
+            trust = summary.get("trust_summary") or {}
+            trusted_artifact_count += int(trust.get("trusted_artifact_count") or 0)
+            blocked_artifact_count += int(trust.get("blocked_artifact_count") or 0)
+            latest_session = latest_session or summary
+
+        return {
+            "control_panel_label": "Computer Fabric",
+            "status_label": "MVP IMPLEMENTED - POLICY GATED",
+            "session_count": len(session_summaries),
+            "environment_counts": environment_counts,
+            "trust": {
+                "trusted_artifact_count": trusted_artifact_count,
+                "blocked_artifact_count": blocked_artifact_count,
+            },
+            "environment_classes": [
+                "Ephemeral Computer",
+                "Persistent Computer",
+                "Operator Computer",
+            ],
+            "latest_session": latest_session,
+            "promotion_boundary": "no-production-mutation-without-review",
+            "required_operator_surfaces": [
+                "active sessions",
+                "pending approvals",
+                "artifact trust",
+                "replay ledger",
+                "cleanup state",
+            ],
+        }
+
     def _select_environment(self, request: ComputerSessionRequest) -> EnvironmentClass:
         if request.requested_environment is not None:
             return request.requested_environment
@@ -265,3 +305,14 @@ class ComputerFabricService:
 
     def _write_json(self, path: Path, payload: dict[str, Any]) -> None:
         path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+    def _read_session_summaries(self) -> list[dict[str, Any]]:
+        if not self.sessions_dir.exists():
+            return []
+        summaries: list[dict[str, Any]] = []
+        for path in sorted(self.sessions_dir.glob("*/session-summary.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+            try:
+                summaries.append(json.loads(path.read_text(encoding="utf-8")))
+            except (OSError, json.JSONDecodeError):
+                continue
+        return summaries

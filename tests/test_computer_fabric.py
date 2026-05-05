@@ -91,3 +91,24 @@ def test_operator_computer_request_is_observe_first_and_approval_gated(tmp_path:
     assert summary.status == "completed-review-required"
     assert summary.policy["execution_boundary"] == "observe-first"
     assert "browser-action-requires-approval" in summary.blocked_reasons
+
+
+def test_computer_fabric_scorecard_summarizes_sessions_and_trust(tmp_path: Path):
+    service = ComputerFabricService(artifacts_dir=tmp_path / "artifacts")
+    service.start_session(
+        ComputerSessionRequest(
+            goal="Run a focused test and produce a report",
+            task_type="repo patch + tests",
+            requested_tools=["shell.test"],
+            privacy_class="project-internal",
+        )
+    )
+
+    scorecard = service.scorecard()
+
+    assert scorecard["control_panel_label"] == "Computer Fabric"
+    assert scorecard["session_count"] == 1
+    assert scorecard["environment_counts"]["ephemeral"] == 1
+    assert scorecard["trust"]["trusted_artifact_count"] == 1
+    assert "Ephemeral Computer" in scorecard["environment_classes"]
+    assert "Operator Computer" in scorecard["environment_classes"]
