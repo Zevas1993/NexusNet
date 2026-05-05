@@ -198,3 +198,23 @@ def test_trust_bridge_skill_candidate_and_persistent_governor_are_recorded(tmp_p
     assert "skill.candidate_compiled" in summary.event_types
     assert "persistent.governor_recorded" in summary.event_types
     assert summary.trust_summary["bridge"]["scan_order"] == "final-bundle-before-trust-scan"
+
+
+def test_eval_gauntlet_and_replay_cockpit_are_in_scorecard(tmp_path: Path):
+    service = ComputerFabricService(artifacts_dir=tmp_path / "artifacts")
+    service.start_session(
+        ComputerSessionRequest(
+            goal="Run a focused test and produce a report",
+            task_type="repo patch + tests",
+            requested_tools=["shell.test"],
+            privacy_class="project-internal",
+        )
+    )
+
+    scorecard = service.scorecard()
+
+    assert scorecard["eval_gauntlet"]["case_count"] >= 6
+    assert scorecard["eval_gauntlet"]["scores"]["policy_compliance"] == 1.0
+    assert scorecard["replay_cockpit"]["timeline_count"] >= 1
+    assert "approvals" in scorecard["replay_cockpit"]["panels"]
+    assert "promotion blockers" in scorecard["replay_cockpit"]["panels"]

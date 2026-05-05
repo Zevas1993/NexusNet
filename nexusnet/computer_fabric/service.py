@@ -9,6 +9,8 @@ from uuid import uuid4
 from nexus.schemas import utcnow
 
 from .approvals import ApprovalQueue
+from .cockpit import ReplayCockpitBuilder
+from .evals import ComputerEvalGauntlet
 from .firewall import PromptInjectionFirewall
 from .governor import PersistentComputerGovernor
 from .models import ComputerSessionRequest, ComputerSessionSummary, EnvironmentClass
@@ -40,6 +42,8 @@ class ComputerFabricService:
         self.trust_bridge = ArtifactTrustBridge()
         self.skills = ComputerSkillCompiler()
         self.governor = PersistentComputerGovernor()
+        self.eval_gauntlet = ComputerEvalGauntlet()
+        self.cockpit = ReplayCockpitBuilder()
 
     def start_session(self, request: ComputerSessionRequest) -> ComputerSessionSummary:
         session_id = f"computer_{uuid4().hex[:12]}"
@@ -219,6 +223,8 @@ class ComputerFabricService:
             ],
             "latest_session": latest_session,
             "promotion_boundary": "no-production-mutation-without-review",
+            "eval_gauntlet": self.eval_gauntlet.score(session_summaries=session_summaries),
+            "replay_cockpit": self.cockpit.build(session_summaries=session_summaries),
             "required_operator_surfaces": [
                 "active sessions",
                 "pending approvals",
