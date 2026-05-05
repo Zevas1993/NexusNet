@@ -8,8 +8,11 @@ from uuid import uuid4
 
 from nexus.schemas import utcnow
 
+from .approvals import ApprovalQueue
+from .firewall import PromptInjectionFirewall
 from .models import ComputerSessionRequest, ComputerSessionSummary, EnvironmentClass
 from .providers import ProviderRegistry
+from .secrets import SecretsBroker
 from .snapshots import SnapshotRewindRecorder
 
 
@@ -20,6 +23,7 @@ class ComputerFabricService:
         "secret-read-blocked",
         "unknown-privacy-local-only",
         "prompt-injection-suspected",
+        "external-evidence-instruction-blocked",
     }
 
     def __init__(self, *, artifacts_dir: Path):
@@ -27,6 +31,9 @@ class ComputerFabricService:
         self.sessions_dir = self.artifacts_dir / "computer-fabric" / "sessions"
         self.providers = ProviderRegistry()
         self.snapshots = SnapshotRewindRecorder()
+        self.approvals = ApprovalQueue()
+        self.secrets = SecretsBroker()
+        self.firewall = PromptInjectionFirewall()
 
     def start_session(self, request: ComputerSessionRequest) -> ComputerSessionSummary:
         session_id = f"computer_{uuid4().hex[:12]}"
@@ -36,6 +43,11 @@ class ComputerFabricService:
 
         blocked_reasons: list[str] = []
         policy = self._compile_policy(request=request, environment_class=environment_class, blocked_reasons=blocked_reasons)
+        firewall_report = self.firewall.scan(session_dir=session_dir, metadata=request.metadata)
+        for finding in firewall_report["findings"]:
+            if finding not in blocked_reasons:
+                blocked_reasons.append(finding)
+        policy["blocked_reasons"] = blocked_reasons
         manifest = self._build_manifest(
             request=request,
             session_id=session_id,
@@ -48,7 +60,24 @@ class ComputerFabricService:
         events: list[dict[str, Any]] = []
         self._record_event(events, "session.created", {"session_id": session_id})
         self._record_event(events, "policy.compiled", {"blocked_reasons": blocked_reasons})
+        self._record_event(events, "prompt_firewall.scanned", {"findings": firewall_report["findings"]})
         self._record_event(events, "provider.prepared", {"provider": policy["provider"]})
+        approvals = self.approvals.record(
+            session_dir=session_dir,
+            session_id=session_id,
+            blocked_reasons=blocked_reasons,
+            scope=request.project_scope,
+        )
+        for approval in approvals:
+            self._record_event(events, "approval.requested", {"approval_id": approval["approval_id"]})
+        secret_bindings = self.secrets.bind(
+            session_dir=session_dir,
+            session_id=session_id,
+            secret_ref=request.metadata.get("secret_ref"),
+            provider_id=policy["provider_registry"]["selected_provider"]["provider_id"],
+        )
+        for binding in secret_bindings:
+            self._record_event(events, "secret.reference_bound", {"binding_id": binding["binding_id"]})
 
         artifacts: list[dict[str, Any]] = []
         artifact_paths: list[Path] = []
@@ -256,6 +285,8 @@ class ComputerFabricService:
         ).lower()
         if "ignore previous instructions" in untrusted_text or "upload secrets" in untrusted_text:
             blocked_reasons.append("prompt-injection-suspected")
+        if "secrets.reference" in requested_tools:
+            blocked_reasons.append("credential-use-requires-approval")
 
     def _has_hard_policy_block(self, blocked_reasons: list[str]) -> bool:
         return any(reason in self.HARD_BLOCK_REASONS for reason in blocked_reasons)
