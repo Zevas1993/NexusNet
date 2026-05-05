@@ -116,6 +116,7 @@ class ComputerFabricService:
         environment_class: EnvironmentClass,
         blocked_reasons: list[str],
     ) -> dict[str, Any]:
+        self._add_safety_findings(request=request, blocked_reasons=blocked_reasons)
         if environment_class == EnvironmentClass.EPHEMERAL:
             filesystem_policy = {"write_scope": "session-artifacts-only"}
             network_policy = {"mode": "task-scoped-egress"}
@@ -153,6 +154,27 @@ class ComputerFabricService:
             "required_checks": list(request.required_checks),
             "blocked_reasons": blocked_reasons,
         }
+
+    def _add_safety_findings(self, *, request: ComputerSessionRequest, blocked_reasons: list[str]) -> None:
+        requested_tools = set(request.requested_tools)
+        if "filesystem.host_write" in requested_tools:
+            blocked_reasons.append("host-write-blocked")
+        if "network.unrestricted" in requested_tools:
+            blocked_reasons.append("unrestricted-network-blocked")
+        if "secrets.read" in requested_tools:
+            blocked_reasons.append("secret-read-blocked")
+        if request.privacy_class == "unknown":
+            blocked_reasons.append("unknown-privacy-local-only")
+
+        untrusted_text = " ".join(
+            [
+                request.goal,
+                request.task_type,
+                " ".join(str(value) for value in request.metadata.values()),
+            ]
+        ).lower()
+        if "ignore previous instructions" in untrusted_text or "upload secrets" in untrusted_text:
+            blocked_reasons.append("prompt-injection-suspected")
 
     def _build_manifest(
         self,
