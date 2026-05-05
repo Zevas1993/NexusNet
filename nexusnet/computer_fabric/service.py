@@ -9,6 +9,8 @@ from uuid import uuid4
 from nexus.schemas import utcnow
 
 from .models import ComputerSessionRequest, ComputerSessionSummary, EnvironmentClass
+from .providers import ProviderRegistry
+from .snapshots import SnapshotRewindRecorder
 
 
 class ComputerFabricService:
@@ -23,6 +25,8 @@ class ComputerFabricService:
     def __init__(self, *, artifacts_dir: Path):
         self.artifacts_dir = Path(artifacts_dir)
         self.sessions_dir = self.artifacts_dir / "computer-fabric" / "sessions"
+        self.providers = ProviderRegistry()
+        self.snapshots = SnapshotRewindRecorder()
 
     def start_session(self, request: ComputerSessionRequest) -> ComputerSessionSummary:
         session_id = f"computer_{uuid4().hex[:12]}"
@@ -47,6 +51,7 @@ class ComputerFabricService:
         self._record_event(events, "provider.prepared", {"provider": policy["provider"]})
 
         artifacts: list[dict[str, Any]] = []
+        artifact_paths: list[Path] = []
         status = "failed-policy" if self._has_hard_policy_block(blocked_reasons) else "completed-review-required"
         if status != "failed-policy":
             artifact_path = session_dir / "summary.md"
@@ -69,6 +74,7 @@ class ComputerFabricService:
                 artifact_type="document",
                 privacy_class=request.privacy_class,
             )
+            artifact_paths.append(artifact_path)
             artifacts.append(artifact)
             self._record_event(events, "artifact.created", {"artifact_id": artifact["artifact_id"]})
             self._record_event(events, "artifact.scanned", {"artifact_id": artifact["artifact_id"], "trust_status": "trusted"})
@@ -88,6 +94,10 @@ class ComputerFabricService:
                 },
             )
             self._record_event(events, "persistent.health_recorded", {"health_ref": "persistent-health.json"})
+
+        snapshot_record = self.snapshots.record(session_dir=session_dir, artifact_paths=artifact_paths, policy=policy)
+        self._record_event(events, "snapshot.created", {"checkpoint_id": snapshot_record["snapshot"]["checkpoint_id"]})
+        self._record_event(events, "cleanup.proof_recorded", {"proof_status": snapshot_record["cleanup"]["proof_status"]})
 
         trust_summary = {
             "session_id": session_id,
@@ -181,6 +191,10 @@ class ComputerFabricService:
         blocked_reasons: list[str],
     ) -> dict[str, Any]:
         self._add_safety_findings(request=request, blocked_reasons=blocked_reasons)
+        provider_registry = self.providers.summary(
+            requested_provider=str(request.metadata.get("provider") or "") or None,
+            environment_class=environment_class,
+        )
         if environment_class == EnvironmentClass.EPHEMERAL:
             filesystem_policy = {"write_scope": "session-artifacts-only"}
             network_policy = {"mode": "task-scoped-egress"}
@@ -209,6 +223,7 @@ class ComputerFabricService:
         return {
             "environment_class": environment_class.value,
             "provider": provider,
+            "provider_registry": provider_registry,
             "filesystem_policy": filesystem_policy,
             "network_policy": network_policy,
             "credential_policy": credential_policy,

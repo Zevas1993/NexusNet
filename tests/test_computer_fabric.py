@@ -112,3 +112,31 @@ def test_computer_fabric_scorecard_summarizes_sessions_and_trust(tmp_path: Path)
     assert scorecard["trust"]["trusted_artifact_count"] == 1
     assert "Ephemeral Computer" in scorecard["environment_classes"]
     assert "Operator Computer" in scorecard["environment_classes"]
+
+
+def test_provider_registry_and_snapshot_rewind_artifacts_are_recorded(tmp_path: Path):
+    service = ComputerFabricService(artifacts_dir=tmp_path / "artifacts")
+
+    summary = service.start_session(
+        ComputerSessionRequest(
+            goal="Run a bounded repo-local test lane",
+            task_type="repo patch + tests",
+            requested_tools=["shell.test"],
+            privacy_class="project-internal",
+            metadata={"provider": "venv"},
+        )
+    )
+
+    provider_registry = summary.policy["provider_registry"]
+    assert "venv" in provider_registry["providers"]
+    assert "docker" in provider_registry["providers"]
+    assert "browser-operator" in provider_registry["providers"]
+    assert provider_registry["selected_provider"]["provider_id"] == "venv"
+    assert provider_registry["selected_provider"]["capability_probe"]["can_execute"] is True
+
+    snapshot = summary.session_dir / "snapshot-rewind.json"
+    cleanup = summary.session_dir / "cleanup-proof.json"
+    assert snapshot.exists()
+    assert cleanup.exists()
+    assert "snapshot.created" in summary.event_types
+    assert "cleanup.proof_recorded" in summary.event_types
