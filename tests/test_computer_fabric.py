@@ -54,3 +54,40 @@ def test_computer_fabric_blocks_unsafe_permissions_and_unknown_private_export(tm
     assert "unrestricted-network-blocked" in summary.blocked_reasons
     assert "secret-read-blocked" in summary.blocked_reasons
     assert "unknown-privacy-local-only" in summary.blocked_reasons
+
+
+def test_persistent_computer_request_records_schedule_and_health(tmp_path: Path):
+    service = ComputerFabricService(artifacts_dir=tmp_path / "artifacts")
+
+    summary = service.start_session(
+        ComputerSessionRequest(
+            goal="Run a daily research monitor",
+            task_type="scheduled daily report",
+            requested_tools=["network.public_read", "filesystem.write"],
+            privacy_class="project-internal",
+            schedule="daily",
+        )
+    )
+
+    assert summary.environment_class == EnvironmentClass.PERSISTENT
+    assert summary.policy["schedule_policy"]["mode"] == "persistent-scheduled"
+    assert (summary.session_dir / "persistent-health.json").exists()
+
+
+def test_operator_computer_request_is_observe_first_and_approval_gated(tmp_path: Path):
+    service = ComputerFabricService(artifacts_dir=tmp_path / "artifacts")
+
+    summary = service.start_session(
+        ComputerSessionRequest(
+            goal="Use my logged-in browser to inspect a private dashboard",
+            task_type="logged-in premium research site",
+            requested_tools=["browser.observe", "browser.action"],
+            privacy_class="operator-private",
+            requested_environment=EnvironmentClass.OPERATOR,
+        )
+    )
+
+    assert summary.environment_class == EnvironmentClass.OPERATOR
+    assert summary.status == "completed-review-required"
+    assert summary.policy["execution_boundary"] == "observe-first"
+    assert "browser-action-requires-approval" in summary.blocked_reasons

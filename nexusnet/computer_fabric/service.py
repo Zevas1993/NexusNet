@@ -12,6 +12,14 @@ from .models import ComputerSessionRequest, ComputerSessionSummary, EnvironmentC
 
 
 class ComputerFabricService:
+    HARD_BLOCK_REASONS = {
+        "host-write-blocked",
+        "unrestricted-network-blocked",
+        "secret-read-blocked",
+        "unknown-privacy-local-only",
+        "prompt-injection-suspected",
+    }
+
     def __init__(self, *, artifacts_dir: Path):
         self.artifacts_dir = Path(artifacts_dir)
         self.sessions_dir = self.artifacts_dir / "computer-fabric" / "sessions"
@@ -39,8 +47,8 @@ class ComputerFabricService:
         self._record_event(events, "provider.prepared", {"provider": policy["provider"]})
 
         artifacts: list[dict[str, Any]] = []
-        status = "failed-policy" if blocked_reasons else "completed-review-required"
-        if not blocked_reasons:
+        status = "failed-policy" if self._has_hard_policy_block(blocked_reasons) else "completed-review-required"
+        if status != "failed-policy":
             artifact_path = session_dir / "summary.md"
             artifact_path.write_text(
                 "\n".join(
@@ -64,6 +72,22 @@ class ComputerFabricService:
             artifacts.append(artifact)
             self._record_event(events, "artifact.created", {"artifact_id": artifact["artifact_id"]})
             self._record_event(events, "artifact.scanned", {"artifact_id": artifact["artifact_id"], "trust_status": "trusted"})
+
+        if environment_class == EnvironmentClass.PERSISTENT:
+            self._write_json(
+                session_dir / "persistent-health.json",
+                {
+                    "session_id": session_id,
+                    "computer_id": f"persistent_{session_id}",
+                    "status": "planned",
+                    "schedule": request.schedule,
+                    "uptime_state": "not-started",
+                    "resource_quota": {"cpu": "bounded", "disk": "session-artifacts"},
+                    "public_service_hosting": "blocked-without-separate-approval",
+                    "last_checked_at": utcnow().isoformat(),
+                },
+            )
+            self._record_event(events, "persistent.health_recorded", {"health_ref": "persistent-health.json"})
 
         trust_summary = {
             "session_id": session_id,
@@ -163,6 +187,8 @@ class ComputerFabricService:
             blocked_reasons.append("unrestricted-network-blocked")
         if "secrets.read" in requested_tools:
             blocked_reasons.append("secret-read-blocked")
+        if "browser.action" in requested_tools:
+            blocked_reasons.append("browser-action-requires-approval")
         if request.privacy_class == "unknown":
             blocked_reasons.append("unknown-privacy-local-only")
 
@@ -175,6 +201,9 @@ class ComputerFabricService:
         ).lower()
         if "ignore previous instructions" in untrusted_text or "upload secrets" in untrusted_text:
             blocked_reasons.append("prompt-injection-suspected")
+
+    def _has_hard_policy_block(self, blocked_reasons: list[str]) -> bool:
+        return any(reason in self.HARD_BLOCK_REASONS for reason in blocked_reasons)
 
     def _build_manifest(
         self,
