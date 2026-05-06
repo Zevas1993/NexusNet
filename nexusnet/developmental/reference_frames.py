@@ -10,7 +10,7 @@ from .contracts import ReferenceFrameRecord
 
 
 class ReferenceFrameStore:
-    def __init__(self, *, artifacts_dir: Path | str | None = None) -> None:
+    def __init__(self, artifacts_dir: Path | str | None = None) -> None:
         self.artifacts_dir = Path(artifacts_dir) if artifacts_dir is not None else None
         self.frames_dir = self.artifacts_dir / "developmental" / "reference-frames" if self.artifacts_dir else None
         if self.frames_dir is not None:

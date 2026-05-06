@@ -19,6 +19,21 @@ def test_reference_frame_store_records_local_models(tmp_path):
     assert frame["artifact_path"]
 
 
+def test_reference_frame_store_accepts_positional_artifacts_dir(tmp_path):
+    store = ReferenceFrameStore(tmp_path)
+
+    frame = store.record(
+        frame_id="frame:task:constructor",
+        frame_type="task",
+        subject_ref="task:reference-frame-store",
+        facts=[{"claim": "Reference frame store accepts positional artifacts directories.", "source_ref": "tests"}],
+        evidence_refs=["tests/test_reference_frame_store.py"],
+    )
+
+    assert frame["artifact_path"]
+    assert (tmp_path / "developmental" / "reference-frames" / "frame_task_constructor.json").exists()
+
+
 def test_reference_frame_store_rejects_mutation_claims(tmp_path):
     store = ReferenceFrameStore(artifacts_dir=tmp_path)
 
