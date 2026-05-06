@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import math
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class AssimilationSourceLedger(BaseModel):
@@ -84,6 +85,7 @@ class SimulationRecord(BaseModel):
     production_action_allowed: bool = False
     findings: list[str] = Field(default_factory=list)
     artifact_path: str | None = None
+    created_at: str | None = None
 
 
 class CausalInterventionRecord(BaseModel):
@@ -100,3 +102,12 @@ class CausalInterventionRecord(BaseModel):
     findings: list[str] = Field(default_factory=list)
     production_action_allowed: bool = False
     artifact_path: str | None = None
+    created_at: str | None = None
+
+    @field_validator("observed_delta")
+    @classmethod
+    def reject_non_finite_deltas(cls, value: dict[str, float]) -> dict[str, float]:
+        for metric, delta in value.items():
+            if not math.isfinite(delta):
+                raise ValueError(f"observed_delta[{metric!r}] must be finite")
+        return value
