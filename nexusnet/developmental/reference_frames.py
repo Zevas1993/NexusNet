@@ -42,8 +42,8 @@ class ReferenceFrameStore:
             findings=findings,
             runtime_state="degraded" if findings else "live-bound",
             mutation_allowed=False,
+            created_at=utcnow().isoformat(),
         ).model_dump(mode="json")
-        record["created_at"] = utcnow().isoformat()
         self._persist(record)
         return record
 

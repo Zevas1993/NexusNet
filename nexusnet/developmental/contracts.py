@@ -68,3 +68,4 @@ class ReferenceFrameRecord(BaseModel):
     runtime_state: Literal["live-bound", "degraded"] = "live-bound"
     mutation_allowed: bool = False
     artifact_path: str | None = None
+    created_at: str | None = None

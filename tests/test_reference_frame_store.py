@@ -1,3 +1,4 @@
+from nexusnet.developmental.contracts import ReferenceFrameRecord
 from nexusnet.developmental.reference_frames import ReferenceFrameStore
 
 
@@ -32,6 +33,23 @@ def test_reference_frame_store_accepts_positional_artifacts_dir(tmp_path):
 
     assert frame["artifact_path"]
     assert (tmp_path / "developmental" / "reference-frames" / "frame_task_constructor.json").exists()
+
+
+def test_reference_frame_store_returns_revalidatable_record(tmp_path):
+    store = ReferenceFrameStore(artifacts_dir=tmp_path)
+
+    frame = store.record(
+        frame_id="frame:artifact:model-valid",
+        frame_type="artifact",
+        subject_ref="artifact:reference-frame",
+        facts=[{"claim": "Returned reference frames stay inside the validated contract.", "source_ref": "tests"}],
+        evidence_refs=["tests/test_reference_frame_store.py"],
+    )
+
+    revalidated = ReferenceFrameRecord(**frame)
+
+    assert revalidated.created_at == frame["created_at"]
+    assert revalidated.artifact_path == frame["artifact_path"]
 
 
 def test_reference_frame_store_rejects_mutation_claims(tmp_path):
