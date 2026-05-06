@@ -188,3 +188,23 @@ def test_promotion_tribunal_malformed_policy_counts_do_not_crash():
 
     assert decision["decision"] == "accepted-shadow"
     assert decision["blockers"] == []
+
+
+def test_promotion_tribunal_non_finite_policy_counts_do_not_crash():
+    decision = PromotionTribunal().decide(
+        case_id="case:growth:non-finite-policy",
+        candidate_ref="growth:non-finite-policy",
+        requested_state="shadow",
+        policy_scan={"summary": {"active_hard_fail_count": float("inf")}},
+        eval_gate={"promotion_allowed": True},
+        artifact_trust={"promotion_allowed": True},
+        self_review={"status": "passed"},
+        memory_quality={"status": "not_required"},
+        rollback={"rollback_restorable": True},
+        operator_approved=False,
+    )
+
+    assert decision["case_id"] == "case:growth:non-finite-policy"
+    assert decision["decision"] == "accepted-shadow"
+    assert decision["blockers"] == []
+    assert decision["active_promotion_allowed"] is False

@@ -63,5 +63,5 @@ def _policy_hard_fail_count(policy_scan: dict[str, Any]) -> int:
 def _safe_int(value: Any) -> int:
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 0
