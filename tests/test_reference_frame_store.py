@@ -22,6 +22,14 @@ def test_reference_frame_store_records_local_models(tmp_path):
     assert frame["artifact_path"]
 
 
+def test_reference_frame_store_exports_contracts_from_package():
+    from nexusnet.developmental import FrameType, ReferenceFrameRecord as ExportedRecord, ReferenceFrameStore as ExportedStore
+
+    assert FrameType is not None
+    assert ExportedRecord is ReferenceFrameRecord
+    assert ExportedStore is ReferenceFrameStore
+
+
 def test_reference_frame_store_accepts_positional_artifacts_dir(tmp_path):
     store = ReferenceFrameStore(tmp_path)
 
