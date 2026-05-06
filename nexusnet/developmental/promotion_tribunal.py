@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from .contracts import PromotionTribunalDecision
@@ -21,7 +22,8 @@ class PromotionTribunal:
         operator_approved: bool,
     ) -> dict[str, Any]:
         blockers = []
-        if _policy_hard_fail_count(policy_scan) > 0:
+        policy_count, policy_count_valid = _policy_hard_fail_count(policy_scan)
+        if not policy_count_valid or policy_count > 0:
             blockers.append("policy_scan_not_clear")
         if eval_gate.get("promotion_allowed") is not True:
             blockers.append("eval_gate_not_clear")
@@ -53,15 +55,20 @@ class PromotionTribunal:
         ).model_dump(mode="json")
 
 
-def _policy_hard_fail_count(policy_scan: dict[str, Any]) -> int:
+def _policy_hard_fail_count(policy_scan: dict[str, Any]) -> tuple[int, bool]:
     summary = policy_scan.get("summary")
     if not isinstance(summary, dict):
-        return 0
-    return _safe_int(summary.get("active_hard_fail_count") or 0)
+        return 0, True
+    return _safe_int(summary.get("active_hard_fail_count"))
 
 
-def _safe_int(value: Any) -> int:
+def _safe_int(value: Any) -> tuple[int, bool]:
+    if isinstance(value, bool):
+        return 0, False
+    if isinstance(value, float) and (not math.isfinite(value) or not value.is_integer()):
+        return 0, False
     try:
-        return int(value)
+        parsed = int(value)
     except (TypeError, ValueError, OverflowError):
-        return 0
+        return 0, False
+    return parsed, True
