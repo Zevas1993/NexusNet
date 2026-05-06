@@ -83,18 +83,21 @@ class ReferenceFrameStore:
         return path
 
     def _list_frames(self, *, limit: int) -> list[dict[str, Any]]:
-        frames = list(self._frames)
+        frames_by_id = {frame.get("frame_id"): frame for frame in reversed(self._frames)}
         if self.frames_dir is not None:
-            seen = {frame.get("frame_id") for frame in frames}
-            for path in self.frames_dir.glob("*.json"):
+            disk_frames: dict[str, tuple[str, str, dict[str, Any]]] = {}
+            for path in sorted(self.frames_dir.glob("*.json"), key=lambda item: item.name):
                 try:
                     payload = json.loads(path.read_text(encoding="utf-8"))
                     frame = ReferenceFrameRecord(**payload).model_dump(mode="json")
                 except (OSError, json.JSONDecodeError, ValidationError):
                     continue
                 frame_id = frame.get("frame_id")
-                if frame_id not in seen:
-                    frames.append(frame)
-                    seen.add(frame_id)
+                candidate_key = (frame.get("created_at") or "", path.name)
+                if frame_id not in disk_frames or candidate_key > disk_frames[frame_id][:2]:
+                    disk_frames[frame_id] = (*candidate_key, frame)
+            for frame_id, (_, _, frame) in disk_frames.items():
+                frames_by_id.setdefault(frame_id, frame)
+        frames = list(frames_by_id.values())
         frames.sort(key=lambda item: item.get("created_at") or "", reverse=True)
         return frames[:limit]

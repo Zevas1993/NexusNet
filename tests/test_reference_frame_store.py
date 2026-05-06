@@ -125,7 +125,9 @@ def test_reference_frame_store_summary_dedupes_duplicate_disk_frames(tmp_path):
     summary = store.summary()
 
     assert summary["frame_count"] == 1
-    assert [frame["frame_id"] for frame in summary["frames"]] == ["frame:duplicate"]
+    assert summary["frames"][0]["frame_id"] == "frame:duplicate"
+    assert summary["frames"][0]["subject_ref"] == "artifact:second"
+    assert summary["frames"][0]["created_at"] == "2026-05-06T00:00:02+00:00"
 
 
 def test_reference_frame_store_rejects_mutation_claims(tmp_path):
