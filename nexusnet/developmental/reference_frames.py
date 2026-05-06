@@ -89,6 +89,8 @@ class ReferenceFrameStore:
             for path in sorted(self.frames_dir.glob("*.json"), key=lambda item: item.name):
                 try:
                     payload = json.loads(path.read_text(encoding="utf-8"))
+                    if not isinstance(payload, dict):
+                        continue
                     frame = ReferenceFrameRecord(**payload).model_dump(mode="json")
                 except (OSError, json.JSONDecodeError, ValidationError):
                     continue

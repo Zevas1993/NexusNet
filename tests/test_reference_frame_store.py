@@ -130,6 +130,24 @@ def test_reference_frame_store_summary_dedupes_duplicate_disk_frames(tmp_path):
     assert summary["frames"][0]["created_at"] == "2026-05-06T00:00:02+00:00"
 
 
+def test_reference_frame_store_summary_skips_non_object_json_files(tmp_path):
+    store = ReferenceFrameStore(artifacts_dir=tmp_path)
+    frame = store.record(
+        frame_id="frame:valid:memory",
+        frame_type="memory",
+        subject_ref="memory:valid",
+        facts=[{"claim": "Valid in-memory frames survive corrupt disk files.", "source_ref": "tests"}],
+        evidence_refs=["tests/test_reference_frame_store.py"],
+    )
+    frames_dir = tmp_path / "developmental" / "reference-frames"
+    (frames_dir / "non-object.json").write_text(json.dumps([]), encoding="utf-8")
+
+    summary = store.summary()
+
+    assert summary["frame_count"] == 1
+    assert summary["frames"][0]["frame_id"] == frame["frame_id"]
+
+
 def test_reference_frame_store_rejects_mutation_claims(tmp_path):
     store = ReferenceFrameStore(artifacts_dir=tmp_path)
 
