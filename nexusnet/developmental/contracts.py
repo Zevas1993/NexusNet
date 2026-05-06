@@ -37,3 +37,16 @@ class AssimilationSourceLedger(BaseModel):
                 "artifact_trust_required_for_promoted_artifacts",
             ],
         )
+
+
+class NexusBodySchemaSnapshot(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    surface_id: str = "nexus-body-schema"
+    authority: str = "NexusBrain"
+    runtime_state: Literal["static-canon", "live-bound", "degraded"] = "static-canon"
+    capability_counts: dict[str, int] = Field(default_factory=dict)
+    degraded_surfaces: list[str] = Field(default_factory=list)
+    blocked_surfaces: list[str] = Field(default_factory=list)
+    production_mutation_allowed: bool = False
+    source_ledger: AssimilationSourceLedger = Field(default_factory=AssimilationSourceLedger.full_2026_05_06_packet)
