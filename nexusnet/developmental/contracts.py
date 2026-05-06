@@ -50,3 +50,21 @@ class NexusBodySchemaSnapshot(BaseModel):
     blocked_surfaces: list[str] = Field(default_factory=list)
     production_mutation_allowed: bool = False
     source_ledger: AssimilationSourceLedger = Field(default_factory=AssimilationSourceLedger.full_2026_05_06_packet)
+
+
+FrameType = Literal["project", "task", "artifact", "tool", "model", "user_goal", "memory", "runtime", "policy"]
+
+
+class ReferenceFrameRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    frame_id: str
+    frame_type: FrameType
+    subject_ref: str
+    facts: list[dict[str, str]] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+    uncertainty: float = 0.0
+    findings: list[str] = Field(default_factory=list)
+    runtime_state: Literal["live-bound", "degraded"] = "live-bound"
+    mutation_allowed: bool = False
+    artifact_path: str | None = None
