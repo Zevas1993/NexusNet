@@ -69,3 +69,34 @@ class ReferenceFrameRecord(BaseModel):
     mutation_allowed: bool = False
     artifact_path: str | None = None
     created_at: str | None = None
+
+
+class SimulationRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    simulation_id: str
+    seed_trace_ref: str
+    scenario: dict[str, object] = Field(default_factory=dict)
+    expected_outcomes: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+    status: Literal["shadow-recorded", "blocked"] = "shadow-recorded"
+    learned_world_model_claim: bool = False
+    production_action_allowed: bool = False
+    findings: list[str] = Field(default_factory=list)
+    artifact_path: str | None = None
+
+
+class CausalInterventionRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    intervention_id: str
+    variable: str
+    control_value: str
+    treatment_value: str
+    observed_delta: dict[str, float] = Field(default_factory=dict)
+    evidence_refs: list[str] = Field(default_factory=list)
+    status: Literal["recorded", "blocked"] = "recorded"
+    causal_confidence: Literal["confirmed", "refuted", "unknown"] = "unknown"
+    findings: list[str] = Field(default_factory=list)
+    production_action_allowed: bool = False
+    artifact_path: str | None = None
