@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -62,13 +63,24 @@ class ReferenceFrameStore:
         }
 
     def _persist(self, record: dict[str, Any]) -> None:
-        self._frames.insert(0, record)
         if self.frames_dir is None:
+            self._frames.insert(0, record)
             return
-        safe = record["frame_id"].replace(":", "_").replace("/", "_")
-        path = self.frames_dir / f"{safe}.json"
+        path = self._artifact_path_for_frame_id(record["frame_id"])
         record["artifact_path"] = str(path)
         path.write_text(json.dumps(record, indent=2, sort_keys=True), encoding="utf-8")
+        self._frames.insert(0, record)
+
+    def _artifact_path_for_frame_id(self, frame_id: str) -> Path:
+        if self.frames_dir is None:
+            raise ValueError("frames_dir is required for persisted reference frames")
+        digest = hashlib.sha256(frame_id.encode("utf-8")).hexdigest()
+        path = self.frames_dir / f"{digest}.json"
+        frames_root = self.frames_dir.resolve()
+        resolved_path = path.resolve()
+        if resolved_path.parent != frames_root:
+            raise ValueError("reference frame artifact path escaped frames directory")
+        return path
 
     def _list_frames(self, *, limit: int) -> list[dict[str, Any]]:
         frames = list(self._frames)
@@ -80,7 +92,9 @@ class ReferenceFrameStore:
                     frame = ReferenceFrameRecord(**payload).model_dump(mode="json")
                 except (OSError, json.JSONDecodeError, ValidationError):
                     continue
-                if frame.get("frame_id") not in seen:
+                frame_id = frame.get("frame_id")
+                if frame_id not in seen:
                     frames.append(frame)
+                    seen.add(frame_id)
         frames.sort(key=lambda item: item.get("created_at") or "", reverse=True)
         return frames[:limit]

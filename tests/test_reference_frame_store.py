@@ -34,7 +34,8 @@ def test_reference_frame_store_accepts_positional_artifacts_dir(tmp_path):
     )
 
     assert frame["artifact_path"]
-    assert (tmp_path / "developmental" / "reference-frames" / "frame_task_constructor.json").exists()
+    assert type(tmp_path)(frame["artifact_path"]).parent == tmp_path / "developmental" / "reference-frames"
+    assert type(tmp_path)(frame["artifact_path"]).exists()
 
 
 def test_reference_frame_store_returns_revalidatable_record(tmp_path):
@@ -75,6 +76,56 @@ def test_reference_frame_store_summary_skips_invalid_persisted_records(tmp_path)
 
     assert summary["frame_count"] == 0
     assert summary["frames"] == []
+
+
+def test_reference_frame_store_safely_persists_windows_separator_ids(tmp_path):
+    store = ReferenceFrameStore(artifacts_dir=tmp_path)
+
+    frame = store.record(
+        frame_id="..\\escaped\\frame",
+        frame_type="artifact",
+        subject_ref="artifact:escaped",
+        facts=[{"claim": "Unsafe path separators are reduced to a safe artifact file.", "source_ref": "tests"}],
+        evidence_refs=["tests/test_reference_frame_store.py"],
+    )
+
+    frames_dir = tmp_path / "developmental" / "reference-frames"
+    artifact_path = frame["artifact_path"]
+    resolved_artifact_path = artifact_path and type(tmp_path)(artifact_path).resolve()
+
+    assert resolved_artifact_path is not None
+    assert resolved_artifact_path.parent == frames_dir.resolve()
+    assert resolved_artifact_path.exists()
+    assert not (frames_dir / ".." / "escaped").exists()
+    assert store.summary()["frame_count"] == 1
+
+
+def test_reference_frame_store_summary_dedupes_duplicate_disk_frames(tmp_path):
+    frames_dir = tmp_path / "developmental" / "reference-frames"
+    frames_dir.mkdir(parents=True)
+    first = ReferenceFrameRecord(
+        frame_id="frame:duplicate",
+        frame_type="artifact",
+        subject_ref="artifact:first",
+        evidence_refs=["tests/first"],
+        created_at="2026-05-06T00:00:01+00:00",
+    ).model_dump(mode="json")
+    second = ReferenceFrameRecord(
+        frame_id="frame:duplicate",
+        frame_type="artifact",
+        subject_ref="artifact:second",
+        evidence_refs=["tests/second"],
+        created_at="2026-05-06T00:00:02+00:00",
+    ).model_dump(mode="json")
+    (frames_dir / "a.json").write_text(json.dumps(first), encoding="utf-8")
+    (frames_dir / "b.json").write_text(json.dumps(second), encoding="utf-8")
+
+    store = ReferenceFrameStore(artifacts_dir=tmp_path)
+
+    summary = store.summary()
+
+    assert summary["frame_count"] == 1
+    assert [frame["frame_id"] for frame in summary["frames"]] == ["frame:duplicate"]
 
 
 def test_reference_frame_store_rejects_mutation_claims(tmp_path):
