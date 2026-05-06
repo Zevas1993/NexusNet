@@ -54,6 +54,7 @@ class NexusBodySchemaSnapshot(BaseModel):
 
 
 FrameType = Literal["project", "task", "artifact", "tool", "model", "user_goal", "memory", "runtime", "policy"]
+CandidateKind = Literal["runtime", "memory", "policy", "tool", "prompt", "adapter", "model", "research"]
 
 
 class ReferenceFrameRecord(BaseModel):
@@ -70,6 +71,41 @@ class ReferenceFrameRecord(BaseModel):
     mutation_allowed: bool = False
     artifact_path: str | None = None
     created_at: str | None = None
+
+
+class GrowthArchiveCandidate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_id: str
+    candidate_type: CandidateKind
+    diversity_key: str
+    scores: dict[str, float] = Field(default_factory=dict)
+    evidence_refs: list[str] = Field(default_factory=list)
+    promotion_state: Literal["archived-shadow", "blocked"] = "archived-shadow"
+    production_mutation_allowed: bool = False
+    findings: list[str] = Field(default_factory=list)
+    artifact_path: str | None = None
+    created_at: str | None = None
+
+    @field_validator("scores")
+    @classmethod
+    def reject_non_finite_scores(cls, value: dict[str, float]) -> dict[str, float]:
+        for metric, score in value.items():
+            if not math.isfinite(score):
+                raise ValueError(f"scores[{metric!r}] must be finite")
+        return value
+
+
+class PromotionTribunalDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    case_id: str
+    candidate_ref: str
+    requested_state: Literal["archived", "shadow", "canary", "active"]
+    decision: Literal["accepted-shadow", "accepted-canary-request", "accepted-active-request", "rejected"]
+    blockers: list[str] = Field(default_factory=list)
+    active_promotion_allowed: bool = False
+    production_mutation_allowed: bool = False
 
 
 class SimulationRecord(BaseModel):
