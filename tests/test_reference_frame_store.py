@@ -1,3 +1,5 @@
+import json
+
 from nexusnet.developmental.contracts import ReferenceFrameRecord
 from nexusnet.developmental.reference_frames import ReferenceFrameStore
 
@@ -50,6 +52,29 @@ def test_reference_frame_store_returns_revalidatable_record(tmp_path):
 
     assert revalidated.created_at == frame["created_at"]
     assert revalidated.artifact_path == frame["artifact_path"]
+
+
+def test_reference_frame_store_summary_skips_invalid_persisted_records(tmp_path):
+    frames_dir = tmp_path / "developmental" / "reference-frames"
+    frames_dir.mkdir(parents=True)
+    (frames_dir / "invalid.json").write_text(
+        json.dumps(
+            {
+                "frame_id": "frame:invalid",
+                "frame_type": "invalid-type",
+                "subject_ref": "bad",
+                "forbidden_extra": "skip-me",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    store = ReferenceFrameStore(artifacts_dir=tmp_path)
+
+    summary = store.summary()
+
+    assert summary["frame_count"] == 0
+    assert summary["frames"] == []
 
 
 def test_reference_frame_store_rejects_mutation_claims(tmp_path):

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from nexus.schemas import utcnow
+from pydantic import ValidationError
 
 from .contracts import ReferenceFrameRecord
 
@@ -76,9 +77,10 @@ class ReferenceFrameStore:
             for path in self.frames_dir.glob("*.json"):
                 try:
                     payload = json.loads(path.read_text(encoding="utf-8"))
-                except (OSError, json.JSONDecodeError):
+                    frame = ReferenceFrameRecord(**payload).model_dump(mode="json")
+                except (OSError, json.JSONDecodeError, ValidationError):
                     continue
-                if payload.get("frame_id") not in seen:
-                    frames.append(payload)
+                if frame.get("frame_id") not in seen:
+                    frames.append(frame)
         frames.sort(key=lambda item: item.get("created_at") or "", reverse=True)
         return frames[:limit]
