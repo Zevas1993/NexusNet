@@ -40,6 +40,7 @@ class DevelopmentalCortexKernel:
             authority_state=authority_state,
             eval_state=eval_state,
         )
+        body_schema_blocked = _body_schema_blocked(body_schema_snapshot)
         reference_frame = self.reference_frames.record(
             frame_id=f"frame:task:{stable_id}",
             frame_type="task",
@@ -80,8 +81,8 @@ class DevelopmentalCortexKernel:
             candidate_ref=growth_candidate["candidate_id"],
             requested_state="shadow",
             policy_scan={"summary": {"active_hard_fail_count": 0}},
-            eval_gate={"promotion_allowed": bool(evidence_refs)},
-            artifact_trust={"promotion_allowed": bool(evidence_refs)},
+            eval_gate={"promotion_allowed": bool(evidence_refs) and not body_schema_blocked},
+            artifact_trust={"promotion_allowed": bool(evidence_refs) and not body_schema_blocked},
             self_review={"status": "accepted-shadow"},
             memory_quality={"status": "verified"},
             rollback={"rollback_restorable": True},
@@ -119,11 +120,16 @@ def _has_blocker(
     promotion_case: dict[str, Any],
 ) -> bool:
     return (
-        body_schema_snapshot.get("runtime_state") == "degraded"
-        or bool(body_schema_snapshot.get("blocked_surfaces"))
+        _body_schema_blocked(body_schema_snapshot)
         or reference_frame.get("runtime_state") == "degraded"
         or simulation.get("status") == "blocked"
         or causal_intervention.get("status") == "blocked"
         or growth_candidate.get("promotion_state") == "blocked"
         or promotion_case.get("decision") == "rejected"
+    )
+
+
+def _body_schema_blocked(body_schema_snapshot: dict[str, Any]) -> bool:
+    return body_schema_snapshot.get("runtime_state") == "degraded" or bool(
+        body_schema_snapshot.get("blocked_surfaces")
     )
