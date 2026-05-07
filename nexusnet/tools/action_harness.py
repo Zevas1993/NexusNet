@@ -3,11 +3,30 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 
 MUTATING_ACTIONS = {"click", "type", "write", "submit", "delete", "shell", "install"}
+MUTATING_ACTION_TOKENS = MUTATING_ACTIONS | {
+    "checkout",
+    "chmod",
+    "chown",
+    "commit",
+    "copy",
+    "exec",
+    "execute",
+    "merge",
+    "mkdir",
+    "move",
+    "pull",
+    "push",
+    "reset",
+    "rmdir",
+    "run",
+}
+ELEVATED_TOOL_REFS = {"cmd", "powershell", "shell", "terminal"}
 UNKNOWN_SANDBOX_STATES = {"", "none", "unknown"}
 SURFACE_ID = "tool-action-harness"
 AUTHORITY = "NexusBrain"
@@ -52,15 +71,21 @@ class ToolActionHarness:
         evidence_refs: list[str],
     ) -> dict[str, Any]:
         normalized_action_type = self._validate_string("action_type", action_type)
+        normalized_tool_ref = self._validate_string("tool_ref", tool_ref)
+        normalized_sandbox_state = self._validate_string("sandbox_state", sandbox_state)
         normalized_private = self._validate_bool("contains_private_data", contains_private_data)
         normalized_operator_approved = self._validate_bool("operator_approved", operator_approved)
         normalized_evidence_refs = self._validate_string_list("evidence_refs", evidence_refs)
-        mutating = normalized_action_type in MUTATING_ACTIONS
+        mutating = self._is_mutating_action(
+            tool_ref=normalized_tool_ref,
+            action_type=normalized_action_type,
+        )
 
         findings = self._derive_findings(
+            tool_ref=normalized_tool_ref,
             action_type=normalized_action_type,
             contains_private_data=normalized_private,
-            sandbox_state=sandbox_state,
+            sandbox_state=normalized_sandbox_state,
             operator_approved=normalized_operator_approved,
             evidence_refs=normalized_evidence_refs,
         )
@@ -68,11 +93,11 @@ class ToolActionHarness:
             "surface_id": SURFACE_ID,
             "authority": AUTHORITY,
             "action_id": self._validate_string("action_id", action_id),
-            "tool_ref": self._validate_string("tool_ref", tool_ref),
+            "tool_ref": normalized_tool_ref,
             "action_type": normalized_action_type,
             "requested_effect": self._validate_string("requested_effect", requested_effect),
             "contains_private_data": normalized_private,
-            "sandbox_state": self._validate_string("sandbox_state", sandbox_state),
+            "sandbox_state": normalized_sandbox_state,
             "operator_approved": normalized_operator_approved,
             "evidence_refs": normalized_evidence_refs,
             "status": "blocked" if findings else "planned-shadow",
@@ -188,6 +213,7 @@ class ToolActionHarness:
         if plan["trace_contract"] != TRACE_CONTRACT:
             raise ValueError("tool action plan trace contract is invalid")
         expected = self._derive_gate_fields(
+            tool_ref=plan["tool_ref"],
             action_type=plan["action_type"],
             contains_private_data=plan["contains_private_data"],
             sandbox_state=plan["sandbox_state"],
@@ -209,6 +235,7 @@ class ToolActionHarness:
     def _derive_gate_fields(
         self,
         *,
+        tool_ref: str,
         action_type: str,
         contains_private_data: bool,
         sandbox_state: str,
@@ -216,6 +243,7 @@ class ToolActionHarness:
         evidence_refs: list[str],
     ) -> dict[str, Any]:
         findings = self._derive_findings(
+            tool_ref=tool_ref,
             action_type=action_type,
             contains_private_data=contains_private_data,
             sandbox_state=sandbox_state,
@@ -226,12 +254,17 @@ class ToolActionHarness:
             "findings": findings,
             "status": "blocked" if findings else "planned-shadow",
             "execution_allowed": False,
-            "operator_confirmation_required": action_type in MUTATING_ACTIONS or contains_private_data,
+            "operator_confirmation_required": self._is_mutating_action(
+                tool_ref=tool_ref,
+                action_type=action_type,
+            )
+            or contains_private_data,
         }
 
     def _derive_findings(
         self,
         *,
+        tool_ref: str,
         action_type: str,
         contains_private_data: bool,
         sandbox_state: str,
@@ -239,7 +272,7 @@ class ToolActionHarness:
         evidence_refs: list[str],
     ) -> list[str]:
         findings = []
-        mutating = action_type in MUTATING_ACTIONS
+        mutating = self._is_mutating_action(tool_ref=tool_ref, action_type=action_type)
         if not evidence_refs:
             findings.append("tool_action_requires_evidence_refs")
         if mutating and sandbox_state in UNKNOWN_SANDBOX_STATES:
@@ -249,6 +282,18 @@ class ToolActionHarness:
         if contains_private_data and not operator_approved:
             findings.append("private_tool_context_requires_operator_confirmation")
         return findings
+
+    def _is_mutating_action(self, *, tool_ref: str, action_type: str) -> bool:
+        tool_tokens = self._identifier_tokens(tool_ref)
+        action_tokens = self._identifier_tokens(action_type)
+        if any(token in MUTATING_ACTION_TOKENS for token in action_tokens):
+            return True
+        if any(token in ELEVATED_TOOL_REFS for token in tool_tokens):
+            return True
+        return False
+
+    def _identifier_tokens(self, value: str) -> list[str]:
+        return [token for token in re.split(r"[^A-Za-z0-9]+", value.lower()) if token]
 
     def _validate_string_list(self, name: str, values: Any) -> list[str]:
         if not isinstance(values, list):

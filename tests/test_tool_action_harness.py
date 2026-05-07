@@ -44,6 +44,64 @@ def test_tool_action_harness_requires_confirmation_for_mutation(tmp_path):
     assert "mutating_tool_action_requires_sandbox" in result["findings"]
 
 
+@pytest.mark.parametrize(
+    ("tool_ref", "action_type"),
+    [
+        ("shell", "shell.exec"),
+        ("powershell", "powershell.exec"),
+        ("cmd", "cmd.exec"),
+        ("filesystem", "filesystem.write"),
+        ("filesystem", "filesystem.delete"),
+        ("git", "git.commit"),
+    ],
+)
+def test_tool_action_harness_blocks_dotted_mutating_actions(
+    tmp_path,
+    tool_ref,
+    action_type,
+):
+    harness = ToolActionHarness(artifacts_dir=tmp_path)
+
+    result = harness.plan_action(
+        action_id=f"tool:{action_type}",
+        tool_ref=tool_ref,
+        action_type=action_type,
+        requested_effect=tool_ref,
+        contains_private_data=False,
+        sandbox_state="none",
+        operator_approved=False,
+        evidence_refs=[f"trace:{action_type}"],
+    )
+
+    assert result["status"] == "blocked"
+    assert result["operator_confirmation_required"] is True
+    assert "mutating_tool_action_requires_sandbox" in result["findings"]
+    assert "mutating_tool_action_requires_operator_confirmation" in result["findings"]
+
+
+@pytest.mark.parametrize("invalid_value", [[], {}])
+def test_tool_action_harness_rejects_invalid_sandbox_state_without_persisting(
+    tmp_path,
+    invalid_value,
+):
+    harness = ToolActionHarness(artifacts_dir=tmp_path)
+
+    with pytest.raises(ValueError, match="sandbox_state must be a string"):
+        harness.plan_action(
+            action_id="tool:desktop:click",
+            tool_ref="desktop",
+            action_type="click",
+            requested_effect="desktop",
+            contains_private_data=False,
+            sandbox_state=invalid_value,
+            operator_approved=False,
+            evidence_refs=["trace:click"],
+        )
+
+    assert harness.summary()["plan_count"] == 0
+    assert list((tmp_path / "tools" / "action-harness").glob("*.json")) == []
+
+
 @pytest.mark.parametrize("invalid_value", ["false", 0, 1, [], {}])
 def test_tool_action_harness_rejects_invalid_contains_private_data_without_persisting(
     tmp_path,
