@@ -146,7 +146,7 @@ class ToolActionHarness:
             self._plans.insert(0, copy.deepcopy(plan))
             return
         path = self._artifact_path_for_action_id(plan["action_id"])
-        plan["artifact_path"] = str(path)
+        plan["artifact_path"] = path.name
         payload = json.dumps(plan, allow_nan=False, indent=2, sort_keys=True)
         path.write_text(payload, encoding="utf-8")
         persisted = json.loads(path.read_text(encoding="utf-8"))
@@ -219,10 +219,10 @@ class ToolActionHarness:
         expected_path = self._artifact_path_for_action_id(plan["action_id"])
         if path.resolve() != expected_path.resolve():
             raise ValueError("tool action plan filename does not match action id")
-        artifact_path = Path(plan["artifact_path"])
-        if artifact_path.resolve() != expected_path.resolve():
-            raise ValueError("tool action plan artifact_path does not match action id")
-        if artifact_path.name != expected_path.name:
+        artifact_ref = plan["artifact_path"]
+        if Path(artifact_ref).is_absolute() or Path(artifact_ref).name != artifact_ref:
+            raise ValueError("tool action plan artifact_path must be a flat artifact ref")
+        if "/" in artifact_ref or "\\" in artifact_ref or artifact_ref != expected_path.name:
             raise ValueError("tool action plan artifact_path filename does not match action id")
         return plan
 

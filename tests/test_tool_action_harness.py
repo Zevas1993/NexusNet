@@ -6,6 +6,10 @@ import pytest
 from nexusnet.tools.action_harness import ToolActionHarness
 
 
+def _artifact_file(tmp_path, plan):
+    return tmp_path / "tools" / "action-harness" / plan["artifact_path"]
+
+
 def test_tool_action_harness_allows_readonly_observation(tmp_path):
     harness = ToolActionHarness(artifacts_dir=tmp_path)
 
@@ -320,6 +324,30 @@ def test_tool_action_harness_fresh_summary_sees_persisted_plans(tmp_path):
     assert summary["latest_plan"]["action_id"] == result["action_id"]
 
 
+def test_tool_action_harness_persists_flat_artifact_ref(tmp_path):
+    harness = ToolActionHarness(artifacts_dir=tmp_path)
+    result = harness.plan_action(
+        action_id="tool:browser:observe",
+        tool_ref="browser",
+        action_type="observe",
+        requested_effect="browser",
+        contains_private_data=False,
+        sandbox_state="session-readonly",
+        operator_approved=False,
+        evidence_refs=["trace:observe"],
+    )
+    artifact_ref = result["artifact_path"]
+    persisted_path = tmp_path / "tools" / "action-harness" / artifact_ref
+    persisted = json.loads(persisted_path.read_text(encoding="utf-8"))
+
+    assert artifact_ref == Path(artifact_ref).name
+    assert not Path(artifact_ref).is_absolute()
+    assert "/" not in artifact_ref
+    assert "\\" not in artifact_ref
+    assert persisted["artifact_path"] == artifact_ref
+    assert persisted_path.exists()
+
+
 def test_tool_action_harness_fresh_summary_preserves_latest_plan_order(tmp_path):
     harness = ToolActionHarness(artifacts_dir=tmp_path)
     old = harness.plan_action(
@@ -370,9 +398,9 @@ def test_tool_action_harness_skips_sequence_tampering_on_fresh_reload(tmp_path):
         operator_approved=False,
         evidence_refs=["trace:new"],
     )
-    old_payload = json.loads(Path(old["artifact_path"]).read_text(encoding="utf-8"))
+    old_payload = json.loads(_artifact_file(tmp_path, old).read_text(encoding="utf-8"))
     old_payload["sequence"] = 999
-    Path(old["artifact_path"]).write_text(json.dumps(old_payload), encoding="utf-8")
+    _artifact_file(tmp_path, old).write_text(json.dumps(old_payload), encoding="utf-8")
 
     summary = ToolActionHarness(artifacts_dir=tmp_path).summary()
 
@@ -393,9 +421,9 @@ def test_tool_action_harness_skips_malformed_persisted_sequence(tmp_path, sequen
         operator_approved=False,
         evidence_refs=["trace:observe"],
     )
-    payload = json.loads(Path(plan["artifact_path"]).read_text(encoding="utf-8"))
+    payload = json.loads(_artifact_file(tmp_path, plan).read_text(encoding="utf-8"))
     payload["sequence"] = sequence
-    Path(plan["artifact_path"]).write_text(json.dumps(payload), encoding="utf-8")
+    _artifact_file(tmp_path, plan).write_text(json.dumps(payload), encoding="utf-8")
 
     summary = ToolActionHarness(artifacts_dir=tmp_path).summary()
 
@@ -422,7 +450,7 @@ def test_tool_action_harness_skips_invalid_disk_plans_without_hiding_valid_plan(
         json.dumps({"action_id": "tool:missing:fields"}),
         encoding="utf-8",
     )
-    semantic_invalid = json.loads(Path(valid["artifact_path"]).read_text(encoding="utf-8"))
+    semantic_invalid = json.loads(_artifact_file(tmp_path, valid).read_text(encoding="utf-8"))
     semantic_invalid["execution_allowed"] = True
     (plans_dir / "semantic-invalid.json").write_text(
         json.dumps(semantic_invalid),
@@ -448,8 +476,8 @@ def test_tool_action_harness_skips_valid_payload_with_invalid_filename(tmp_path)
         evidence_refs=["trace:observe"],
     )
     plans_dir = tmp_path / "tools" / "action-harness"
-    payload = Path(plan["artifact_path"]).read_text(encoding="utf-8")
-    Path(plan["artifact_path"]).unlink()
+    payload = _artifact_file(tmp_path, plan).read_text(encoding="utf-8")
+    _artifact_file(tmp_path, plan).unlink()
     (plans_dir / "zz-duplicate.json").write_text(payload, encoding="utf-8")
 
     summary = ToolActionHarness(artifacts_dir=tmp_path).summary()
@@ -479,9 +507,9 @@ def test_tool_action_harness_skips_tampered_artifact_paths(tmp_path, artifact_pa
         operator_approved=False,
         evidence_refs=["trace:observe"],
     )
-    payload = json.loads(Path(plan["artifact_path"]).read_text(encoding="utf-8"))
+    payload = json.loads(_artifact_file(tmp_path, plan).read_text(encoding="utf-8"))
     payload["artifact_path"] = artifact_path_value
-    Path(plan["artifact_path"]).write_text(json.dumps(payload), encoding="utf-8")
+    _artifact_file(tmp_path, plan).write_text(json.dumps(payload), encoding="utf-8")
 
     summary = ToolActionHarness(artifacts_dir=tmp_path).summary()
 
@@ -502,10 +530,13 @@ def test_tool_action_harness_unsafe_action_ids_stay_in_flat_artifact_dir(tmp_pat
         evidence_refs=["trace:click"],
     )
 
-    artifact_path = Path(result["artifact_path"]).resolve()
+    artifact_ref = result["artifact_path"]
+    artifact_path = tmp_path / "tools" / "action-harness" / artifact_ref
     plans_dir = (tmp_path / "tools" / "action-harness").resolve()
 
-    assert artifact_path.parent == plans_dir
+    assert artifact_ref == Path(artifact_ref).name
+    assert not Path(artifact_ref).is_absolute()
+    assert artifact_path.resolve().parent == plans_dir
     assert artifact_path.exists()
     assert list(plans_dir.glob("*.json")) == [artifact_path]
 
@@ -546,7 +577,7 @@ def test_tool_action_harness_invalid_disk_duplicates_are_skipped_and_in_memory_w
         evidence_refs=["trace:observe"],
     )
     plans_dir = tmp_path / "tools" / "action-harness"
-    duplicate = json.loads(Path(disk_plan["artifact_path"]).read_text(encoding="utf-8"))
+    duplicate = json.loads(_artifact_file(tmp_path, disk_plan).read_text(encoding="utf-8"))
     duplicate["tool_ref"] = "browser-disk-duplicate"
     (plans_dir / "zz-duplicate.json").write_text(json.dumps(duplicate), encoding="utf-8")
 
