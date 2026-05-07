@@ -278,6 +278,60 @@ def test_tool_action_harness_skips_invalid_disk_plans_without_hiding_valid_plan(
     assert summary["latest_plan"]["action_id"] == valid["action_id"]
 
 
+def test_tool_action_harness_skips_valid_payload_with_invalid_filename(tmp_path):
+    harness = ToolActionHarness(artifacts_dir=tmp_path)
+    plan = harness.plan_action(
+        action_id="tool:browser:observe",
+        tool_ref="browser",
+        action_type="observe",
+        requested_effect="browser",
+        contains_private_data=False,
+        sandbox_state="session-readonly",
+        operator_approved=False,
+        evidence_refs=["trace:observe"],
+    )
+    plans_dir = tmp_path / "tools" / "action-harness"
+    payload = Path(plan["artifact_path"]).read_text(encoding="utf-8")
+    Path(plan["artifact_path"]).unlink()
+    (plans_dir / "zz-duplicate.json").write_text(payload, encoding="utf-8")
+
+    summary = ToolActionHarness(artifacts_dir=tmp_path).summary()
+
+    assert summary["plan_count"] == 0
+    assert summary["latest_plan"] is None
+
+
+@pytest.mark.parametrize(
+    "artifact_path_value",
+    [
+        "..\\escape.json",
+        "../escape.json",
+        "other.json",
+        "C:\\escape.json",
+    ],
+)
+def test_tool_action_harness_skips_tampered_artifact_paths(tmp_path, artifact_path_value):
+    harness = ToolActionHarness(artifacts_dir=tmp_path)
+    plan = harness.plan_action(
+        action_id="tool:browser:observe",
+        tool_ref="browser",
+        action_type="observe",
+        requested_effect="browser",
+        contains_private_data=False,
+        sandbox_state="session-readonly",
+        operator_approved=False,
+        evidence_refs=["trace:observe"],
+    )
+    payload = json.loads(Path(plan["artifact_path"]).read_text(encoding="utf-8"))
+    payload["artifact_path"] = artifact_path_value
+    Path(plan["artifact_path"]).write_text(json.dumps(payload), encoding="utf-8")
+
+    summary = ToolActionHarness(artifacts_dir=tmp_path).summary()
+
+    assert summary["plan_count"] == 0
+    assert summary["latest_plan"] is None
+
+
 def test_tool_action_harness_unsafe_action_ids_stay_in_flat_artifact_dir(tmp_path):
     harness = ToolActionHarness(artifacts_dir=tmp_path)
     result = harness.plan_action(
@@ -322,7 +376,7 @@ def test_tool_action_harness_failed_disk_write_leaves_no_phantom_plan(tmp_path, 
     assert harness.summary()["plan_count"] == 0
 
 
-def test_tool_action_harness_dedupes_disk_plans_and_in_memory_wins(tmp_path):
+def test_tool_action_harness_invalid_disk_duplicates_are_skipped_and_in_memory_wins(tmp_path):
     harness = ToolActionHarness(artifacts_dir=tmp_path)
     disk_plan = harness.plan_action(
         action_id="tool:browser:observe",
@@ -341,7 +395,7 @@ def test_tool_action_harness_dedupes_disk_plans_and_in_memory_wins(tmp_path):
 
     fresh_summary = ToolActionHarness(artifacts_dir=tmp_path).summary()
     assert fresh_summary["plan_count"] == 1
-    assert fresh_summary["latest_plan"]["tool_ref"] == "browser-disk-duplicate"
+    assert fresh_summary["latest_plan"]["tool_ref"] == "browser-disk"
 
     memory_plan = harness.plan_action(
         action_id="tool:browser:observe",
@@ -354,7 +408,7 @@ def test_tool_action_harness_dedupes_disk_plans_and_in_memory_wins(tmp_path):
         evidence_refs=["trace:observe"],
     )
 
-    summary = harness.summary()
+    summary = ToolActionHarness(artifacts_dir=tmp_path).summary()
 
     assert summary["plan_count"] == 1
     assert summary["latest_plan"]["tool_ref"] == memory_plan["tool_ref"]

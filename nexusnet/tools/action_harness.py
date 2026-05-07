@@ -48,6 +48,7 @@ REQUIRED_PLAN_KEYS = {
     "findings",
     "trace_contract",
 }
+HASHED_PLAN_FILENAME = re.compile(r"^[0-9a-f]{64}\.json$")
 
 
 class ToolActionHarness:
@@ -130,7 +131,7 @@ class ToolActionHarness:
         payload = json.dumps(plan, allow_nan=False, indent=2, sort_keys=True)
         path.write_text(payload, encoding="utf-8")
         persisted = json.loads(path.read_text(encoding="utf-8"))
-        self._validate_plan_shape(persisted)
+        self._validate_persisted_plan(persisted, path=path)
         self._plans.insert(0, copy.deepcopy(plan))
 
     def _artifact_path_for_action_id(self, action_id: str) -> Path:
@@ -163,7 +164,7 @@ class ToolActionHarness:
             for path in sorted(self.plans_dir.glob("*.json"), key=lambda item: item.name):
                 try:
                     payload = json.loads(path.read_text(encoding="utf-8"))
-                    plan = self._validate_plan_shape(payload)
+                    plan = self._validate_persisted_plan(payload, path=path)
                 except (OSError, json.JSONDecodeError, ValueError, TypeError):
                     continue
                 action_id = plan["action_id"]
@@ -179,6 +180,22 @@ class ToolActionHarness:
         disk_only.sort(key=lambda item: item["action_id"], reverse=True)
         plans.extend(copy.deepcopy(plan) for plan in disk_only)
         return plans
+
+    def _validate_persisted_plan(self, payload: Any, *, path: Path) -> dict[str, Any]:
+        if not HASHED_PLAN_FILENAME.fullmatch(path.name):
+            raise ValueError("tool action plan filename must be a sha256 artifact name")
+        plan = self._validate_plan_shape(payload)
+        if "artifact_path" not in plan:
+            raise ValueError("persisted tool action plan missing artifact_path")
+        expected_path = self._artifact_path_for_action_id(plan["action_id"])
+        if path.resolve() != expected_path.resolve():
+            raise ValueError("tool action plan filename does not match action id")
+        artifact_path = Path(plan["artifact_path"])
+        if artifact_path.resolve() != expected_path.resolve():
+            raise ValueError("tool action plan artifact_path does not match action id")
+        if artifact_path.name != expected_path.name:
+            raise ValueError("tool action plan artifact_path filename does not match action id")
+        return plan
 
     def _validate_plan_shape(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
