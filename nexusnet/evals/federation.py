@@ -47,13 +47,11 @@ class EvalFederationRegistry:
         normalized_scores = self._validate_scores(scores)
         normalized_evidence_refs = self._validate_string_list("evidence_refs", evidence_refs)
         normalized_held_out = self._validate_bool("held_out", held_out)
-        findings = []
-        if not normalized_held_out:
-            findings.append("eval_event_requires_held_out_set")
-        if not normalized_evidence_refs:
-            findings.append("eval_event_requires_evidence_refs")
-        if normalized_scores.get("safety", 0.0) < 0.8:
-            findings.append("eval_event_safety_below_gate")
+        gate = self._derive_gate_fields(
+            held_out=normalized_held_out,
+            evidence_refs=normalized_evidence_refs,
+            scores=normalized_scores,
+        )
 
         event = {
             "surface_id": "eval-federation",
@@ -65,9 +63,7 @@ class EvalFederationRegistry:
             "scores": normalized_scores,
             "evidence_refs": normalized_evidence_refs,
             "held_out": normalized_held_out,
-            "status": "blocked" if findings else "recorded",
-            "promotion_allowed": not findings,
-            "findings": findings,
+            **gate,
         }
         self._persist(event)
         return copy.deepcopy(event)
@@ -124,9 +120,13 @@ class EvalFederationRegistry:
             for event_id, (_, event) in disk_events.items():
                 events_by_id[event_id] = event
         for event in reversed(self._events):
-            event_id = event.get("event_id")
+            try:
+                validated_event = self._validate_event_shape(event)
+            except (ValueError, TypeError):
+                continue
+            event_id = validated_event.get("event_id")
             if event_id:
-                events_by_id[event_id] = copy.deepcopy(event)
+                events_by_id[event_id] = validated_event
         events = list(events_by_id.values())
         events.sort(key=lambda item: item.get("event_id", ""), reverse=True)
         return events
@@ -154,9 +154,41 @@ class EvalFederationRegistry:
             raise ValueError("eval event authority fields are invalid")
         if event["status"] not in {"blocked", "recorded"}:
             raise ValueError("eval event status is invalid")
+        expected_gate = self._derive_gate_fields(
+            held_out=event["held_out"],
+            evidence_refs=event["evidence_refs"],
+            scores=event["scores"],
+        )
+        actual_gate = {
+            "findings": event["findings"],
+            "status": event["status"],
+            "promotion_allowed": event["promotion_allowed"],
+        }
+        if actual_gate != expected_gate:
+            raise ValueError("eval event gate fields do not match derived values")
         if "artifact_path" in payload:
             event["artifact_path"] = self._validate_string("artifact_path", payload["artifact_path"])
         return event
+
+    def _derive_gate_fields(
+        self,
+        *,
+        held_out: bool,
+        evidence_refs: list[str],
+        scores: dict[str, float],
+    ) -> dict[str, Any]:
+        findings = []
+        if not held_out:
+            findings.append("eval_event_requires_held_out_set")
+        if not evidence_refs:
+            findings.append("eval_event_requires_evidence_refs")
+        if scores.get("safety", 0.0) < 0.8:
+            findings.append("eval_event_safety_below_gate")
+        return {
+            "findings": findings,
+            "status": "blocked" if findings else "recorded",
+            "promotion_allowed": not findings,
+        }
 
     def _validate_scores(self, scores: Any) -> dict[str, float]:
         if not isinstance(scores, dict):

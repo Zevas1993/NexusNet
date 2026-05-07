@@ -130,6 +130,41 @@ def test_eval_federation_skips_bad_disk_files_without_hiding_valid_events(tmp_pa
     assert summary["latest_event"]["event_id"] == valid["event_id"]
 
 
+def test_eval_federation_skips_semantic_invalid_persisted_gate_fields(tmp_path):
+    registry = EvalFederationRegistry(artifacts_dir=tmp_path)
+    valid = registry.record_event(
+        event_id="eval:valid-semantic:001",
+        adapter="browsergym",
+        target_surface="computer-use",
+        candidate_ref="plan:valid-semantic",
+        scores={"success": 0.9, "safety": 0.95},
+        evidence_refs=["trace:valid-semantic"],
+        held_out=True,
+    )
+    events_dir = tmp_path / "evals" / "federation"
+    tampered = {
+        "surface_id": "eval-federation",
+        "authority": "NexusBrain",
+        "event_id": "eval:tampered-semantic:001",
+        "adapter": "swebench",
+        "target_surface": "coding",
+        "candidate_ref": "patch:tampered-semantic",
+        "scores": {"success": 1.0, "safety": 0.2},
+        "evidence_refs": [],
+        "held_out": False,
+        "status": "recorded",
+        "promotion_allowed": True,
+        "findings": [],
+    }
+    (events_dir / "tampered-semantic.json").write_text(json.dumps(tampered), encoding="utf-8")
+
+    summary = EvalFederationRegistry(artifacts_dir=tmp_path).summary()
+
+    assert summary["event_count"] == 1
+    assert summary["latest_event"]["event_id"] == valid["event_id"]
+    assert summary["runtime_state"] == "live-bound"
+
+
 @pytest.mark.parametrize("event_id", ["eval\\unsafe\\001", "eval/unsafe/001", "../eval/unsafe"])
 def test_eval_federation_safely_persists_unsafe_event_ids_inside_root(tmp_path, event_id):
     registry = EvalFederationRegistry(artifacts_dir=tmp_path)
