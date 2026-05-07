@@ -147,3 +147,20 @@ class CausalInterventionRecord(BaseModel):
             if not math.isfinite(delta):
                 raise ValueError(f"observed_delta[{metric!r}] must be finite")
         return value
+
+
+class DevelopmentalCortexResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    surface_id: str = "developmental-cortex-kernel"
+    authority: str = "NexusBrain"
+    request_id: str
+    task_ref: str
+    status: Literal["shadow-ready", "blocked"] = "shadow-ready"
+    body_schema_snapshot: dict[str, object]
+    reference_frame: dict[str, object]
+    simulation: dict[str, object]
+    causal_intervention: dict[str, object]
+    growth_candidate: dict[str, object]
+    promotion_case: dict[str, object]
+    production_mutation_allowed: bool = False
