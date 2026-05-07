@@ -286,7 +286,7 @@ class ToolActionHarness:
     def _is_mutating_action(self, *, tool_ref: str, action_type: str) -> bool:
         tool_tokens = self._identifier_tokens(tool_ref)
         action_tokens = self._identifier_tokens(action_type)
-        if any(token in MUTATING_ACTION_TOKENS for token in action_tokens):
+        if any(token in MUTATING_ACTION_TOKENS for token in action_tokens + tool_tokens):
             return True
         if any(token in ELEVATED_TOOL_REFS for token in tool_tokens):
             return True
@@ -298,11 +298,18 @@ class ToolActionHarness:
     def _validate_string_list(self, name: str, values: Any) -> list[str]:
         if not isinstance(values, list):
             raise ValueError(f"{name} must be a list")
-        return [self._validate_string(name, value) for value in values]
+        try:
+            return [self._validate_string(name, value) for value in values]
+        except ValueError as exc:
+            if "non-empty string" in str(exc):
+                raise ValueError(f"{name} must contain non-empty strings") from exc
+            raise
 
     def _validate_string(self, name: str, value: Any) -> str:
         if not isinstance(value, str):
             raise ValueError(f"{name} must be a string")
+        if not value.strip():
+            raise ValueError(f"{name} must be a non-empty string")
         return value
 
     def _validate_bool(self, name: str, value: Any) -> bool:

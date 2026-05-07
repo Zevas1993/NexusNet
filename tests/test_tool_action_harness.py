@@ -79,6 +79,27 @@ def test_tool_action_harness_blocks_dotted_mutating_actions(
     assert "mutating_tool_action_requires_operator_confirmation" in result["findings"]
 
 
+@pytest.mark.parametrize("tool_ref", ["filesystem.write", "filesystem.delete", "git.commit"])
+def test_tool_action_harness_blocks_dotted_mutating_tool_refs(tmp_path, tool_ref):
+    harness = ToolActionHarness(artifacts_dir=tmp_path)
+
+    result = harness.plan_action(
+        action_id=f"tool:{tool_ref}:observe",
+        tool_ref=tool_ref,
+        action_type="observe",
+        requested_effect=tool_ref,
+        contains_private_data=False,
+        sandbox_state="none",
+        operator_approved=False,
+        evidence_refs=[f"trace:{tool_ref}"],
+    )
+
+    assert result["status"] == "blocked"
+    assert result["operator_confirmation_required"] is True
+    assert "mutating_tool_action_requires_sandbox" in result["findings"]
+    assert "mutating_tool_action_requires_operator_confirmation" in result["findings"]
+
+
 @pytest.mark.parametrize("invalid_value", [[], {}])
 def test_tool_action_harness_rejects_invalid_sandbox_state_without_persisting(
     tmp_path,
@@ -97,6 +118,40 @@ def test_tool_action_harness_rejects_invalid_sandbox_state_without_persisting(
             operator_approved=False,
             evidence_refs=["trace:click"],
         )
+
+    assert harness.summary()["plan_count"] == 0
+    assert list((tmp_path / "tools" / "action-harness").glob("*.json")) == []
+
+
+@pytest.mark.parametrize(
+    ("field_name", "overrides", "expected_message"),
+    [
+        ("action_id", {"action_id": ""}, "action_id must be a non-empty string"),
+        ("tool_ref", {"tool_ref": ""}, "tool_ref must be a non-empty string"),
+        ("evidence_refs", {"evidence_refs": [""]}, "evidence_refs must contain non-empty strings"),
+    ],
+)
+def test_tool_action_harness_rejects_empty_ids_and_refs_without_persisting(
+    tmp_path,
+    field_name,
+    overrides,
+    expected_message,
+):
+    harness = ToolActionHarness(artifacts_dir=tmp_path)
+    kwargs = {
+        "action_id": "tool:browser:observe",
+        "tool_ref": "browser",
+        "action_type": "observe",
+        "requested_effect": "browser",
+        "contains_private_data": False,
+        "sandbox_state": "session-readonly",
+        "operator_approved": False,
+        "evidence_refs": ["trace:observe"],
+        **overrides,
+    }
+
+    with pytest.raises(ValueError, match=expected_message):
+        harness.plan_action(**kwargs)
 
     assert harness.summary()["plan_count"] == 0
     assert list((tmp_path / "tools" / "action-harness").glob("*.json")) == []
