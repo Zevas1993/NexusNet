@@ -109,6 +109,10 @@ def test_tool_action_harness_blocks_dotted_mutating_tool_refs(tmp_path, tool_ref
         "filesystem.replace",
         "filesystem.edit",
         "git.rebase",
+        "filesystem.remove",
+        "filesystem.truncate",
+        "filesystem.overwrite",
+        "git.apply",
     ],
 )
 def test_tool_action_harness_blocks_common_write_capable_actions(tmp_path, action_type):
@@ -342,6 +346,38 @@ def test_tool_action_harness_fresh_summary_preserves_latest_plan_order(tmp_path)
     assert harness.summary()["latest_plan"]["action_id"] == new["action_id"]
     assert ToolActionHarness(artifacts_dir=tmp_path).summary()["latest_plan"]["action_id"] == new["action_id"]
     assert old["action_id"] != new["action_id"]
+
+
+def test_tool_action_harness_skips_sequence_tampering_on_fresh_reload(tmp_path):
+    harness = ToolActionHarness(artifacts_dir=tmp_path)
+    old = harness.plan_action(
+        action_id="old",
+        tool_ref="browser",
+        action_type="observe",
+        requested_effect="browser",
+        contains_private_data=False,
+        sandbox_state="session-readonly",
+        operator_approved=False,
+        evidence_refs=["trace:old"],
+    )
+    new = harness.plan_action(
+        action_id="new",
+        tool_ref="browser",
+        action_type="observe",
+        requested_effect="browser",
+        contains_private_data=False,
+        sandbox_state="session-readonly",
+        operator_approved=False,
+        evidence_refs=["trace:new"],
+    )
+    old_payload = json.loads(Path(old["artifact_path"]).read_text(encoding="utf-8"))
+    old_payload["sequence"] = 999
+    Path(old["artifact_path"]).write_text(json.dumps(old_payload), encoding="utf-8")
+
+    summary = ToolActionHarness(artifacts_dir=tmp_path).summary()
+
+    assert summary["plan_count"] == 1
+    assert summary["latest_plan"]["action_id"] == new["action_id"]
 
 
 @pytest.mark.parametrize("sequence", ["2", 0, -1, True, None])

@@ -12,6 +12,7 @@ MUTATING_ACTIONS = {"click", "type", "write", "submit", "delete", "shell", "inst
 MUTATING_ACTION_TOKENS = MUTATING_ACTIONS | {
     "add",
     "append",
+    "apply",
     "checkout",
     "chmod",
     "chown",
@@ -26,14 +27,17 @@ MUTATING_ACTION_TOKENS = MUTATING_ACTIONS | {
     "move",
     "pull",
     "push",
+    "remove",
     "reset",
     "rebase",
     "rename",
+    "overwrite",
     "replace",
     "rmdir",
     "run",
     "save",
     "stage",
+    "truncate",
     "update",
 }
 ELEVATED_TOOL_REFS = {"cmd", "powershell", "shell", "terminal"}
@@ -59,6 +63,7 @@ REQUIRED_PLAN_KEYS = {
     "findings",
     "trace_contract",
     "sequence",
+    "record_digest",
 }
 HASHED_PLAN_FILENAME = re.compile(r"^[0-9a-f]{64}\.json$")
 
@@ -120,6 +125,7 @@ class ToolActionHarness:
             "trace_contract": TRACE_CONTRACT,
             "sequence": self._next_sequence(),
         }
+        plan["record_digest"] = self._record_digest(plan)
         self._persist(plan)
         return copy.deepcopy(plan)
 
@@ -208,6 +214,8 @@ class ToolActionHarness:
         plan = self._validate_plan_shape(payload)
         if "artifact_path" not in plan:
             raise ValueError("persisted tool action plan missing artifact_path")
+        if not self._record_digest_matches(plan):
+            raise ValueError("tool action plan digest does not match payload")
         expected_path = self._artifact_path_for_action_id(plan["action_id"])
         if path.resolve() != expected_path.resolve():
             raise ValueError("tool action plan filename does not match action id")
@@ -246,6 +254,7 @@ class ToolActionHarness:
             "findings": self._validate_string_list("findings", payload["findings"]),
             "trace_contract": self._validate_string("trace_contract", payload["trace_contract"]),
             "sequence": self._validate_sequence(payload["sequence"]),
+            "record_digest": self._validate_string("record_digest", payload["record_digest"]),
         }
         if plan["surface_id"] != SURFACE_ID or plan["authority"] != AUTHORITY:
             raise ValueError("tool action plan authority fields are invalid")
@@ -336,6 +345,18 @@ class ToolActionHarness:
 
     def _sandbox_ready(self, sandbox_state: str) -> bool:
         return sandbox_state.strip().lower() in READY_SANDBOX_STATES
+
+    def _record_digest(self, plan: dict[str, Any]) -> str:
+        digest_payload = {
+            key: plan[key]
+            for key in sorted(REQUIRED_PLAN_KEYS - {"record_digest"})
+            if key in plan
+        }
+        payload = json.dumps(digest_payload, allow_nan=False, separators=(",", ":"), sort_keys=True)
+        return f"sha256:{hashlib.sha256(payload.encode('utf-8')).hexdigest()}"
+
+    def _record_digest_matches(self, plan: dict[str, Any]) -> bool:
+        return plan["record_digest"] == self._record_digest(plan)
 
     def _validate_string_list(self, name: str, values: Any) -> list[str]:
         if not isinstance(values, list):
