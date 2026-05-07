@@ -58,7 +58,7 @@ class PromotionTribunal:
 def _policy_hard_fail_count(policy_scan: dict[str, Any]) -> tuple[int, bool]:
     summary = policy_scan.get("summary")
     if not isinstance(summary, dict):
-        return 0, True
+        return 0, False
     return _safe_int(summary.get("active_hard_fail_count"))
 
 
@@ -70,5 +70,7 @@ def _safe_int(value: Any) -> tuple[int, bool]:
     try:
         parsed = int(value)
     except (TypeError, ValueError, OverflowError):
+        return 0, False
+    if parsed < 0:
         return 0, False
     return parsed, True

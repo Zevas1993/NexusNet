@@ -233,6 +233,46 @@ def test_promotion_tribunal_rejects_active_on_malformed_policy_counts(hard_fail_
     assert decision["active_promotion_allowed"] is False
 
 
+@pytest.mark.parametrize("policy_scan", [{}, {"summary": []}])
+def test_promotion_tribunal_rejects_active_without_valid_policy_summary(policy_scan):
+    decision = PromotionTribunal().decide(
+        case_id="case:growth:missing-policy-summary",
+        candidate_ref="growth:missing-policy-summary",
+        requested_state="active",
+        policy_scan=policy_scan,
+        eval_gate={"promotion_allowed": True},
+        artifact_trust={"promotion_allowed": True},
+        self_review={"status": "passed"},
+        memory_quality={"status": "verified"},
+        rollback={"rollback_restorable": True},
+        operator_approved=True,
+    )
+
+    assert decision["decision"] == "rejected"
+    assert "policy_scan_not_clear" in decision["blockers"]
+    assert decision["active_promotion_allowed"] is False
+
+
+@pytest.mark.parametrize("hard_fail_count", [-1, "-1"])
+def test_promotion_tribunal_rejects_active_on_negative_policy_counts(hard_fail_count):
+    decision = PromotionTribunal().decide(
+        case_id="case:growth:negative-policy-count",
+        candidate_ref="growth:negative-policy-count",
+        requested_state="active",
+        policy_scan={"summary": {"active_hard_fail_count": hard_fail_count}},
+        eval_gate={"promotion_allowed": True},
+        artifact_trust={"promotion_allowed": True},
+        self_review={"status": "passed"},
+        memory_quality={"status": "verified"},
+        rollback={"rollback_restorable": True},
+        operator_approved=True,
+    )
+
+    assert decision["decision"] == "rejected"
+    assert "policy_scan_not_clear" in decision["blockers"]
+    assert decision["active_promotion_allowed"] is False
+
+
 @pytest.mark.parametrize("hard_fail_count", [0, "0"])
 def test_promotion_tribunal_accepts_active_when_policy_count_valid_zero(hard_fail_count):
     decision = PromotionTribunal().decide(
