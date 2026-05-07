@@ -89,6 +89,7 @@ class ToolActionHarness:
         operator_approved: bool,
         evidence_refs: list[str],
     ) -> dict[str, Any]:
+        normalized_action_id = self._validate_string("action_id", action_id)
         normalized_action_type = self._validate_string("action_type", action_type)
         normalized_tool_ref = self._validate_string("tool_ref", tool_ref)
         normalized_sandbox_state = self._validate_sandbox_state(sandbox_state)
@@ -96,11 +97,13 @@ class ToolActionHarness:
         normalized_operator_approved = self._validate_bool("operator_approved", operator_approved)
         normalized_evidence_refs = self._validate_string_list("evidence_refs", evidence_refs)
         mutating = self._is_mutating_action(
+            action_id=normalized_action_id,
             tool_ref=normalized_tool_ref,
             action_type=normalized_action_type,
         )
 
         findings = self._derive_findings(
+            action_id=normalized_action_id,
             tool_ref=normalized_tool_ref,
             action_type=normalized_action_type,
             contains_private_data=normalized_private,
@@ -111,7 +114,7 @@ class ToolActionHarness:
         plan = {
             "surface_id": SURFACE_ID,
             "authority": AUTHORITY,
-            "action_id": self._validate_string("action_id", action_id),
+            "action_id": normalized_action_id,
             "tool_ref": normalized_tool_ref,
             "action_type": normalized_action_type,
             "requested_effect": self._validate_string("requested_effect", requested_effect),
@@ -262,6 +265,7 @@ class ToolActionHarness:
         if plan["trace_contract"] != TRACE_CONTRACT:
             raise ValueError("tool action plan trace contract is invalid")
         expected = self._derive_gate_fields(
+            action_id=plan["action_id"],
             tool_ref=plan["tool_ref"],
             action_type=plan["action_type"],
             contains_private_data=plan["contains_private_data"],
@@ -284,6 +288,7 @@ class ToolActionHarness:
     def _derive_gate_fields(
         self,
         *,
+        action_id: str,
         tool_ref: str,
         action_type: str,
         contains_private_data: bool,
@@ -292,6 +297,7 @@ class ToolActionHarness:
         evidence_refs: list[str],
     ) -> dict[str, Any]:
         findings = self._derive_findings(
+            action_id=action_id,
             tool_ref=tool_ref,
             action_type=action_type,
             contains_private_data=contains_private_data,
@@ -304,6 +310,7 @@ class ToolActionHarness:
             "status": "blocked" if findings else "planned-shadow",
             "execution_allowed": False,
             "operator_confirmation_required": self._is_mutating_action(
+                action_id=action_id,
                 tool_ref=tool_ref,
                 action_type=action_type,
             )
@@ -313,6 +320,7 @@ class ToolActionHarness:
     def _derive_findings(
         self,
         *,
+        action_id: str,
         tool_ref: str,
         action_type: str,
         contains_private_data: bool,
@@ -321,7 +329,7 @@ class ToolActionHarness:
         evidence_refs: list[str],
     ) -> list[str]:
         findings = []
-        mutating = self._is_mutating_action(tool_ref=tool_ref, action_type=action_type)
+        mutating = self._is_mutating_action(action_id=action_id, tool_ref=tool_ref, action_type=action_type)
         if not evidence_refs:
             findings.append("tool_action_requires_evidence_refs")
         if mutating and not self._sandbox_ready(sandbox_state):
@@ -332,12 +340,14 @@ class ToolActionHarness:
             findings.append("private_tool_context_requires_operator_confirmation")
         return findings
 
-    def _is_mutating_action(self, *, tool_ref: str, action_type: str) -> bool:
+    def _is_mutating_action(self, *, action_id: str, tool_ref: str, action_type: str) -> bool:
+        action_id_tokens = self._identifier_tokens(action_id)
         tool_tokens = self._identifier_tokens(tool_ref)
         action_tokens = self._identifier_tokens(action_type)
-        if any(token in MUTATING_ACTION_TOKENS for token in action_tokens + tool_tokens):
+        all_tokens = action_id_tokens + action_tokens + tool_tokens
+        if any(token in MUTATING_ACTION_TOKENS for token in all_tokens):
             return True
-        if any(token in ELEVATED_TOOL_REFS for token in tool_tokens):
+        if any(token in ELEVATED_TOOL_REFS for token in action_id_tokens + tool_tokens):
             return True
         return False
 

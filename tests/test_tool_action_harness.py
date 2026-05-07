@@ -126,6 +126,27 @@ def test_tool_action_harness_blocks_dotted_mutating_tool_refs(tmp_path, tool_ref
     assert "mutating_tool_action_requires_operator_confirmation" in result["findings"]
 
 
+@pytest.mark.parametrize("action_id", ["tool:shell.exec", "action:filesystem.write"])
+def test_tool_action_harness_blocks_elevated_mutating_action_ids(tmp_path, action_id):
+    harness = ToolActionHarness(artifacts_dir=tmp_path)
+
+    result = harness.plan_action(
+        action_id=action_id,
+        tool_ref="browser",
+        action_type="observe",
+        requested_effect="browser",
+        contains_private_data=False,
+        sandbox_state="none",
+        operator_approved=False,
+        evidence_refs=[f"trace:{action_id}"],
+    )
+
+    assert result["status"] == "blocked"
+    assert result["operator_confirmation_required"] is True
+    assert "mutating_tool_action_requires_sandbox" in result["findings"]
+    assert "mutating_tool_action_requires_operator_confirmation" in result["findings"]
+
+
 @pytest.mark.parametrize(
     "action_type",
     [
