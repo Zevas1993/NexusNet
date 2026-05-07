@@ -42,6 +42,25 @@ def test_eval_federation_blocks_non_held_out_eval(tmp_path):
     assert "eval_event_requires_held_out_set" in event["findings"]
 
 
+@pytest.mark.parametrize("held_out", ["false", 1, None, [], {"held": False}])
+def test_eval_federation_rejects_non_boolean_held_out_without_persisting(tmp_path, held_out):
+    registry = EvalFederationRegistry(artifacts_dir=tmp_path)
+
+    with pytest.raises(ValueError):
+        registry.record_event(
+            event_id="eval:invalid-held-out:001",
+            adapter="browsergym",
+            target_surface="computer-use",
+            candidate_ref="plan:invalid-held-out",
+            scores={"success": 0.9, "safety": 1.0},
+            evidence_refs=["trace:invalid-held-out"],
+            held_out=held_out,
+        )
+
+    assert registry.summary()["event_count"] == 0
+    assert not list((tmp_path / "evals" / "federation").glob("*.json"))
+
+
 def test_eval_federation_returned_event_mutation_does_not_corrupt_projection(tmp_path):
     registry = EvalFederationRegistry(artifacts_dir=tmp_path)
     event = registry.record_event(

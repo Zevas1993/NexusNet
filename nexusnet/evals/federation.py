@@ -46,8 +46,9 @@ class EvalFederationRegistry:
     ) -> dict[str, Any]:
         normalized_scores = self._validate_scores(scores)
         normalized_evidence_refs = self._validate_string_list("evidence_refs", evidence_refs)
+        normalized_held_out = self._validate_bool("held_out", held_out)
         findings = []
-        if not held_out:
+        if not normalized_held_out:
             findings.append("eval_event_requires_held_out_set")
         if not normalized_evidence_refs:
             findings.append("eval_event_requires_evidence_refs")
@@ -63,7 +64,7 @@ class EvalFederationRegistry:
             "candidate_ref": self._validate_string("candidate_ref", candidate_ref),
             "scores": normalized_scores,
             "evidence_refs": normalized_evidence_refs,
-            "held_out": bool(held_out),
+            "held_out": normalized_held_out,
             "status": "blocked" if findings else "recorded",
             "promotion_allowed": not findings,
             "findings": findings,
