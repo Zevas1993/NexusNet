@@ -100,6 +100,37 @@ def test_tool_action_harness_blocks_dotted_mutating_tool_refs(tmp_path, tool_ref
     assert "mutating_tool_action_requires_operator_confirmation" in result["findings"]
 
 
+@pytest.mark.parametrize(
+    "action_type",
+    [
+        "filesystem.rename",
+        "filesystem.create",
+        "filesystem.append",
+        "filesystem.replace",
+        "filesystem.edit",
+        "git.rebase",
+    ],
+)
+def test_tool_action_harness_blocks_common_write_capable_actions(tmp_path, action_type):
+    harness = ToolActionHarness(artifacts_dir=tmp_path)
+
+    result = harness.plan_action(
+        action_id=f"tool:{action_type}",
+        tool_ref=action_type.split(".", 1)[0],
+        action_type=action_type,
+        requested_effect=action_type.split(".", 1)[0],
+        contains_private_data=False,
+        sandbox_state="none",
+        operator_approved=False,
+        evidence_refs=[f"trace:{action_type}"],
+    )
+
+    assert result["status"] == "blocked"
+    assert result["operator_confirmation_required"] is True
+    assert "mutating_tool_action_requires_sandbox" in result["findings"]
+    assert "mutating_tool_action_requires_operator_confirmation" in result["findings"]
+
+
 def test_tool_action_harness_blocks_mutation_with_malformed_sandbox_state(tmp_path):
     harness = ToolActionHarness(artifacts_dir=tmp_path)
 
@@ -283,6 +314,57 @@ def test_tool_action_harness_fresh_summary_sees_persisted_plans(tmp_path):
     assert summary["plan_count"] == 1
     assert summary["runtime_state"] == "degraded"
     assert summary["latest_plan"]["action_id"] == result["action_id"]
+
+
+def test_tool_action_harness_fresh_summary_preserves_latest_plan_order(tmp_path):
+    harness = ToolActionHarness(artifacts_dir=tmp_path)
+    old = harness.plan_action(
+        action_id="z-old",
+        tool_ref="browser",
+        action_type="observe",
+        requested_effect="browser",
+        contains_private_data=False,
+        sandbox_state="session-readonly",
+        operator_approved=False,
+        evidence_refs=["trace:old"],
+    )
+    new = harness.plan_action(
+        action_id="a-new",
+        tool_ref="browser",
+        action_type="observe",
+        requested_effect="browser",
+        contains_private_data=False,
+        sandbox_state="session-readonly",
+        operator_approved=False,
+        evidence_refs=["trace:new"],
+    )
+
+    assert harness.summary()["latest_plan"]["action_id"] == new["action_id"]
+    assert ToolActionHarness(artifacts_dir=tmp_path).summary()["latest_plan"]["action_id"] == new["action_id"]
+    assert old["action_id"] != new["action_id"]
+
+
+@pytest.mark.parametrize("sequence", ["2", 0, -1, True, None])
+def test_tool_action_harness_skips_malformed_persisted_sequence(tmp_path, sequence):
+    harness = ToolActionHarness(artifacts_dir=tmp_path)
+    plan = harness.plan_action(
+        action_id="tool:browser:observe",
+        tool_ref="browser",
+        action_type="observe",
+        requested_effect="browser",
+        contains_private_data=False,
+        sandbox_state="session-readonly",
+        operator_approved=False,
+        evidence_refs=["trace:observe"],
+    )
+    payload = json.loads(Path(plan["artifact_path"]).read_text(encoding="utf-8"))
+    payload["sequence"] = sequence
+    Path(plan["artifact_path"]).write_text(json.dumps(payload), encoding="utf-8")
+
+    summary = ToolActionHarness(artifacts_dir=tmp_path).summary()
+
+    assert summary["plan_count"] == 0
+    assert summary["latest_plan"] is None
 
 
 def test_tool_action_harness_skips_invalid_disk_plans_without_hiding_valid_plan(tmp_path):

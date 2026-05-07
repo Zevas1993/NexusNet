@@ -10,11 +10,15 @@ from typing import Any
 
 MUTATING_ACTIONS = {"click", "type", "write", "submit", "delete", "shell", "install"}
 MUTATING_ACTION_TOKENS = MUTATING_ACTIONS | {
+    "add",
+    "append",
     "checkout",
     "chmod",
     "chown",
     "commit",
     "copy",
+    "create",
+    "edit",
     "exec",
     "execute",
     "merge",
@@ -23,8 +27,14 @@ MUTATING_ACTION_TOKENS = MUTATING_ACTIONS | {
     "pull",
     "push",
     "reset",
+    "rebase",
+    "rename",
+    "replace",
     "rmdir",
     "run",
+    "save",
+    "stage",
+    "update",
 }
 ELEVATED_TOOL_REFS = {"cmd", "powershell", "shell", "terminal"}
 UNKNOWN_SANDBOX_STATES = {"", "none", "unknown"}
@@ -48,6 +58,7 @@ REQUIRED_PLAN_KEYS = {
     "operator_confirmation_required",
     "findings",
     "trace_contract",
+    "sequence",
 }
 HASHED_PLAN_FILENAME = re.compile(r"^[0-9a-f]{64}\.json$")
 
@@ -107,6 +118,7 @@ class ToolActionHarness:
             "operator_confirmation_required": mutating or normalized_private,
             "findings": findings,
             "trace_contract": TRACE_CONTRACT,
+            "sequence": self._next_sequence(),
         }
         self._persist(plan)
         return copy.deepcopy(plan)
@@ -169,7 +181,7 @@ class ToolActionHarness:
                 except (OSError, json.JSONDecodeError, ValueError, TypeError):
                     continue
                 action_id = plan["action_id"]
-                if action_id not in disk_by_action_id or path.name > disk_by_action_id[action_id][0]:
+                if action_id not in disk_by_action_id or plan["sequence"] > disk_by_action_id[action_id][1]["sequence"]:
                     disk_by_action_id[action_id] = (path.name, plan)
 
         plans = [copy.deepcopy(memory_by_action_id[action_id]) for action_id in memory_order]
@@ -178,9 +190,17 @@ class ToolActionHarness:
             for action_id, (_, plan) in disk_by_action_id.items()
             if action_id not in memory_by_action_id
         ]
-        disk_only.sort(key=lambda item: item["action_id"], reverse=True)
+        disk_only.sort(key=lambda item: (item["sequence"], item["action_id"]), reverse=True)
         plans.extend(copy.deepcopy(plan) for plan in disk_only)
         return plans
+
+    def _next_sequence(self) -> int:
+        sequences = [
+            plan["sequence"]
+            for plan in self._list_plans()
+            if isinstance(plan.get("sequence"), int) and not isinstance(plan.get("sequence"), bool)
+        ]
+        return (max(sequences) if sequences else 0) + 1
 
     def _validate_persisted_plan(self, payload: Any, *, path: Path) -> dict[str, Any]:
         if not HASHED_PLAN_FILENAME.fullmatch(path.name):
@@ -225,6 +245,7 @@ class ToolActionHarness:
             ),
             "findings": self._validate_string_list("findings", payload["findings"]),
             "trace_contract": self._validate_string("trace_contract", payload["trace_contract"]),
+            "sequence": self._validate_sequence(payload["sequence"]),
         }
         if plan["surface_id"] != SURFACE_ID or plan["authority"] != AUTHORITY:
             raise ValueError("tool action plan authority fields are invalid")
@@ -336,4 +357,9 @@ class ToolActionHarness:
     def _validate_bool(self, name: str, value: Any) -> bool:
         if not isinstance(value, bool):
             raise ValueError(f"{name} must be a boolean")
+        return value
+
+    def _validate_sequence(self, value: Any) -> int:
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ValueError("sequence must be a positive integer")
         return value
