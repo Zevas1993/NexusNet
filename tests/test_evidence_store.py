@@ -164,3 +164,30 @@ def test_evidence_store_duplicate_persisted_records_do_not_inflate_counts(tmp_pa
     assert projection["record_count"] == 1
     assert projection["kind_counts"]["eval"] == 1
     assert projection["latest_hash"] == record["content_hash"]
+
+
+def test_evidence_store_skips_tampered_disk_record_claiming_valid_hash(tmp_path):
+    store = EvidenceStore(artifacts_dir=tmp_path)
+    first = store.append(
+        kind="eval",
+        subject_ref="suite:canonical",
+        payload={"score": 0.91},
+        source_refs=["eval:canonical"],
+    )
+    second = store.append(
+        kind="policy",
+        subject_ref="policy:canonical",
+        payload={"blocked": False},
+        source_refs=["policy:canonical"],
+    )
+    records_dir = tmp_path / "evidence" / "records"
+    tampered = json.loads(Path(first["artifact_path"]).read_text(encoding="utf-8"))
+    tampered["kind"] = "policy"
+    tampered["payload"] = {"score": 0.0, "tampered": True}
+    (records_dir / "0000-tampered.json").write_text(json.dumps(tampered), encoding="utf-8")
+
+    projection = EvidenceStore(artifacts_dir=tmp_path).projection()
+
+    assert projection["record_count"] == 2
+    assert projection["kind_counts"] == {"eval": 1, "policy": 1}
+    assert projection["latest_hash"] == second["content_hash"]

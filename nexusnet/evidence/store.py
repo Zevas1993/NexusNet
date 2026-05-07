@@ -92,11 +92,25 @@ class EvidenceStore:
                     if not isinstance(payload, dict):
                         continue
                     record = EvidenceRecord(**payload).model_dump(mode="json")
+                    if not self._record_hash_matches(record):
+                        continue
                 except (OSError, json.JSONDecodeError, ValidationError):
                     continue
                 key = record.get("content_hash") or record["record_id"]
                 records_by_key.setdefault(key, record)
         return self._chain_ordered(list(records_by_key.values()))
+
+    def _record_hash_matches(self, record: dict[str, Any]) -> bool:
+        hash_base = {
+            "record_id": record["record_id"],
+            "kind": record["kind"],
+            "subject_ref": record["subject_ref"],
+            "payload": record["payload"],
+            "source_refs": record["source_refs"],
+            "previous_hash": record["previous_hash"],
+        }
+        digest = hashlib.sha256(self._canonical_json(hash_base).encode("utf-8")).hexdigest()
+        return record["content_hash"] == f"sha256:{digest}"
 
     def _chain_ordered(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not records:
