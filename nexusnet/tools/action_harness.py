@@ -43,6 +43,7 @@ MUTATING_ACTION_TOKENS = MUTATING_ACTIONS | {
 ELEVATED_TOOL_REFS = {"cmd", "powershell", "shell", "terminal"}
 UNKNOWN_SANDBOX_STATES = {"", "none", "unknown"}
 READY_SANDBOX_STATES = {"operator-sandbox-ready", "ready", "sandbox-ready", "session-shadow"}
+ALLOWED_SANDBOX_STATES = READY_SANDBOX_STATES | UNKNOWN_SANDBOX_STATES | {"session-readonly"}
 SURFACE_ID = "tool-action-harness"
 AUTHORITY = "NexusBrain"
 TRACE_CONTRACT = "plan-only-replayable-no-direct-tool-execution"
@@ -90,7 +91,7 @@ class ToolActionHarness:
     ) -> dict[str, Any]:
         normalized_action_type = self._validate_string("action_type", action_type)
         normalized_tool_ref = self._validate_string("tool_ref", tool_ref)
-        normalized_sandbox_state = self._validate_string("sandbox_state", sandbox_state)
+        normalized_sandbox_state = self._validate_sandbox_state(sandbox_state)
         normalized_private = self._validate_bool("contains_private_data", contains_private_data)
         normalized_operator_approved = self._validate_bool("operator_approved", operator_approved)
         normalized_evidence_refs = self._validate_string_list("evidence_refs", evidence_refs)
@@ -242,7 +243,7 @@ class ToolActionHarness:
                 "contains_private_data",
                 payload["contains_private_data"],
             ),
-            "sandbox_state": self._validate_string("sandbox_state", payload["sandbox_state"]),
+            "sandbox_state": self._validate_sandbox_state(payload["sandbox_state"]),
             "operator_approved": self._validate_bool("operator_approved", payload["operator_approved"]),
             "evidence_refs": self._validate_string_list("evidence_refs", payload["evidence_refs"]),
             "status": self._validate_string("status", payload["status"]),
@@ -345,6 +346,12 @@ class ToolActionHarness:
 
     def _sandbox_ready(self, sandbox_state: str) -> bool:
         return sandbox_state.strip().lower() in READY_SANDBOX_STATES
+
+    def _validate_sandbox_state(self, value: Any) -> str:
+        sandbox_state = self._validate_string("sandbox_state", value)
+        if sandbox_state.strip().lower() not in ALLOWED_SANDBOX_STATES:
+            raise ValueError("sandbox_state is not an allowed sandbox state")
+        return sandbox_state
 
     def _record_digest(self, plan: dict[str, Any]) -> str:
         digest_payload = {

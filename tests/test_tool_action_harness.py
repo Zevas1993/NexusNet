@@ -29,6 +29,28 @@ def test_tool_action_harness_allows_readonly_observation(tmp_path):
     assert result["operator_confirmation_required"] is False
 
 
+def test_tool_action_harness_rejects_readonly_malformed_sandbox_state_without_persisting(tmp_path):
+    harness = ToolActionHarness(artifacts_dir=tmp_path)
+
+    with pytest.raises(ValueError, match="sandbox_state is not an allowed sandbox state"):
+        harness.plan_action(
+            action_id="tool:browser:observe:not-ready",
+            tool_ref="browser",
+            action_type="observe",
+            requested_effect="browser",
+            contains_private_data=False,
+            sandbox_state="not-ready",
+            operator_approved=False,
+            evidence_refs=["trace:observe"],
+        )
+
+    summary = ToolActionHarness(artifacts_dir=tmp_path).summary()
+
+    assert summary["plan_count"] == 0
+    assert summary["latest_plan"] is None
+    assert list((tmp_path / "tools" / "action-harness").glob("*.json")) == []
+
+
 def test_tool_action_harness_requires_confirmation_for_mutation(tmp_path):
     harness = ToolActionHarness(artifacts_dir=tmp_path)
 
@@ -142,20 +164,22 @@ def test_tool_action_harness_blocks_common_write_capable_actions(tmp_path, actio
 def test_tool_action_harness_blocks_mutation_with_malformed_sandbox_state(tmp_path):
     harness = ToolActionHarness(artifacts_dir=tmp_path)
 
-    result = harness.plan_action(
-        action_id="tool:shell:exec:not-ready",
-        tool_ref="shell",
-        action_type="shell.exec",
-        requested_effect="shell",
-        contains_private_data=False,
-        sandbox_state="not-ready",
-        operator_approved=True,
-        evidence_refs=["trace:shell.exec"],
-    )
+    with pytest.raises(ValueError, match="sandbox_state is not an allowed sandbox state"):
+        harness.plan_action(
+            action_id="tool:shell:exec:not-ready",
+            tool_ref="shell",
+            action_type="shell.exec",
+            requested_effect="shell",
+            contains_private_data=False,
+            sandbox_state="not-ready",
+            operator_approved=True,
+            evidence_refs=["trace:shell.exec"],
+        )
 
-    assert result["status"] == "blocked"
-    assert result["operator_confirmation_required"] is True
-    assert "mutating_tool_action_requires_sandbox" in result["findings"]
+    summary = ToolActionHarness(artifacts_dir=tmp_path).summary()
+
+    assert summary["plan_count"] == 0
+    assert summary["latest_plan"] is None
 
 
 def test_tool_action_harness_allows_approved_mutation_with_ready_sandbox(tmp_path):
