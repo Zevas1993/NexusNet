@@ -28,6 +28,7 @@ MUTATING_ACTION_TOKENS = MUTATING_ACTIONS | {
 }
 ELEVATED_TOOL_REFS = {"cmd", "powershell", "shell", "terminal"}
 UNKNOWN_SANDBOX_STATES = {"", "none", "unknown"}
+READY_SANDBOX_STATES = {"operator-sandbox-ready", "ready", "sandbox-ready", "session-shadow"}
 SURFACE_ID = "tool-action-harness"
 AUTHORITY = "NexusBrain"
 TRACE_CONTRACT = "plan-only-replayable-no-direct-tool-execution"
@@ -292,7 +293,7 @@ class ToolActionHarness:
         mutating = self._is_mutating_action(tool_ref=tool_ref, action_type=action_type)
         if not evidence_refs:
             findings.append("tool_action_requires_evidence_refs")
-        if mutating and sandbox_state in UNKNOWN_SANDBOX_STATES:
+        if mutating and not self._sandbox_ready(sandbox_state):
             findings.append("mutating_tool_action_requires_sandbox")
         if mutating and not operator_approved:
             findings.append("mutating_tool_action_requires_operator_confirmation")
@@ -311,6 +312,9 @@ class ToolActionHarness:
 
     def _identifier_tokens(self, value: str) -> list[str]:
         return [token for token in re.split(r"[^A-Za-z0-9]+", value.lower()) if token]
+
+    def _sandbox_ready(self, sandbox_state: str) -> bool:
+        return sandbox_state.strip().lower() in READY_SANDBOX_STATES
 
     def _validate_string_list(self, name: str, values: Any) -> list[str]:
         if not isinstance(values, list):

@@ -100,6 +100,45 @@ def test_tool_action_harness_blocks_dotted_mutating_tool_refs(tmp_path, tool_ref
     assert "mutating_tool_action_requires_operator_confirmation" in result["findings"]
 
 
+def test_tool_action_harness_blocks_mutation_with_malformed_sandbox_state(tmp_path):
+    harness = ToolActionHarness(artifacts_dir=tmp_path)
+
+    result = harness.plan_action(
+        action_id="tool:shell:exec:not-ready",
+        tool_ref="shell",
+        action_type="shell.exec",
+        requested_effect="shell",
+        contains_private_data=False,
+        sandbox_state="not-ready",
+        operator_approved=True,
+        evidence_refs=["trace:shell.exec"],
+    )
+
+    assert result["status"] == "blocked"
+    assert result["operator_confirmation_required"] is True
+    assert "mutating_tool_action_requires_sandbox" in result["findings"]
+
+
+def test_tool_action_harness_allows_approved_mutation_with_ready_sandbox(tmp_path):
+    harness = ToolActionHarness(artifacts_dir=tmp_path)
+
+    result = harness.plan_action(
+        action_id="tool:shell:exec:ready",
+        tool_ref="shell",
+        action_type="shell.exec",
+        requested_effect="shell",
+        contains_private_data=False,
+        sandbox_state="sandbox-ready",
+        operator_approved=True,
+        evidence_refs=["trace:shell.exec"],
+    )
+
+    assert result["status"] == "planned-shadow"
+    assert result["execution_allowed"] is False
+    assert result["operator_confirmation_required"] is True
+    assert result["findings"] == []
+
+
 @pytest.mark.parametrize("invalid_value", [[], {}])
 def test_tool_action_harness_rejects_invalid_sandbox_state_without_persisting(
     tmp_path,
