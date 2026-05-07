@@ -191,3 +191,45 @@ def test_evidence_store_skips_tampered_disk_record_claiming_valid_hash(tmp_path)
     assert projection["record_count"] == 2
     assert projection["kind_counts"] == {"eval": 1, "policy": 1}
     assert projection["latest_hash"] == second["content_hash"]
+
+
+def test_evidence_store_returned_in_memory_record_is_defensive_copy():
+    store = EvidenceStore()
+    first = store.append(
+        kind="eval",
+        subject_ref="suite:in-memory",
+        payload={"score": 0.91},
+        source_refs=["eval:in-memory"],
+    )
+    second = store.append(
+        kind="policy",
+        subject_ref="policy:in-memory",
+        payload={"blocked": False},
+        source_refs=["policy:in-memory"],
+    )
+
+    first["kind"] = "policy"
+    first["payload"] = {"score": 0.0, "tampered": True}
+
+    projection = store.projection()
+
+    assert projection["record_count"] == 2
+    assert projection["kind_counts"] == {"eval": 1, "policy": 1}
+    assert projection["latest_hash"] == second["content_hash"]
+
+
+def test_evidence_store_skips_hash_invalid_internal_memory_records():
+    store = EvidenceStore()
+    record = store.append(
+        kind="eval",
+        subject_ref="suite:internal",
+        payload={"score": 0.91},
+        source_refs=["eval:internal"],
+    )
+    store._records[0] = {**record, "kind": "policy", "payload": {"score": 0.0, "tampered": True}}
+
+    projection = store.projection()
+
+    assert projection["record_count"] == 0
+    assert projection["kind_counts"] == {}
+    assert projection["latest_hash"] == ""

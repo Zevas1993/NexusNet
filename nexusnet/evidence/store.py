@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import Counter
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -45,7 +46,7 @@ class EvidenceStore:
         }
         record = EvidenceRecord(**record).model_dump(mode="json")
         self._persist(record, digest)
-        return record
+        return deepcopy(record)
 
     def projection(self) -> dict[str, Any]:
         records = self._merged_records()
@@ -61,13 +62,13 @@ class EvidenceStore:
 
     def _persist(self, record: dict[str, Any], digest: str) -> None:
         if self.records_dir is None:
-            self._records.append(record)
+            self._records.append(deepcopy(record))
             return
         path = self._artifact_path_for_digest(digest)
         record["artifact_path"] = str(path)
         record = EvidenceRecord(**record).model_dump(mode="json")
         path.write_text(self._canonical_json(record), encoding="utf-8")
-        self._records.append(record)
+        self._records.append(deepcopy(record))
 
     def _artifact_path_for_digest(self, digest: str) -> Path:
         if self.records_dir is None:
@@ -83,6 +84,8 @@ class EvidenceStore:
         records_by_key: dict[str, dict[str, Any]] = {}
         for record in self._records:
             valid_record = EvidenceRecord(**record).model_dump(mode="json")
+            if not self._record_hash_matches(valid_record):
+                continue
             key = valid_record.get("content_hash") or valid_record["record_id"]
             records_by_key[key] = valid_record
         if self.records_dir is not None:
