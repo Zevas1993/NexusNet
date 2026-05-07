@@ -18,6 +18,7 @@ MUTATING_ACTION_TOKENS = MUTATING_ACTIONS | {
     "chown",
     "commit",
     "copy",
+    "cp",
     "create",
     "edit",
     "exec",
@@ -25,19 +26,23 @@ MUTATING_ACTION_TOKENS = MUTATING_ACTIONS | {
     "merge",
     "mkdir",
     "move",
+    "mv",
     "pull",
     "push",
     "remove",
     "reset",
     "rebase",
     "rename",
+    "rm",
     "overwrite",
     "replace",
     "rmdir",
     "run",
     "save",
     "stage",
+    "touch",
     "truncate",
+    "unlink",
     "update",
 }
 ELEVATED_TOOL_REFS = {"cmd", "powershell", "shell", "terminal"}
@@ -64,6 +69,7 @@ REQUIRED_PLAN_KEYS = {
     "findings",
     "trace_contract",
     "sequence",
+    "previous_record_digest",
     "record_digest",
 }
 HASHED_PLAN_FILENAME = re.compile(r"^[0-9a-f]{64}\.json$")
@@ -111,6 +117,7 @@ class ToolActionHarness:
             operator_approved=normalized_operator_approved,
             evidence_refs=normalized_evidence_refs,
         )
+        existing_plans = self._list_plans()
         plan = {
             "surface_id": SURFACE_ID,
             "authority": AUTHORITY,
@@ -127,7 +134,8 @@ class ToolActionHarness:
             "operator_confirmation_required": mutating or normalized_private,
             "findings": findings,
             "trace_contract": TRACE_CONTRACT,
-            "sequence": self._next_sequence(),
+            "sequence": self._next_sequence(existing_plans),
+            "previous_record_digest": existing_plans[0]["record_digest"] if existing_plans else "",
         }
         plan["record_digest"] = self._record_digest(plan)
         self._persist(plan)
@@ -204,10 +212,11 @@ class ToolActionHarness:
         plans.extend(copy.deepcopy(plan) for plan in disk_only)
         return plans
 
-    def _next_sequence(self) -> int:
+    def _next_sequence(self, plans: list[dict[str, Any]] | None = None) -> int:
+        plans = self._list_plans() if plans is None else plans
         sequences = [
             plan["sequence"]
-            for plan in self._list_plans()
+            for plan in plans
             if isinstance(plan.get("sequence"), int) and not isinstance(plan.get("sequence"), bool)
         ]
         return (max(sequences) if sequences else 0) + 1
@@ -258,8 +267,16 @@ class ToolActionHarness:
             "findings": self._validate_string_list("findings", payload["findings"]),
             "trace_contract": self._validate_string("trace_contract", payload["trace_contract"]),
             "sequence": self._validate_sequence(payload["sequence"]),
+            "previous_record_digest": self._validate_optional_string(
+                "previous_record_digest",
+                payload["previous_record_digest"],
+            ),
             "record_digest": self._validate_string("record_digest", payload["record_digest"]),
         }
+        if plan["sequence"] == 1 and plan["previous_record_digest"]:
+            raise ValueError("first tool action plan cannot reference a previous digest")
+        if plan["sequence"] > 1 and not plan["previous_record_digest"]:
+            raise ValueError("tool action plan sequence requires previous digest")
         if plan["surface_id"] != SURFACE_ID or plan["authority"] != AUTHORITY:
             raise ValueError("tool action plan authority fields are invalid")
         if plan["trace_contract"] != TRACE_CONTRACT:
@@ -390,6 +407,11 @@ class ToolActionHarness:
             raise ValueError(f"{name} must be a string")
         if not value.strip():
             raise ValueError(f"{name} must be a non-empty string")
+        return value
+
+    def _validate_optional_string(self, name: str, value: Any) -> str:
+        if not isinstance(value, str):
+            raise ValueError(f"{name} must be a string")
         return value
 
     def _validate_bool(self, name: str, value: Any) -> bool:

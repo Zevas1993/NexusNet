@@ -182,6 +182,27 @@ def test_tool_action_harness_blocks_common_write_capable_actions(tmp_path, actio
     assert "mutating_tool_action_requires_operator_confirmation" in result["findings"]
 
 
+@pytest.mark.parametrize("action_type", ["rm", "fs.rm", "mv", "cp", "unlink", "touch"])
+def test_tool_action_harness_blocks_common_short_mutation_aliases(tmp_path, action_type):
+    harness = ToolActionHarness(artifacts_dir=tmp_path)
+
+    result = harness.plan_action(
+        action_id=f"tool:{action_type}",
+        tool_ref="fs",
+        action_type=action_type,
+        requested_effect="filesystem",
+        contains_private_data=False,
+        sandbox_state="session-readonly",
+        operator_approved=False,
+        evidence_refs=[f"trace:{action_type}"],
+    )
+
+    assert result["status"] == "blocked"
+    assert result["operator_confirmation_required"] is True
+    assert "mutating_tool_action_requires_sandbox" in result["findings"]
+    assert "mutating_tool_action_requires_operator_confirmation" in result["findings"]
+
+
 def test_tool_action_harness_blocks_mutation_with_malformed_sandbox_state(tmp_path):
     harness = ToolActionHarness(artifacts_dir=tmp_path)
 
@@ -450,6 +471,38 @@ def test_tool_action_harness_skips_sequence_tampering_on_fresh_reload(tmp_path):
     summary = ToolActionHarness(artifacts_dir=tmp_path).summary()
 
     assert summary["plan_count"] == 1
+    assert summary["latest_plan"]["action_id"] == new["action_id"]
+
+
+def test_tool_action_harness_skips_recomputed_sequence_tampering_on_fresh_reload(tmp_path):
+    harness = ToolActionHarness(artifacts_dir=tmp_path)
+    old = harness.plan_action(
+        action_id="old",
+        tool_ref="browser",
+        action_type="observe",
+        requested_effect="browser",
+        contains_private_data=False,
+        sandbox_state="session-readonly",
+        operator_approved=False,
+        evidence_refs=["trace:old"],
+    )
+    new = harness.plan_action(
+        action_id="new",
+        tool_ref="browser",
+        action_type="observe",
+        requested_effect="browser",
+        contains_private_data=False,
+        sandbox_state="session-readonly",
+        operator_approved=False,
+        evidence_refs=["trace:new"],
+    )
+    old_payload = json.loads(_artifact_file(tmp_path, old).read_text(encoding="utf-8"))
+    old_payload["sequence"] = 999
+    old_payload["record_digest"] = harness._record_digest(old_payload)
+    _artifact_file(tmp_path, old).write_text(json.dumps(old_payload), encoding="utf-8")
+
+    summary = ToolActionHarness(artifacts_dir=tmp_path).summary()
+
     assert summary["latest_plan"]["action_id"] == new["action_id"]
 
 
