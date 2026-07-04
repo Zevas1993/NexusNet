@@ -42,8 +42,10 @@ runtime/logs/
 *.log
 
 # Local runtime state and generated artifacts
+artifacts/
 data/*.duckdb
 runtime/artifacts/
+runtime/nn-release-surface-debug-*/
 runtime/manual-test-root/
 runtime/quantlab/
 runtime/state/*
