@@ -36,9 +36,22 @@ The primary artifact should be `docs/CONSOLIDATION_STATUS_2026-07-04.md`. That d
 3. Preserved artifacts
 4. Branch-ref interpretation
 5. Rules for future work
-6. Verification evidence from the consolidation run
+6. Planned placeholders and future assimilation items
+7. Verification evidence from the consolidation run
 
 The language should avoid broad readiness claims. It should say the project is aligned at the tracked repo/worktree level and GitNexus-indexed at the stated commit, not that every product feature is complete.
+
+## Planned Placeholders And Assimilation Items
+
+Placeholders are valid planning artifacts when they clearly represent future work before production. The consolidation document should preserve intentional placeholders, future assimilation items, and roadmap targets as first-class plans, not remove them or treat them as defects.
+
+The distinction should be explicit:
+
+- Valid placeholders identify a planned capability, future assimilation target, open implementation slice, or pre-production gate.
+- Valid placeholders state that the item is not production-complete yet.
+- Invalid placeholders are ambiguous notes that look like missing information, such as unlabeled `TBD` entries, vague promises, or claims that imply implementation without evidence.
+
+The consolidation document should therefore label future items as `planned`, `pre-production`, `future assimilation`, or `blocked pending evidence` rather than deleting them. This keeps the roadmap intact while preventing future agents from confusing planned work with verified implementation.
 
 ## Future Agent Rules
 
@@ -60,6 +73,8 @@ For the documentation-only implementation:
 - Run `git status --short --branch`.
 
 No pytest run is required for the documentation-only implementation unless code, schemas, routes, or test files are modified.
+
+The spec self-review should not remove intentional roadmap placeholders. It should only correct placeholders that are ambiguous, unlabeled, contradictory, or presented as implemented without evidence.
 
 ## Non-Goals
 
