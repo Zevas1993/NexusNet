@@ -1,0 +1,38 @@
+workflow_id: nexus-context-graph-refresh
+label: Nexus Context Graph Refresh
+description: Metadata-first persistent context graph refresh planning for code, docs, and mixed corpora.
+version: "1.0"
+starter: true
+requested_tools:
+  - filesystem.readonly
+nodes:
+  - id: classify-corpus
+    kind: prompt
+    prompt: Classify the corpus into code, docs, media, and governed semantic extraction candidates.
+    fresh_context: true
+  - id: plan-local-passes
+    kind: validation
+    depends_on:
+      - classify-corpus
+    validation:
+      profile: context-graph-local-pass-plan
+      gates:
+        - no-package-install
+        - no-hook-write
+        - no-model-extraction-without-policy
+  - id: graph-artifact-plan
+    kind: artifact
+    depends_on:
+      - plan-local-passes
+    artifacts:
+      - GRAPH_REPORT.md
+      - graph.json
+      - graph.html
+      - manifest.json
+  - id: graph-review
+    kind: review
+    depends_on:
+      - graph-artifact-plan
+    prompt: Review the planned graph context artifacts and hook posture without mutating assistant configuration.
+    fresh_context: true
+

@@ -1,0 +1,29 @@
+workflow_id: nexus-plan-review-loop
+label: Nexus Plan Review Loop
+description: Plannotator-inspired file-backed plan review with denial analytics and validation-only approval.
+version: "1.0"
+starter: true
+nodes:
+  - id: submit-plan
+    kind: plan_review
+    prompt: Submit a file-backed plan artifact for review.
+    artifacts:
+      - plan-review.json
+  - id: annotate
+    kind: review
+    depends_on:
+      - submit-plan
+    prompt: Record annotations, blockers, and review notes.
+  - id: revise
+    kind: prompt
+    depends_on:
+      - annotate
+    prompt: Revise the plan and surface the diff from the previous version.
+    fresh_context: true
+  - id: approve-for-validation
+    kind: approval
+    depends_on:
+      - revise
+    approval:
+      mode: human
+      grants_execution: false

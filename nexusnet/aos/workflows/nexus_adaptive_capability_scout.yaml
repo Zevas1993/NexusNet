@@ -1,0 +1,33 @@
+workflow_id: nexus-adaptive-capability-scout
+label: Nexus Adaptive Capability Scout
+description: Research capability sources, normalize candidates, classify hardware-tier fit, and hold for governed review.
+version: "1.0"
+starter: true
+nodes:
+  - id: research-source-plan
+    kind: prompt
+    prompt: Normalize the requested scout query into approved source templates and metadata-only fetch plans.
+    artifacts:
+      - research-scout-source-plan.json
+  - id: candidate-normalization
+    kind: validation
+    depends_on:
+      - research-source-plan
+    validation:
+      gates:
+        - research-provenance-gate
+        - license-review
+        - security-review
+  - id: tier-fit-review
+    kind: review
+    depends_on:
+      - candidate-normalization
+    prompt: Review candidate hardware-tier fit, dependency posture, claimed capability, and required eval suite.
+    fresh_context: true
+  - id: hold-for-operator
+    kind: approval
+    depends_on:
+      - tier-fit-review
+    approval:
+      mode: operator
+      grants_execution: false

@@ -1,0 +1,42 @@
+workflow_id: nexus-durable-agent-run
+label: Nexus Durable Agent Run
+description: Metadata-first durable agent lane with checkpoints, resume, interrupt, replay, and human state edit governance.
+version: "1.0"
+starter: true
+requested_tools:
+  - filesystem.write
+nodes:
+  - id: intake
+    kind: prompt
+    prompt: Normalize the operator request into a durable run ledger entry.
+    artifacts:
+      - durable-run-intake.json
+  - id: checkpoint-plan
+    kind: artifact
+    depends_on:
+      - intake
+    prompt: Record deterministic checkpoints without mutating workspace state.
+    artifacts:
+      - durable-run-checkpoints.json
+  - id: interrupt-review
+    kind: approval
+    depends_on:
+      - checkpoint-plan
+    approval:
+      mode: human-state-edit
+      grants_execution: false
+  - id: replay-validation
+    kind: validation
+    depends_on:
+      - interrupt-review
+    validation:
+      gates:
+        - gateway-policy
+        - product-sweep
+        - deterministic-replay
+  - id: ledger-report
+    kind: review
+    depends_on:
+      - replay-validation
+    prompt: Review durable-run metadata and confirm mutation remains denied by default.
+    fresh_context: true

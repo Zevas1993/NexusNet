@@ -1,0 +1,38 @@
+workflow_id: nexus-issue-reproduction-check
+label: Nexus Issue Reproduction Check
+description: Evidence-first issue reproduction lane that treats static-only diagnosis as partial or blocked.
+version: "1.0"
+starter: true
+requested_tools:
+  - filesystem.readonly
+nodes:
+  - id: classify-repro-surface
+    kind: prompt
+    prompt: Decide whether CLI, API, UI, browser, database, or workflow execution evidence is needed to reproduce the issue.
+    fresh_context: true
+  - id: reproduction-evidence-gate
+    kind: validation
+    depends_on:
+      - classify-repro-surface
+    validation:
+      profile: real-reproduction-required
+      gates:
+        - static-analysis-not-sufficient
+        - command-log-required
+        - browser-artifact-required-when-ui
+        - issue-comment-must-cite-evidence
+  - id: reproduction-artifacts
+    kind: artifact
+    depends_on:
+      - reproduction-evidence-gate
+    artifacts:
+      - reproduction-log.json
+      - command-output.txt
+      - screenshot-or-cli-trace.txt
+  - id: reproduction-review
+    kind: review
+    depends_on:
+      - reproduction-artifacts
+    prompt: Confirm whether the evidence proves reproduction, partial reproduction, or non-reproduction.
+    fresh_context: true
+

@@ -1,0 +1,41 @@
+workflow_id: nexus-parallel-validation
+label: Nexus Parallel Validation
+description: Governed validation lane for assigned ports, service startup evidence, logs, and artifacts.
+version: "1.0"
+starter: true
+requested_tools:
+  - filesystem.readonly
+nodes:
+  - id: assigned-port-check
+    kind: validation
+    validation:
+      profile: port-probe
+      gates:
+        - assigned-port
+        - no-port-conflict
+  - id: e2e-smoke
+    kind: validation
+    depends_on:
+      - assigned-port-check
+    validation:
+      profile: browser-smoke
+      gates:
+        - app-started
+        - user-flow-artifact
+    artifacts:
+      - e2e-trace.json
+      - screenshot.png
+  - id: collect-validation-artifacts
+    kind: artifact
+    depends_on:
+      - e2e-smoke
+    artifacts:
+      - validation-log.json
+      - test-output.txt
+      - port-allocation.json
+  - id: validation-review
+    kind: review
+    depends_on:
+      - collect-validation-artifacts
+    prompt: Confirm the validation artifacts prove the assigned run state.
+    fresh_context: true

@@ -1,4 +1,4 @@
-__all__ = ["AdaptiveSystemProfiler", "BrainRuntimeRegistry", "HardwareScanner"]
+__all__ = ["AdaptiveSystemProfiler", "BrainRuntimeRegistry", "HardwareScanner", "RuntimeScorecardService"]
 
 
 def __getattr__(name: str):
@@ -14,4 +14,8 @@ def __getattr__(name: str):
         from .hardware_scanner import HardwareScanner
 
         return HardwareScanner
+    if name == "RuntimeScorecardService":
+        from .scorecards import RuntimeScorecardService
+
+        return RuntimeScorecardService
     raise AttributeError(name)

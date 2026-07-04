@@ -1,0 +1,42 @@
+workflow_id: nexus-eval-gated-assimilation
+label: Nexus Eval Gated Assimilation
+description: Candidate assimilation lane requiring eval evidence and product-sweep gates before promotion.
+version: "1.0"
+starter: true
+requested_tools:
+  - network.external
+nodes:
+  - id: candidate-intake
+    kind: prompt
+    prompt: Record source provenance, category, target subsystem, and licensing posture.
+    artifacts:
+      - assimilation-candidate.json
+  - id: eval-suite-select
+    kind: validation
+    depends_on:
+      - candidate-intake
+    validation:
+      suites:
+        - rag_quality
+        - prompt_security_red_team
+        - regression_behavior
+  - id: gate-mapping
+    kind: artifact
+    depends_on:
+      - eval-suite-select
+    prompt: Map eval result requirements to product-sweep and gateway gate IDs.
+    artifacts:
+      - eval-gate-map.json
+  - id: approval-hold
+    kind: approval
+    depends_on:
+      - gate-mapping
+    approval:
+      mode: human
+      grants_execution: false
+  - id: promotion-review
+    kind: review
+    depends_on:
+      - approval-hold
+    prompt: Confirm manual approval is not sufficient for candidate promotion.
+    fresh_context: true

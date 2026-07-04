@@ -1,0 +1,34 @@
+workflow_id: nexus-package-candidate-review
+label: Nexus Package Candidate Review
+description: Metadata-only package candidate intake with provenance, sandbox, and product-sweep gates.
+version: "1.0"
+starter: true
+requested_tools:
+  - filesystem.readonly
+nodes:
+  - id: ingest-candidate
+    kind: package_candidate
+    prompt: Ingest package metadata only; do not load or execute package code.
+    artifacts:
+      - package-candidate.json
+  - id: classify-permissions
+    kind: review
+    depends_on:
+      - ingest-candidate
+    prompt: Classify requested resources, permissions, license, and provenance.
+  - id: operator-approval
+    kind: approval
+    depends_on:
+      - classify-permissions
+    approval:
+      mode: human
+      grants_execution: false
+  - id: certification-review
+    kind: validation
+    depends_on:
+      - operator-approval
+    validation:
+      gates:
+        - extension-certification
+        - product-sweep
+        - license-review

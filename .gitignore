@@ -54,3 +54,4 @@ node_modules/
 
 # Secrets
 runtime/config/secrets.json
+.gitnexus

@@ -1,0 +1,38 @@
+workflow_id: nexus-factory-batch-triage
+label: Nexus Factory Batch Triage
+description: Governed batch issue triage before agent dispatch, with protected path and token budget gates.
+version: "1.0"
+starter: true
+requested_tools:
+  - filesystem.readonly
+nodes:
+  - id: batch-context
+    kind: prompt
+    prompt: Compare issue group priority, duplication, urgency, and protected-surface risk before any dispatch.
+    fresh_context: true
+  - id: budget-and-policy-gates
+    kind: validation
+    depends_on:
+      - batch-context
+    validation:
+      profile: factory-triage-gates
+      gates:
+        - max-parallel-limit
+        - token-budget
+        - protected-files-human-review
+        - no-agent-spawn-without-gateway
+  - id: triage-artifact
+    kind: artifact
+    depends_on:
+      - budget-and-policy-gates
+    artifacts:
+      - factory-triage.json
+      - priority-decision.md
+  - id: human-hold
+    kind: approval
+    depends_on:
+      - triage-artifact
+    approval:
+      required: true
+      reason: Human approval may allow validation readiness but does not override gateway gates.
+

@@ -1,0 +1,39 @@
+workflow_id: nexus-factory-pr-validation-hard-gate
+label: Nexus Factory PR Validation Hard Gate
+description: Hard-gated PR validation requiring service startup and E2E/browser artifacts when requested.
+version: "1.0"
+starter: true
+requested_tools:
+  - filesystem.readonly
+nodes:
+  - id: service-start-readiness
+    kind: validation
+    validation:
+      profile: service-start
+      gates:
+        - database-url-or-sandbox-config-present
+        - assigned-port-ready
+        - start-failure-blocks-pr
+  - id: required-e2e
+    kind: validation
+    depends_on:
+      - service-start-readiness
+    validation:
+      profile: browser-e2e-hard-gate
+      gates:
+        - agent-browser-or-equivalent-ran
+        - e2e-artifacts-produced
+        - skipped-e2e-is-failure
+  - id: fresh-and-adversarial-review
+    kind: review
+    depends_on:
+      - required-e2e
+    prompt: Run fresh-context and adversarial review against the PR intent, diff, tests, and E2E evidence.
+    fresh_context: true
+  - id: promotion-hold
+    kind: approval
+    depends_on:
+      - fresh-and-adversarial-review
+    approval:
+      required: true
+      reason: Merge, push, and deploy remain gated even when validation passes.

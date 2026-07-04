@@ -1,0 +1,37 @@
+workflow_id: nexus-harness-ablation-review
+label: Nexus Harness Ablation Review
+description: Metadata-first review of harness modules, costs, pass-rate deltas, and pruning candidates.
+version: "1.0"
+starter: true
+requested_tools:
+  - filesystem.readonly
+nodes:
+  - id: load-harness-record
+    kind: prompt
+    prompt: Load the harness spec, raw trace references, eval scores, module inventory, and execution contracts.
+    fresh_context: true
+  - id: ablation-gates
+    kind: validation
+    depends_on:
+      - load-harness-record
+    validation:
+      profile: harness-ablation
+      gates:
+        - raw-trace-evidence-present
+        - compare-cost-and-pass-rate
+        - detect-module-regressions
+        - no-harness-mutation-without-lease
+  - id: ablation-artifact
+    kind: artifact
+    depends_on:
+      - ablation-gates
+    artifacts:
+      - harness-ablation.json
+      - pruning-recommendation.md
+  - id: ablation-review
+    kind: review
+    depends_on:
+      - ablation-artifact
+    prompt: Confirm the ablation supports pruning or retaining modules without overfitting to one benchmark.
+    fresh_context: true
+

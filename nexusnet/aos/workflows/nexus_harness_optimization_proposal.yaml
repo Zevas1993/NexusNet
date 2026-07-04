@@ -1,0 +1,42 @@
+workflow_id: nexus-harness-optimization-proposal
+label: Nexus Harness Optimization Proposal
+description: Governed proposal lane for raw-trace-driven harness changes and cross-model transfer evals.
+version: "1.0"
+starter: true
+requested_tools:
+  - filesystem.readonly
+nodes:
+  - id: trace-diagnosis
+    kind: prompt
+    prompt: Diagnose failed raw traces, preserving details rather than relying on summaries alone.
+    fresh_context: true
+  - id: narrow-candidate-change
+    kind: prompt
+    depends_on:
+      - trace-diagnosis
+    prompt: Propose the smallest harness change that addresses the failure before broad search or extra modules.
+  - id: transfer-eval-plan
+    kind: validation
+    depends_on:
+      - narrow-candidate-change
+    validation:
+      profile: harness-transfer-eval
+      gates:
+        - raw-traces-required
+        - acceptance-gate-required
+        - cross-model-eval-required
+        - execution-authority-required
+  - id: proposal-artifact
+    kind: artifact
+    depends_on:
+      - transfer-eval-plan
+    artifacts:
+      - harness-optimization-proposal.json
+      - rollback-plan.md
+  - id: promotion-hold
+    kind: approval
+    depends_on:
+      - proposal-artifact
+    approval:
+      required: true
+      reason: Harness mutation requires eval pass, product-sweep review, and execution-authority lease.
