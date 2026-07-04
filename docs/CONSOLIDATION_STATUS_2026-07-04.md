@@ -2,7 +2,7 @@
 
 Status: canonical repo/worktree alignment note
 Branch: `codex/all-worktrees-integration`
-Current integrated commit: `01cd23041a001565558a67c514d12551bd7de8db`
+Baseline integrated commit for this note: `01cd23041a001565558a67c514d12551bd7de8db`
 
 ## Current Canonical State
 
@@ -21,7 +21,7 @@ GitNexus status at the start of this documentation pass:
 - Edges: `88282`
 - Status: up to date
 
-This means the tracked repository and GitNexus index are aligned at the repo/worktree level. It does not mean every product feature is production-complete.
+This means the tracked repository and GitNexus index were aligned at the repo/worktree level for that pass. It does not mean every product feature is production-complete. Future agents should verify the latest commit and GitNexus status directly instead of treating the baseline hash above as the latest repository head.
 
 ## Integrated Worktree History
 
@@ -51,6 +51,11 @@ The canonical clarification for rejected, blocked, planned, and future assimilat
 
 That review preserves useful target patterns while rejecting dependency lock-in, unsafe ownership models, unclear licensing, unsandboxed execution, and external products becoming the NexusNet brain.
 
+Additional clarification:
+
+- `NexusGraph Intelligence Fabric` is the mother-brain-native target for GitNexus-like graph intelligence across code, workflows, skills, models, runtimes, memory, policies, evals, teachers, experts, devices, federation, and replay.
+- GitNexus and the current `CodegraphGate` remain valid reference/provider/gate layers, but they are not the final NexusNet brain or the only place NexusNet should understand connected system state.
+
 ## Future Agent Rules
 
 1. Start from `codex/all-worktrees-integration` unless the user explicitly chooses another branch.
@@ -60,6 +65,7 @@ That review preserves useful target patterns while rejecting dependency lock-in,
 5. Before committing, run GitNexus detect-changes.
 6. Refresh `npx gitnexus analyze` after commits that change tracked repo state.
 7. Keep research-only, blocked, planned, and production-ready labels distinct.
+8. Treat GitNexus-like code intelligence as a capability NexusBrain must internalize and generalize through `NexusGraph Intelligence Fabric`, not as an external dependency that replaces the mother brain.
 
 ## Verification Evidence For This Pass
 

@@ -31,6 +31,8 @@ Assimilation targets are not external products to install wholesale. They are pa
 
 No source-health failure is automatically a rejection. The 2026-05-31 source re-verification packet explicitly says the 61 failed URLs mix stale links, private/local links, malformed extracted URLs, and real dead links. Each target still needs file-level review before changing its status.
 
+GitNexus is a current reference/provider for codegraph intelligence, not the final owner of graph awareness. NexusBrain must internalize GitNexus-like indexing, query, impact analysis, stale-index blocking, and changed-scope detection, then extend the same graph intelligence across code, workflows, skills, tools, models, runtimes, memory, policies, evals, teachers, experts, devices, federation, and replay artifacts.
+
 ## Current Source Spot Check
 
 This pass used the local corpus plus current primary or near-primary sources where useful. These sources do not replace the full promotion gates:
@@ -55,6 +57,7 @@ This pass used the local corpus plus current primary or near-primary sources whe
 | Siloed self-improvement ownership | Reject any claim that one AO, expert, orchestrator, coordinator, or runtime lane owns self-improvement exclusively. Mother brain owns and coordinates hive-wide neuroplasticity; all nodes can participate through governance. |
 | Mega-skills and isolated endpoints | Reject opaque monolithic skills and disconnected endpoints. Preserve modular skills, recipes, MCP adapters, scripts, references, assets, workflow nodes, and runtime capability cards through progressive disclosure and strict budgets. |
 | Pinecone/KAC cluster | Reject direct Pinecone dependency, raw retrieval replacement, uncited trusted synthesis, and direct runtime mutation. Preserve context compiler, citations, typed artifacts, composable retrieval, graph retrieval, raw fallback, claim ledgers, and governance as NexusNet Knowledge Forge. |
+| GitNexus/codegraph gate | Reject GitNexus as the final mother brain, sole graph memory, or only place NexusNet understands code. Preserve GitNexus-style code indexing, graph query, impact analysis, stale-index checks, and change detection as the reference pattern for a NexusBrain-owned graph intelligence fabric. |
 
 ## Cluster 1: Workflow Builders And Node UI
 
@@ -574,6 +577,48 @@ Gates:
 - Before code symbol edits, run GitNexus impact analysis.
 - Before commits, run GitNexus detect-changes.
 
+## Cluster 13: Mother Brain Graph Intelligence
+
+Representative targets:
+
+- GitNexus codegraph indexing and MCP query patterns
+- NexusNet `CodegraphGate`
+- Knowledge graphs, GraphRAG, Neo4j-style relationship modeling, and provenance DAGs
+- Workflow, skill, model, runtime, policy, eval, memory, expert, teacher, device, and federation graphs
+- Control Panel deep replay graph and pathway ledgers
+
+What NexusNet should assimilate:
+
+- Persistent graph indexing for code symbols, files, imports, calls, tests, execution flows, APIs, docs, workflows, skills, tools, models, runtimes, policies, evals, memories, teachers, experts, devices, permissions, and replay artifacts.
+- Query/context retrieval that answers what exists, how it connects, what changed, what is stale, what is trusted, and which flows or subsystems are affected.
+- Impact analysis before mutations across code, workflow nodes, prompts, skills, model routes, runtime packs, expert registries, teacher pairings, memory artifacts, and policy rules.
+- Detect-changes style post-mutation mapping from changed artifacts to affected symbols, workflows, experts, skills, evals, policies, routes, and Control Panel surfaces.
+- Freshness and provenance gates that bind every graph fact to source refs, commit/artifact versions, model passports, timestamps, permissions, and confidence.
+- Self-improvement support: use the graph to decide when to create, split, merge, retire, or sandbox experts, AOs, skills, workflows, and adapters during a live problem.
+- Creator-facing replay: expose graph paths, impact radius, evidence packets, and unresolved blockers in the Control Panel without leaking raw private content.
+
+What NexusNet rejects or blocks:
+
+- Treating GitNexus, a graph database, a vector store, or any external index as the mother brain.
+- Letting graph output replace direct source reading, tests, evals, red-team review, rights review, or human/governance approval.
+- Stale graph facts, uncited graph facts, hidden graph state, or graph paths that cannot be replayed.
+- Stuffing the full graph into model context instead of using progressive disclosure and typed graph queries.
+- Direct runtime mutation from graph conclusions without sandbox, eval, policy, rollback, and promotion gates.
+
+Native NexusNet output:
+
+`NexusGraph Intelligence Fabric`
+
+This is the mother-brain-owned graph layer that generalizes GitNexus-like code intelligence into whole-hive intelligence. GitNexus can remain an adapter, provider, and reference implementation for codegraph evidence, but NexusBrain owns the final graph contracts, routing authority, freshness checks, impact analysis, mutation gates, and replay surface.
+
+Gates:
+
+- Every graph node and edge must carry source refs, artifact version, freshness state, permissions, privacy class, and confidence.
+- Code edits still require GitNexus-compatible impact and detect-changes evidence until the native codegraph path proves equivalent or stronger coverage.
+- Non-code mutations require the same pattern: pre-change impact, policy/eval gate, sandbox or shadow run, post-change detect scope, rollback proof, and replay evidence.
+- Graph-driven expert birth, merge, split, retirement, dream proposal, or skill promotion remains shadow-only until teacher/eval/governance approval passes.
+- Control Panel graph views must label verified implementation, planned placeholder, blocked item, research-only target, and stale evidence distinctly.
+
 ## Consolidated Final Outputs
 
 | Native subsystem | Combines target families |
@@ -589,6 +634,7 @@ Gates:
 | `Teacher Council And Expert Birth Registry` | Leanstral, Nemotron, Keye-VL, LFM, MiniCPM, Qwen/DeepSeek/Kimi/Mistral/Devstral, medical/finance/quantum teachers |
 | `Expert Pack Radar And Domain Curriculum Forge` | every domain expert class, expert-pack schema, domain evals, auto-research, expert split/merge |
 | `NexusNet Control Panel And Companion` | live visualizer, mobile/edge app, local model UX, workflow UI, teacher/expert/skill controls |
+| `NexusGraph Intelligence Fabric` | GitNexus, CodegraphGate, graph retrieval, workflow graphs, skill graphs, model/runtime graphs, policy/eval graphs, replay ledgers |
 | `NexusNet Operational Spine` | GitNexus, worktrees, feature flags, replay snapshots, reversible patches, consolidation status |
 
 ## Final Reject Rules
@@ -605,6 +651,7 @@ These are legitimate rejects:
 8. Opaque mega-skills or context-stuffed expert lists.
 9. Trusted knowledge without citations.
 10. Direct runtime mutation from dreams, retrieval artifacts, eval results, or model suggestions.
+11. External codegraph or graph database treated as the final NexusNet brain.
 
 These are not legitimate rejects:
 
@@ -613,6 +660,7 @@ These are not legitimate rejects:
 3. External products used only as UI, workflow, skill, runtime, eval, teacher, or governance pattern references.
 4. Temporary live-problem child experts that remain sandboxed and review-bound.
 5. Research-only targets kept as future options.
+6. GitNexus-style graph intelligence preserved as a planned native mother-brain capability while the current adapter/gate remains external.
 
 ## Next Documentation Work
 
@@ -623,3 +671,4 @@ Recommended next docs after this review:
 3. Refresh source status for stale OpenClaw links and any 401/403/429 gated links manually.
 4. Build a teacher/expert taxonomy document that expands Orchestrators, Assistant Orchestrators, Experts, teachers, domain packs, and live-problem spawn/merge rules without putting the whole taxonomy into model context at once.
 5. Build a model/source radar job that watches model cards, papers, GitHub releases, licenses, and benchmark deltas, then proposes updates through the mother-brain governance queue.
+6. Specify the `NexusGraph Intelligence Fabric` schema, adapters, graph query contracts, impact-analysis contracts, detect-scope contracts, privacy filters, and Control Panel graph replay.
