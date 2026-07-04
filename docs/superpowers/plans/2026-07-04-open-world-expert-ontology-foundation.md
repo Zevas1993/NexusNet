@@ -899,7 +899,7 @@ Run:
 pytest tests/test_open_world_expert_ontology.py tests/test_teacher_candidate_universe.py -q
 ```
 
-Expected: `20 passed`.
+Expected: `23 passed`.
 
 - [ ] **Step 2: Run adjacent committed registry tests**
 
