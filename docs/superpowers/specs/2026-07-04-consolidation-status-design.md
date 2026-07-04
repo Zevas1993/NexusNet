@@ -14,6 +14,8 @@ The implementation should be documentation-only. It should not alter runtime cod
 
 The primary artifact should be `docs/CONSOLIDATION_STATUS_2026-07-04.md`. That document should be linked from `README.md` and `PROJECT_SUMMARY.md` so future agents see it before making assumptions from branch names alone.
 
+The broader assimilation-target clarification should live separately at `docs/assimilation/ASSIMILATION_TARGET_CLUSTER_REVIEW_2026-07-04.md`. The status document should link to it, but should not absorb its full architectural review. This keeps branch/worktree hygiene separate from assimilation rulings.
+
 ## Canonical Facts To Record
 
 - Canonical working branch: `codex/all-worktrees-integration`
@@ -36,8 +38,9 @@ The primary artifact should be `docs/CONSOLIDATION_STATUS_2026-07-04.md`. That d
 3. Preserved artifacts
 4. Branch-ref interpretation
 5. Rules for future work
-6. Planned placeholders and future assimilation items
-7. Verification evidence from the consolidation run
+6. Assimilation target review pointer
+7. Planned placeholders and future assimilation items
+8. Verification evidence from the consolidation run
 
 The language should avoid broad readiness claims. It should say the project is aligned at the tracked repo/worktree level and GitNexus-indexed at the stated commit, not that every product feature is complete.
 

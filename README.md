@@ -15,6 +15,12 @@ Nexus is the surrounding platform and host layer around that core.
 
 This repository is now organized around that split.
 
+## Current Consolidation Status
+
+The canonical repo/worktree status is tracked in `docs/CONSOLIDATION_STATUS_2026-07-04.md`.
+
+The current assimilation-target ruling is tracked in `docs/assimilation/ASSIMILATION_TARGET_CLUSTER_REVIEW_2026-07-04.md`. Use that review to distinguish legitimate rejects from preserved future assimilation patterns.
+
 ## What Exists Now
 
 Phase 1 establishes a runnable local-first NexusNet foundation:

@@ -3,6 +3,13 @@
 ## Overview
 NexusNet is an active implementation branch. Model requests are classified and routed through supported runtime lanes, with explicit compatibility provenance and fail-closed product-mode gates still under verification.
 
+## Current Alignment Docs
+
+- Canonical repo/worktree status: `docs/CONSOLIDATION_STATUS_2026-07-04.md`
+- Assimilation target cluster review: `docs/assimilation/ASSIMILATION_TARGET_CLUSTER_REVIEW_2026-07-04.md`
+
+These docs separate legitimate rejects from preserved planned assimilation items, future placeholders, blocked targets, and native NexusNet subsystem outputs.
+
 ## What We've Built
 
 ### Core Framework Components
