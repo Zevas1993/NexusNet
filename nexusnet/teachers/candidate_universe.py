@@ -70,7 +70,9 @@ class TeacherCandidateUniverse:
         *,
         replace: bool = False,
     ) -> TeacherCandidate:
-        normalized = candidate if isinstance(candidate, TeacherCandidate) else TeacherCandidate.model_validate(candidate)
+        normalized = TeacherCandidate.model_validate(
+            candidate.model_dump(mode="python") if isinstance(candidate, TeacherCandidate) else candidate
+        )
         if normalized.candidate_id in self._candidates and not replace:
             raise ValueError(f"Teacher candidate already registered: {normalized.candidate_id}")
         stored = normalized.model_copy(deep=True)
@@ -120,9 +122,9 @@ class TeacherCandidateUniverse:
             elif gate_status not in _NON_BLOCKING_GATES:
                 blockers.append(f"{gate_name}_not_approved")
 
-        if not candidate.source_refs:
+        if not _has_nonblank_ref(candidate.source_refs):
             blockers.append("source_refs_missing")
-        if not candidate.benchmark_refs:
+        if not _has_nonblank_ref(candidate.benchmark_refs):
             blockers.append("benchmark_refs_missing")
         if candidate.candidate_status == "retired" or candidate.retirement_reason:
             blockers.append("candidate_retired")
@@ -150,6 +152,10 @@ def build_default_teacher_candidate_universe() -> TeacherCandidateUniverse:
     return TeacherCandidateUniverse(_bootstrap_candidates())
 
 
+def _has_nonblank_ref(refs: Iterable[str]) -> bool:
+    return any(ref.strip() for ref in refs)
+
+
 def _bootstrap_candidates() -> list[TeacherCandidate]:
     return [
         TeacherCandidate(
@@ -163,10 +169,11 @@ def _bootstrap_candidates() -> list[TeacherCandidate]:
             privacy_gate="needs_review",
             hardware_gate="needs_review",
             cost_gate="needs_review",
-            eval_family=["formal-proof", "code-verification"],
+            eval_family=["formal-proof", "code-verification", "math"],
             domain_scope=["formal_methods", "math", "coding", "quantum"],
             risk_scope=["medium", "high"],
             source_refs=["hf::mistralai/Leanstral-1.5-119B-A6B"],
+            replacement_candidates=["qwen3-coder-next", "deepseek-v4-pro"],
         ),
         TeacherCandidate(
             candidate_id="qwen3-coder-next",

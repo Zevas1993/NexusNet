@@ -18,6 +18,8 @@ def test_candidate_universe_bootstraps_watchlist_without_active_promotion():
     assert leanstral.candidate_status == "watchlist"
     assert "verifier" in leanstral.teacher_roles
     assert "formal_methods" in leanstral.domain_scope
+    assert "math" in leanstral.eval_family
+    assert leanstral.replacement_candidates == ["qwen3-coder-next", "deepseek-v4-pro"]
     assert universe.promotion_blockers("leanstral-1-5") == [
         "candidate_status_not_shadow_or_canary",
         "license_gate_not_approved",
@@ -74,6 +76,32 @@ def test_not_required_gates_do_not_block_evidenced_shadow_candidate():
 
     assert universe.promotion_blockers("not-required-shadow") == []
     assert universe.promotion_allowed("not-required-shadow") is True
+
+
+def test_blank_source_and_benchmark_refs_do_not_satisfy_promotion_evidence():
+    universe = build_default_teacher_candidate_universe()
+    universe.register(
+        {
+            "candidate_id": "blank-evidence-shadow",
+            "model_or_tool_id": "local/blank-evidence-shadow",
+            "provider": "local",
+            "source_url": "https://example.invalid/blank-evidence-shadow",
+            "candidate_status": "shadow",
+            "teacher_roles": ["critic"],
+            "license_gate": "approved",
+            "privacy_gate": "approved",
+            "hardware_gate": "approved",
+            "cost_gate": "approved",
+            "source_refs": [""],
+            "benchmark_refs": ["   "],
+        }
+    )
+
+    assert universe.promotion_blockers("blank-evidence-shadow") == [
+        "source_refs_missing",
+        "benchmark_refs_missing",
+    ]
+    assert universe.promotion_allowed("blank-evidence-shadow") is False
 
 
 def test_evidenced_shadow_candidate_can_be_promotion_ready():
@@ -188,6 +216,21 @@ def test_register_copies_input_and_returned_candidate_to_isolate_stored_state():
     assert stored.license_gate == "needs_review"
     assert stored.benchmark_refs == []
     assert universe.promotion_allowed("mutable-registration") is False
+
+
+def test_register_revalidates_mutated_model_instances_before_replacing_stored_state():
+    universe = build_default_teacher_candidate_universe()
+    original = universe.get("qwen3-coder-next")
+    assert original is not None
+    replacement = original.model_copy(update={"candidate_status": "shadow"})
+    replacement.candidate_status = "bogus"
+
+    with pytest.raises(ValueError):
+        universe.register(replacement, replace=True)
+
+    stored = universe.get("qwen3-coder-next")
+    assert stored is not None
+    assert stored.candidate_status == "watchlist"
 
 
 def test_planned_list_candidate_filter_names_and_summary_contract_work():
