@@ -1,5 +1,5 @@
-from nexusnet.developmental.body_schema import NexusBodySchemaBuilder
 from nexusnet.developmental.contracts import AssimilationSourceLedger
+from nexusnet.developmental.body_schema import NexusBodySchemaBuilder
 
 
 def test_assimilation_source_ledger_counts_full_chat_packet():
@@ -30,3 +30,26 @@ def test_body_schema_snapshot_marks_degraded_and_blocked_surfaces():
     assert "memory" in snapshot["degraded_surfaces"]
     assert "authority" in snapshot["degraded_surfaces"]
     assert snapshot["production_mutation_allowed"] is False
+
+
+def test_body_schema_snapshot_tolerates_malformed_counts():
+    builder = NexusBodySchemaBuilder()
+
+    snapshot = builder.snapshot(
+        runtime_state={"runtime_state": "live-bound", "provider_count": "unknown"},
+        memory_state={"blocked_count": "unknown", "claim_count": ""},
+        authority_state={"grant_count": object()},
+        eval_state={"suite_count": None},
+        tool_state={"plan_count": "not-a-number"},
+    )
+
+    assert snapshot["runtime_state"] == "static-canon"
+    assert snapshot["capability_counts"] == {
+        "runtime": 0,
+        "memory": 0,
+        "authority": 0,
+        "eval": 0,
+        "tool": 0,
+    }
+    assert snapshot["degraded_surfaces"] == []
+    assert snapshot["blocked_surfaces"] == []

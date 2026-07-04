@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
 
 from nexus.schemas import utcnow
+from pydantic import ValidationError
 
 from .contracts import ReferenceFrameRecord
 
 
 class ReferenceFrameStore:
-    def __init__(self, *, artifacts_dir: Path | str | None = None) -> None:
+    def __init__(self, artifacts_dir: Path | str | None = None) -> None:
         self.artifacts_dir = Path(artifacts_dir) if artifacts_dir is not None else None
         self.frames_dir = self.artifacts_dir / "developmental" / "reference-frames" if self.artifacts_dir else None
         if self.frames_dir is not None:
@@ -42,8 +44,8 @@ class ReferenceFrameStore:
             findings=findings,
             runtime_state="degraded" if findings else "live-bound",
             mutation_allowed=False,
+            created_at=utcnow().isoformat(),
         ).model_dump(mode="json")
-        record["created_at"] = utcnow().isoformat()
         self._persist(record)
         return record
 
@@ -61,24 +63,43 @@ class ReferenceFrameStore:
         }
 
     def _persist(self, record: dict[str, Any]) -> None:
-        self._frames.insert(0, record)
         if self.frames_dir is None:
+            self._frames.insert(0, record)
             return
-        safe = record["frame_id"].replace(":", "_").replace("/", "_")
-        path = self.frames_dir / f"{safe}.json"
+        path = self._artifact_path_for_frame_id(record["frame_id"])
         record["artifact_path"] = str(path)
         path.write_text(json.dumps(record, indent=2, sort_keys=True), encoding="utf-8")
+        self._frames.insert(0, record)
+
+    def _artifact_path_for_frame_id(self, frame_id: str) -> Path:
+        if self.frames_dir is None:
+            raise ValueError("frames_dir is required for persisted reference frames")
+        digest = hashlib.sha256(frame_id.encode("utf-8")).hexdigest()
+        path = self.frames_dir / f"{digest}.json"
+        frames_root = self.frames_dir.resolve()
+        resolved_path = path.resolve()
+        if resolved_path.parent != frames_root:
+            raise ValueError("reference frame artifact path escaped frames directory")
+        return path
 
     def _list_frames(self, *, limit: int) -> list[dict[str, Any]]:
-        frames = list(self._frames)
+        frames_by_id = {frame.get("frame_id"): frame for frame in reversed(self._frames)}
         if self.frames_dir is not None:
-            seen = {frame.get("frame_id") for frame in frames}
-            for path in self.frames_dir.glob("*.json"):
+            disk_frames: dict[str, tuple[str, str, dict[str, Any]]] = {}
+            for path in sorted(self.frames_dir.glob("*.json"), key=lambda item: item.name):
                 try:
                     payload = json.loads(path.read_text(encoding="utf-8"))
-                except (OSError, json.JSONDecodeError):
+                    if not isinstance(payload, dict):
+                        continue
+                    frame = ReferenceFrameRecord(**payload).model_dump(mode="json")
+                except (OSError, json.JSONDecodeError, ValidationError):
                     continue
-                if payload.get("frame_id") not in seen:
-                    frames.append(payload)
+                frame_id = frame.get("frame_id")
+                candidate_key = (frame.get("created_at") or "", path.name)
+                if frame_id not in disk_frames or candidate_key > disk_frames[frame_id][:2]:
+                    disk_frames[frame_id] = (*candidate_key, frame)
+            for frame_id, (_, _, frame) in disk_frames.items():
+                frames_by_id.setdefault(frame_id, frame)
+        frames = list(frames_by_id.values())
         frames.sort(key=lambda item: item.get("created_at") or "", reverse=True)
         return frames[:limit]

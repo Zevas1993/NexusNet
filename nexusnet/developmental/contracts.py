@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import math
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class AssimilationSourceLedger(BaseModel):
@@ -53,6 +54,7 @@ class NexusBodySchemaSnapshot(BaseModel):
 
 
 FrameType = Literal["project", "task", "artifact", "tool", "model", "user_goal", "memory", "runtime", "policy"]
+CandidateKind = Literal["runtime", "memory", "policy", "tool", "prompt", "adapter", "model", "research"]
 
 
 class ReferenceFrameRecord(BaseModel):
@@ -68,6 +70,42 @@ class ReferenceFrameRecord(BaseModel):
     runtime_state: Literal["live-bound", "degraded"] = "live-bound"
     mutation_allowed: bool = False
     artifact_path: str | None = None
+    created_at: str | None = None
+
+
+class GrowthArchiveCandidate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_id: str
+    candidate_type: CandidateKind
+    diversity_key: str
+    scores: dict[str, float] = Field(default_factory=dict)
+    evidence_refs: list[str] = Field(default_factory=list)
+    promotion_state: Literal["archived-shadow", "blocked"] = "archived-shadow"
+    production_mutation_allowed: bool = False
+    findings: list[str] = Field(default_factory=list)
+    artifact_path: str | None = None
+    created_at: str | None = None
+
+    @field_validator("scores")
+    @classmethod
+    def reject_non_finite_scores(cls, value: dict[str, float]) -> dict[str, float]:
+        for metric, score in value.items():
+            if not math.isfinite(score):
+                raise ValueError(f"scores[{metric!r}] must be finite")
+        return value
+
+
+class PromotionTribunalDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    case_id: str
+    candidate_ref: str
+    requested_state: Literal["archived", "shadow", "canary", "active"]
+    decision: Literal["accepted-shadow", "accepted-canary-request", "accepted-active-request", "rejected"]
+    blockers: list[str] = Field(default_factory=list)
+    active_promotion_allowed: bool = False
+    production_mutation_allowed: bool = False
 
 
 class SimulationRecord(BaseModel):
@@ -83,6 +121,7 @@ class SimulationRecord(BaseModel):
     production_action_allowed: bool = False
     findings: list[str] = Field(default_factory=list)
     artifact_path: str | None = None
+    created_at: str | None = None
 
 
 class CausalInterventionRecord(BaseModel):
@@ -99,35 +138,15 @@ class CausalInterventionRecord(BaseModel):
     findings: list[str] = Field(default_factory=list)
     production_action_allowed: bool = False
     artifact_path: str | None = None
+    created_at: str | None = None
 
-
-CandidateKind = Literal["runtime", "memory", "policy", "tool", "prompt", "adapter", "model", "research"]
-
-
-class GrowthArchiveCandidate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    candidate_id: str
-    candidate_type: CandidateKind
-    diversity_key: str
-    scores: dict[str, float] = Field(default_factory=dict)
-    evidence_refs: list[str] = Field(default_factory=list)
-    promotion_state: Literal["archived-shadow", "blocked"] = "archived-shadow"
-    production_mutation_allowed: bool = False
-    findings: list[str] = Field(default_factory=list)
-    artifact_path: str | None = None
-
-
-class PromotionTribunalDecision(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    case_id: str
-    candidate_ref: str
-    requested_state: Literal["archived", "shadow", "canary", "active"]
-    decision: Literal["accepted-shadow", "accepted-canary-request", "accepted-active-request", "rejected"]
-    blockers: list[str] = Field(default_factory=list)
-    active_promotion_allowed: bool = False
-    production_mutation_allowed: bool = False
+    @field_validator("observed_delta")
+    @classmethod
+    def reject_non_finite_deltas(cls, value: dict[str, float]) -> dict[str, float]:
+        for metric, delta in value.items():
+            if not math.isfinite(delta):
+                raise ValueError(f"observed_delta[{metric!r}] must be finite")
+        return value
 
 
 class DevelopmentalCortexResult(BaseModel):

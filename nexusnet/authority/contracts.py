@@ -5,13 +5,21 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-EffectType = Literal["filesystem_read", "filesystem_write", "network", "browser", "desktop", "shell", "model_update", "memory_update"]
+EffectType = Literal[
+    "filesystem_read",
+    "filesystem_write",
+    "network",
+    "browser",
+    "desktop",
+    "shell",
+    "model_update",
+    "memory_update",
+]
 
 
 class AuthorityDecisionRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    surface_id: str = "authority-integrity-spine"
     action_id: str
     actor_ref: str
     effect_type: EffectType

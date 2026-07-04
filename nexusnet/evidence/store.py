@@ -2,53 +2,155 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from nexus.schemas import utcnow
+from pydantic import ValidationError
 
 from .contracts import EvidenceRecord
 
 
 class EvidenceStore:
     def __init__(self, *, artifacts_dir: Path | str | None = None) -> None:
-        self.root = Path(artifacts_dir) / "evidence" / "records" if artifacts_dir is not None else None
-        if self.root is not None:
-            self.root.mkdir(parents=True, exist_ok=True)
+        self.artifacts_dir = Path(artifacts_dir) if artifacts_dir is not None else None
+        self.records_dir = self.artifacts_dir / "evidence" / "records" if self.artifacts_dir else None
+        if self.records_dir is not None:
+            self.records_dir.mkdir(parents=True, exist_ok=True)
         self._records: list[dict[str, Any]] = []
 
-    def append(self, *, kind: str, subject_ref: str, payload: dict[str, Any], source_refs: list[str]) -> dict[str, Any]:
-        previous_hash = self._records[0]["content_hash"] if self._records else ""
-        base = {
-            "record_id": f"evidence::{kind}::{len(self._records) + 1}",
+    def append(
+        self,
+        *,
+        kind: str,
+        subject_ref: str,
+        payload: dict[str, Any],
+        source_refs: list[str],
+    ) -> dict[str, Any]:
+        records = self._merged_records()
+        base_record = {
+            "record_id": f"evidence::{kind}::{len(records) + 1}",
             "kind": kind,
             "subject_ref": subject_ref,
             "payload": payload,
             "source_refs": source_refs,
-            "previous_hash": previous_hash,
-            "created_at": utcnow().isoformat(),
+            "previous_hash": records[-1]["content_hash"] if records else "",
         }
-        digest = hashlib.sha256(json.dumps(base, sort_keys=True).encode("utf-8")).hexdigest()
-        model_fields = {key: value for key, value in base.items() if key != "created_at"}
-        record = EvidenceRecord(**model_fields, content_hash=f"sha256:{digest}").model_dump(mode="json")
-        record["created_at"] = base["created_at"]
-        self._records.insert(0, record)
-        if self.root is not None:
-            path = self.root / f"{digest[:16]}.json"
-            record["artifact_path"] = str(path)
-            path.write_text(json.dumps(record, indent=2, sort_keys=True), encoding="utf-8")
-        return record
+        canonical_base = self._canonical_json(base_record)
+        digest = hashlib.sha256(canonical_base.encode("utf-8")).hexdigest()
+        record = {
+            **base_record,
+            "content_hash": f"sha256:{digest}",
+            "artifact_path": None,
+        }
+        record = EvidenceRecord(**record).model_dump(mode="json")
+        self._persist(record, digest)
+        return deepcopy(record)
 
     def projection(self) -> dict[str, Any]:
-        kind_counts: dict[str, int] = {}
-        for record in self._records:
-            kind = str(record.get("kind") or "unknown")
-            kind_counts[kind] = kind_counts.get(kind, 0) + 1
+        records = self._merged_records()
+        kind_counts = dict(Counter(record["kind"] for record in records))
         return {
             "surface_id": "content-addressed-evidence-store",
             "authority": "NexusBrain",
-            "runtime_state": "live-bound" if self._records else "static-canon",
-            "record_count": len(self._records),
+            "runtime_state": "live-bound" if records else "static-canon",
+            "record_count": len(records),
             "kind_counts": kind_counts,
-            "latest_hash": self._records[0]["content_hash"] if self._records else "",
+            "latest_hash": records[-1]["content_hash"] if records else "",
         }
+
+    def _persist(self, record: dict[str, Any], digest: str) -> None:
+        if self.records_dir is None:
+            self._records.append(deepcopy(record))
+            return
+        path = self._artifact_path_for_digest(digest)
+        record["artifact_path"] = str(path)
+        record = EvidenceRecord(**record).model_dump(mode="json")
+        path.write_text(self._canonical_json(record), encoding="utf-8")
+        self._records.append(deepcopy(record))
+
+    def _artifact_path_for_digest(self, digest: str) -> Path:
+        if self.records_dir is None:
+            raise ValueError("records_dir is required for persisted evidence records")
+        path = self.records_dir / f"{digest}.json"
+        records_root = self.records_dir.resolve()
+        resolved_path = path.resolve()
+        if resolved_path.parent != records_root:
+            raise ValueError("evidence artifact path escaped records directory")
+        return path
+
+    def _merged_records(self) -> list[dict[str, Any]]:
+        records_by_key: dict[str, dict[str, Any]] = {}
+        for record in self._records:
+            valid_record = EvidenceRecord(**record).model_dump(mode="json")
+            if not self._record_hash_matches(valid_record):
+                continue
+            key = valid_record.get("content_hash") or valid_record["record_id"]
+            records_by_key[key] = valid_record
+        if self.records_dir is not None:
+            for path in sorted(self.records_dir.glob("*.json"), key=lambda item: item.name):
+                try:
+                    payload = json.loads(path.read_text(encoding="utf-8"))
+                    if not isinstance(payload, dict):
+                        continue
+                    record = EvidenceRecord(**payload).model_dump(mode="json")
+                    if not self._record_hash_matches(record):
+                        continue
+                except (OSError, json.JSONDecodeError, ValidationError):
+                    continue
+                key = record.get("content_hash") or record["record_id"]
+                records_by_key.setdefault(key, record)
+        return self._chain_ordered(list(records_by_key.values()))
+
+    def _record_hash_matches(self, record: dict[str, Any]) -> bool:
+        hash_base = {
+            "record_id": record["record_id"],
+            "kind": record["kind"],
+            "subject_ref": record["subject_ref"],
+            "payload": record["payload"],
+            "source_refs": record["source_refs"],
+            "previous_hash": record["previous_hash"],
+        }
+        digest = hashlib.sha256(self._canonical_json(hash_base).encode("utf-8")).hexdigest()
+        return record["content_hash"] == f"sha256:{digest}"
+
+    def _chain_ordered(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not records:
+            return []
+        by_previous: dict[str, list[dict[str, Any]]] = {}
+        for record in records:
+            by_previous.setdefault(record.get("previous_hash") or "", []).append(record)
+        for chained in by_previous.values():
+            chained.sort(key=self._record_sort_key)
+
+        ordered: list[dict[str, Any]] = []
+        seen_hashes: set[str] = set()
+        current_previous = ""
+        while True:
+            candidates = [
+                record
+                for record in by_previous.get(current_previous, [])
+                if record["content_hash"] not in seen_hashes
+            ]
+            if not candidates:
+                break
+            record = candidates[0]
+            ordered.append(record)
+            seen_hashes.add(record["content_hash"])
+            current_previous = record["content_hash"]
+
+        remaining = [record for record in records if record["content_hash"] not in seen_hashes]
+        remaining.sort(key=self._record_sort_key)
+        return ordered + remaining
+
+    def _record_sort_key(self, record: dict[str, Any]) -> tuple[int, str]:
+        suffix = record["record_id"].rsplit("::", 1)[-1]
+        try:
+            ordinal = int(suffix)
+        except ValueError:
+            ordinal = 0
+        return (ordinal, record["content_hash"])
+
+    def _canonical_json(self, value: dict[str, Any]) -> str:
+        return json.dumps(value, allow_nan=False, separators=(",", ":"), sort_keys=True)
