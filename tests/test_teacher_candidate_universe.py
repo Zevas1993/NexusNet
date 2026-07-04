@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from nexusnet.teachers.candidate_universe import TeacherCandidate, build_default_teacher_candidate_universe
+from nexusnet.teachers.candidate_universe import (
+    TeacherCandidate,
+    TeacherCandidateUniverse,
+    build_default_teacher_candidate_universe,
+)
 
 
 def test_candidate_universe_bootstraps_watchlist_without_active_promotion():
@@ -10,6 +14,7 @@ def test_candidate_universe_bootstraps_watchlist_without_active_promotion():
 
     leanstral = universe.get("leanstral-1-5")
     assert leanstral is not None
+    assert leanstral.provider == "huggingface"
     assert leanstral.candidate_status == "watchlist"
     assert "verifier" in leanstral.teacher_roles
     assert "formal_methods" in leanstral.domain_scope
@@ -48,6 +53,29 @@ def test_quarantined_unlicensed_candidate_is_blocked_from_promotion():
     assert "privacy_gate_blocked" in universe.promotion_blockers("frontier-remote-council")
 
 
+def test_not_required_gates_do_not_block_evidenced_shadow_candidate():
+    universe = build_default_teacher_candidate_universe()
+    universe.register(
+        {
+            "candidate_id": "not-required-shadow",
+            "model_or_tool_id": "local/not-required-shadow",
+            "provider": "local",
+            "source_url": "https://example.invalid/not-required-shadow",
+            "candidate_status": "shadow",
+            "teacher_roles": ["verifier"],
+            "license_gate": "not_required",
+            "privacy_gate": "not_required",
+            "hardware_gate": "not_required",
+            "cost_gate": "not_required",
+            "source_refs": ["source::not-required-shadow"],
+            "benchmark_refs": ["benchmark::not-required-shadow"],
+        }
+    )
+
+    assert universe.promotion_blockers("not-required-shadow") == []
+    assert universe.promotion_allowed("not-required-shadow") is True
+
+
 def test_evidenced_shadow_candidate_can_be_promotion_ready():
     universe = build_default_teacher_candidate_universe()
     universe.register(
@@ -76,6 +104,76 @@ def test_evidenced_shadow_candidate_can_be_promotion_ready():
     assert summary["candidate_count"] >= 4
     assert summary["promotion_ready_count"] == 1
     assert "qwen3-coder-next-shadow" in summary["promotion_ready_candidate_ids"]
+
+
+def test_candidate_accepts_research_and_retirement_fields_and_reason_blocks_promotion():
+    candidate = TeacherCandidate(
+        candidate_id="retired-by-reason",
+        model_or_tool_id="local/retired-by-reason",
+        provider="local",
+        source_url="https://example.invalid/retired-by-reason",
+        candidate_status="shadow",
+        teacher_roles=["critic"],
+        license_gate="approved",
+        privacy_gate="approved",
+        hardware_gate="approved",
+        cost_gate="approved",
+        source_refs=["source::retired-by-reason"],
+        benchmark_refs=["benchmark::retired-by-reason"],
+        last_researched_at="2026-07-04",
+        retirement_reason="superseded-by-better-candidate",
+    )
+    universe = TeacherCandidateUniverse([candidate])
+
+    assert candidate.last_researched_at == "2026-07-04"
+    assert candidate.retirement_reason == "superseded-by-better-candidate"
+    assert universe.promotion_blockers("retired-by-reason") == ["candidate_retired"]
+    assert universe.promotion_allowed("retired-by-reason") is False
+
+
+def test_package_level_candidate_universe_exports_are_importable():
+    from nexusnet.teachers import TeacherCandidateUniverse, build_default_teacher_candidate_universe
+
+    universe = build_default_teacher_candidate_universe()
+
+    assert isinstance(universe, TeacherCandidateUniverse)
+    assert universe.summary()["candidate_count"] == 3
+
+
+def test_registry_get_returns_copy_so_stored_candidate_cannot_be_mutated_without_register():
+    universe = build_default_teacher_candidate_universe()
+    original = universe.get("leanstral-1-5")
+    assert original is not None
+
+    original.candidate_status = "shadow"
+    original.license_gate = "approved"
+    original.privacy_gate = "approved"
+    original.hardware_gate = "approved"
+    original.cost_gate = "approved"
+    original.benchmark_refs.append("benchmark::mutated")
+
+    assert universe.promotion_allowed("leanstral-1-5") is False
+    assert universe.get("leanstral-1-5").candidate_status == "watchlist"
+
+
+def test_planned_list_candidate_filter_names_and_summary_contract_work():
+    universe = build_default_teacher_candidate_universe()
+
+    assert [candidate.candidate_id for candidate in universe.list_candidates(status="watchlist")] == [
+        "leanstral-1-5",
+        "qwen3-coder-next",
+    ]
+    assert [candidate.candidate_id for candidate in universe.list_candidates(role="critic", domain="coding")] == [
+        "leanstral-1-5",
+        "qwen3-coder-next",
+    ]
+
+    summary = universe.summary()
+    assert summary["surface_id"] == "teacher-candidate-universe"
+    assert (
+        summary["autonomy_rule"]
+        == "new-teacher-candidates-start-watchlist-or-quarantined-and-require-source-license-privacy-hardware-cost-benchmark-gates-before-promotion"
+    )
 
 
 def test_register_rejects_duplicate_candidate_ids_by_default_without_replacing_original():

@@ -28,7 +28,10 @@ TeacherRole = Literal[
 GateStatus = Literal["approved", "blocked", "needs_review", "not_required"]
 
 _PROMOTION_STATUSES: set[CandidateStatus] = {"shadow", "canary"}
-_AUTONOMY_RULE = "teacher_candidates_require_shadow_or_canary_status_approved_gates_and_source_plus_benchmark_evidence"
+_AUTONOMY_RULE = (
+    "new-teacher-candidates-start-watchlist-or-quarantined-and-require-source-license-privacy-hardware-cost-benchmark-gates-before-promotion"
+)
+_NON_BLOCKING_GATES: set[GateStatus] = {"approved", "not_required"}
 
 
 class TeacherCandidate(BaseModel):
@@ -50,6 +53,8 @@ class TeacherCandidate(BaseModel):
     source_refs: list[str] = Field(default_factory=list)
     benchmark_refs: list[str] = Field(default_factory=list)
     replacement_candidates: list[str] = Field(default_factory=list)
+    last_researched_at: str | None = None
+    retirement_reason: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -72,20 +77,25 @@ class TeacherCandidateUniverse:
         return normalized
 
     def get(self, candidate_id: str) -> TeacherCandidate | None:
-        return self._candidates.get(candidate_id)
+        candidate = self._candidates.get(candidate_id)
+        return candidate.model_copy(deep=True) if candidate is not None else None
 
     def list_candidates(
         self,
         *,
+        status: CandidateStatus | None = None,
+        role: TeacherRole | None = None,
         candidate_status: CandidateStatus | None = None,
         teacher_role: TeacherRole | None = None,
         domain: str | None = None,
     ) -> list[TeacherCandidate]:
-        candidates = list(self._candidates.values())
-        if candidate_status is not None:
-            candidates = [candidate for candidate in candidates if candidate.candidate_status == candidate_status]
-        if teacher_role is not None:
-            candidates = [candidate for candidate in candidates if teacher_role in candidate.teacher_roles]
+        status_filter = status or candidate_status
+        role_filter = role or teacher_role
+        candidates = [candidate.model_copy(deep=True) for candidate in self._candidates.values()]
+        if status_filter is not None:
+            candidates = [candidate for candidate in candidates if candidate.candidate_status == status_filter]
+        if role_filter is not None:
+            candidates = [candidate for candidate in candidates if role_filter in candidate.teacher_roles]
         if domain is not None:
             candidates = [candidate for candidate in candidates if domain in candidate.domain_scope]
         return sorted(candidates, key=lambda candidate: candidate.candidate_id)
@@ -94,7 +104,7 @@ class TeacherCandidateUniverse:
         return not self.promotion_blockers(candidate_id)
 
     def promotion_blockers(self, candidate_id: str) -> list[str]:
-        candidate = self.get(candidate_id)
+        candidate = self._candidates.get(candidate_id)
         if candidate is None:
             return ["candidate_missing"]
 
@@ -106,14 +116,14 @@ class TeacherCandidateUniverse:
             gate_status = getattr(candidate, gate_name)
             if gate_status == "blocked":
                 blockers.append(f"{gate_name}_blocked")
-            elif gate_status != "approved":
+            elif gate_status not in _NON_BLOCKING_GATES:
                 blockers.append(f"{gate_name}_not_approved")
 
         if not candidate.source_refs:
             blockers.append("source_refs_missing")
         if not candidate.benchmark_refs:
             blockers.append("benchmark_refs_missing")
-        if candidate.candidate_status == "retired":
+        if candidate.candidate_status == "retired" or candidate.retirement_reason:
             blockers.append("candidate_retired")
 
         return blockers
@@ -126,7 +136,7 @@ class TeacherCandidateUniverse:
             status_counts[candidate.candidate_status] = status_counts.get(candidate.candidate_status, 0) + 1
 
         return {
-            "surface_id": "teacher_candidate_universe",
+            "surface_id": "teacher-candidate-universe",
             "candidate_count": len(candidates),
             "status_counts": status_counts,
             "promotion_ready_count": len(promotion_ready),
@@ -144,7 +154,7 @@ def _bootstrap_candidates() -> list[TeacherCandidate]:
         TeacherCandidate(
             candidate_id="leanstral-1-5",
             model_or_tool_id="mistralai/Leanstral-1.5-119B-A6B",
-            provider="mistralai",
+            provider="huggingface",
             source_url="https://huggingface.co/mistralai/Leanstral-1.5-119B-A6B",
             candidate_status="watchlist",
             teacher_roles=["verifier", "critic"],
@@ -160,7 +170,7 @@ def _bootstrap_candidates() -> list[TeacherCandidate]:
         TeacherCandidate(
             candidate_id="qwen3-coder-next",
             model_or_tool_id="Qwen/Qwen3-Coder-Next",
-            provider="qwen",
+            provider="huggingface",
             source_url="https://huggingface.co/Qwen/Qwen3-Coder-Next",
             candidate_status="watchlist",
             teacher_roles=["generator", "critic"],
@@ -176,7 +186,7 @@ def _bootstrap_candidates() -> list[TeacherCandidate]:
         TeacherCandidate(
             candidate_id="medgemma-1-5-4b",
             model_or_tool_id="google/medgemma-1.5-4b-it",
-            provider="google",
+            provider="huggingface",
             source_url="https://huggingface.co/google/medgemma-1.5-4b-it",
             candidate_status="quarantined",
             teacher_roles=["critic", "verifier"],
