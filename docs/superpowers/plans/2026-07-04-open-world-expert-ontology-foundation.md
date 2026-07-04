@@ -846,15 +846,15 @@ pytest tests/test_open_world_expert_ontology.py tests/test_teacher_candidate_uni
 
 Expected: `7 passed`.
 
-- [ ] **Step 2: Run adjacent registry tests**
+- [ ] **Step 2: Run adjacent committed registry tests**
 
 Run:
 
 ```powershell
-pytest tests/test_teacher_registry.py tests/test_forward_radar_registry.py -q
+pytest tests/test_teacher_registry.py -q
 ```
 
-Expected: all tests pass. If this times out, rerun the two files separately and report the exact timeout or failing test.
+Expected: all tests pass. The untracked forward-radar registry surface present in the main checkout is intentionally excluded from this isolated worktree's baseline because it is not part of the committed branch state.
 
 - [ ] **Step 3: Run syntax compile on changed modules**
 
