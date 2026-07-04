@@ -31,7 +31,7 @@ Assimilation targets are not external products to install wholesale. They are pa
 
 No source-health failure is automatically a rejection. The 2026-05-31 source re-verification packet explicitly says the 61 failed URLs mix stale links, private/local links, malformed extracted URLs, and real dead links. Each target still needs file-level review before changing its status.
 
-GitNexus is a current reference/provider for codegraph intelligence, not the final owner of graph awareness. NexusBrain must internalize GitNexus-like indexing, query, impact analysis, stale-index blocking, and changed-scope detection, then extend the same graph intelligence across code, workflows, skills, tools, models, runtimes, memory, policies, evals, teachers, experts, devices, federation, and replay artifacts.
+GitNexus is a current reference/provider for codegraph intelligence, not the final owner of graph awareness. NexusBrain must internalize GitNexus-like indexing, query, impact analysis, stale-index blocking, and changed-scope detection, then extend the same graph intelligence across everything NexusNet is permitted to perceive, connect to, learn from, reason over, govern, or mutate. Any category list is illustrative, not limiting: code, repos, docs, chats, files, workflows, skills, tools, prompts, models, runtimes, memories, policies, evals, teachers, experts, devices, sensors, APIs, connectors, finance/crypto streams, medical and health knowledge, quantum/science research, user/org context, federation, environment signals, evidence, replay, and future assimilation surfaces.
 
 ## Current Source Spot Check
 
@@ -57,7 +57,7 @@ This pass used the local corpus plus current primary or near-primary sources whe
 | Siloed self-improvement ownership | Reject any claim that one AO, expert, orchestrator, coordinator, or runtime lane owns self-improvement exclusively. Mother brain owns and coordinates hive-wide neuroplasticity; all nodes can participate through governance. |
 | Mega-skills and isolated endpoints | Reject opaque monolithic skills and disconnected endpoints. Preserve modular skills, recipes, MCP adapters, scripts, references, assets, workflow nodes, and runtime capability cards through progressive disclosure and strict budgets. |
 | Pinecone/KAC cluster | Reject direct Pinecone dependency, raw retrieval replacement, uncited trusted synthesis, and direct runtime mutation. Preserve context compiler, citations, typed artifacts, composable retrieval, graph retrieval, raw fallback, claim ledgers, and governance as NexusNet Knowledge Forge. |
-| GitNexus/codegraph gate | Reject GitNexus as the final mother brain, sole graph memory, or only place NexusNet understands code. Preserve GitNexus-style code indexing, graph query, impact analysis, stale-index checks, and change detection as the reference pattern for a NexusBrain-owned graph intelligence fabric. |
+| GitNexus/codegraph gate | Reject GitNexus as the final mother brain, sole graph memory, or only place NexusNet understands connected state. Preserve GitNexus-style code indexing, graph query, impact analysis, stale-index checks, and change detection as the reference pattern for a NexusBrain-owned graph intelligence fabric that spans every permitted NexusNet connection. |
 
 ## Cluster 1: Workflow Builders And Node UI
 
@@ -586,13 +586,14 @@ Representative targets:
 - Knowledge graphs, GraphRAG, Neo4j-style relationship modeling, and provenance DAGs
 - Workflow, skill, model, runtime, policy, eval, memory, expert, teacher, device, and federation graphs
 - Control Panel deep replay graph and pathway ledgers
+- Every current and future NexusNet-connected artifact, signal, source, system, environment, user-approved device, and external service
 
 What NexusNet should assimilate:
 
-- Persistent graph indexing for code symbols, files, imports, calls, tests, execution flows, APIs, docs, workflows, skills, tools, models, runtimes, policies, evals, memories, teachers, experts, devices, permissions, and replay artifacts.
-- Query/context retrieval that answers what exists, how it connects, what changed, what is stale, what is trusted, and which flows or subsystems are affected.
-- Impact analysis before mutations across code, workflow nodes, prompts, skills, model routes, runtime packs, expert registries, teacher pairings, memory artifacts, and policy rules.
-- Detect-changes style post-mutation mapping from changed artifacts to affected symbols, workflows, experts, skills, evals, policies, routes, and Control Panel surfaces.
+- Persistent graph indexing for every permitted connected thing. Examples include code symbols, files, imports, calls, tests, execution flows, APIs, docs, chats, workflows, skills, tools, prompts, models, runtimes, policies, evals, memories, teachers, experts, user contexts, devices, permissions, external services, knowledge domains, market feeds, research feeds, environment signals, and replay artifacts.
+- Query/context retrieval that answers what exists, where it came from, how it connects, what changed, what is stale, what is trusted, what is blocked, and which flows, agents, experts, policies, systems, devices, or external surfaces are affected.
+- Impact analysis before mutations across any internal or external connected surface, including code, workflow nodes, prompts, skills, model routes, runtime packs, expert registries, teacher pairings, memory artifacts, policy rules, connectors, devices, datasets, knowledge artifacts, and user-facing automations.
+- Detect-changes style post-mutation mapping from changed artifacts to every affected graph neighborhood: symbols, workflows, experts, AOs, skills, evals, policies, routes, devices, datasets, connectors, memories, Control Panel surfaces, and external commitments.
 - Freshness and provenance gates that bind every graph fact to source refs, commit/artifact versions, model passports, timestamps, permissions, and confidence.
 - Self-improvement support: use the graph to decide when to create, split, merge, retire, or sandbox experts, AOs, skills, workflows, and adapters during a live problem.
 - Creator-facing replay: expose graph paths, impact radius, evidence packets, and unresolved blockers in the Control Panel without leaking raw private content.
@@ -609,13 +610,13 @@ Native NexusNet output:
 
 `NexusGraph Intelligence Fabric`
 
-This is the mother-brain-owned graph layer that generalizes GitNexus-like code intelligence into whole-hive intelligence. GitNexus can remain an adapter, provider, and reference implementation for codegraph evidence, but NexusBrain owns the final graph contracts, routing authority, freshness checks, impact analysis, mutation gates, and replay surface.
+This is the mother-brain-owned graph layer that generalizes GitNexus-like code intelligence into whole-system intelligence. It is not limited to software artifacts or the current hive internals. It is the connected-state substrate for everything NexusNet can access under permission and policy, and it is how the mother brain knows what it is connected to, what can be changed, what should not be changed, and what every change may affect. GitNexus can remain an adapter, provider, and reference implementation for codegraph evidence, but NexusBrain owns the final universal graph contracts, routing authority, freshness checks, impact analysis, mutation gates, and replay surface.
 
 Gates:
 
-- Every graph node and edge must carry source refs, artifact version, freshness state, permissions, privacy class, and confidence.
+- Every graph node and edge must carry source refs, artifact or signal version, freshness state, permissions, privacy class, ownership, mutability, and confidence.
 - Code edits still require GitNexus-compatible impact and detect-changes evidence until the native codegraph path proves equivalent or stronger coverage.
-- Non-code mutations require the same pattern: pre-change impact, policy/eval gate, sandbox or shadow run, post-change detect scope, rollback proof, and replay evidence.
+- Non-code mutations across any connected surface require the same pattern: pre-change impact, policy/eval gate, sandbox or shadow run, post-change detect scope, rollback proof, and replay evidence.
 - Graph-driven expert birth, merge, split, retirement, dream proposal, or skill promotion remains shadow-only until teacher/eval/governance approval passes.
 - Control Panel graph views must label verified implementation, planned placeholder, blocked item, research-only target, and stale evidence distinctly.
 
@@ -634,7 +635,7 @@ Gates:
 | `Teacher Council And Expert Birth Registry` | Leanstral, Nemotron, Keye-VL, LFM, MiniCPM, Qwen/DeepSeek/Kimi/Mistral/Devstral, medical/finance/quantum teachers |
 | `Expert Pack Radar And Domain Curriculum Forge` | every domain expert class, expert-pack schema, domain evals, auto-research, expert split/merge |
 | `NexusNet Control Panel And Companion` | live visualizer, mobile/edge app, local model UX, workflow UI, teacher/expert/skill controls |
-| `NexusGraph Intelligence Fabric` | GitNexus, CodegraphGate, graph retrieval, workflow graphs, skill graphs, model/runtime graphs, policy/eval graphs, replay ledgers |
+| `NexusGraph Intelligence Fabric` | GitNexus, CodegraphGate, graph retrieval, all permitted connected artifacts/signals/systems, workflow graphs, skill graphs, model/runtime graphs, policy/eval graphs, replay ledgers |
 | `NexusNet Operational Spine` | GitNexus, worktrees, feature flags, replay snapshots, reversible patches, consolidation status |
 
 ## Final Reject Rules
@@ -660,7 +661,7 @@ These are not legitimate rejects:
 3. External products used only as UI, workflow, skill, runtime, eval, teacher, or governance pattern references.
 4. Temporary live-problem child experts that remain sandboxed and review-bound.
 5. Research-only targets kept as future options.
-6. GitNexus-style graph intelligence preserved as a planned native mother-brain capability while the current adapter/gate remains external.
+6. GitNexus-style graph intelligence preserved as a planned native mother-brain capability across everything NexusNet is permitted to connect to while the current adapter/gate remains external.
 
 ## Next Documentation Work
 

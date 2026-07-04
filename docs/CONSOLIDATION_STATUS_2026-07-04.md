@@ -53,7 +53,7 @@ That review preserves useful target patterns while rejecting dependency lock-in,
 
 Additional clarification:
 
-- `NexusGraph Intelligence Fabric` is the mother-brain-native target for GitNexus-like graph intelligence across code, workflows, skills, models, runtimes, memory, policies, evals, teachers, experts, devices, federation, and replay.
+- `NexusGraph Intelligence Fabric` is the mother-brain-native target for GitNexus-like graph intelligence across everything NexusNet is permitted to perceive, connect to, learn from, reason over, govern, or mutate. Any category list is illustrative, not limiting.
 - GitNexus and the current `CodegraphGate` remain valid reference/provider/gate layers, but they are not the final NexusNet brain or the only place NexusNet should understand connected system state.
 
 ## Future Agent Rules
@@ -65,7 +65,7 @@ Additional clarification:
 5. Before committing, run GitNexus detect-changes.
 6. Refresh `npx gitnexus analyze` after commits that change tracked repo state.
 7. Keep research-only, blocked, planned, and production-ready labels distinct.
-8. Treat GitNexus-like code intelligence as a capability NexusBrain must internalize and generalize through `NexusGraph Intelligence Fabric`, not as an external dependency that replaces the mother brain.
+8. Treat GitNexus-like code intelligence as a capability NexusBrain must internalize and generalize through `NexusGraph Intelligence Fabric` across all permitted connected state, not as an external dependency that replaces the mother brain.
 
 ## Verification Evidence For This Pass
 
