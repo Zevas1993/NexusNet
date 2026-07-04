@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from nexusnet.teachers import TeacherCandidate, build_default_teacher_candidate_universe
+from nexusnet.teachers.candidate_universe import TeacherCandidate, build_default_teacher_candidate_universe
 
 
 def test_candidate_universe_bootstraps_watchlist_without_active_promotion():
