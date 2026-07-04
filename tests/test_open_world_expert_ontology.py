@@ -176,6 +176,61 @@ def test_register_allows_explicit_replacement():
     assert ontology.get("custom:replaceable") == replacement
 
 
+def test_get_returns_copy_that_cannot_downgrade_stored_high_risk_panel():
+    ontology = build_default_expert_ontology()
+
+    medical = ontology.get("medical:safety-reviewer")
+    assert medical is not None
+    medical.risk_tier = "low"
+
+    panel = ontology.panel_for_domain("medical")
+
+    assert panel.risk_tier == "high"
+    assert panel.blocked_without_panel is True
+
+
+def test_list_entries_and_coverage_for_return_copies():
+    ontology = build_default_expert_ontology()
+
+    medical = ontology.list_entries(domain="medical")[0]
+    medical.risk_tier = "low"
+    covered = ontology.coverage_for(["medical", "safety", "clinical"])[0]
+    covered.risk_tier = "low"
+
+    panel = ontology.panel_for_domain("medical")
+
+    assert panel.risk_tier == "high"
+    assert panel.blocked_without_panel is True
+
+
+def test_register_revalidates_model_instances_and_isolates_input_and_returned_entries():
+    ontology = OpenWorldExpertOntology()
+    entry = ExpertOntologyEntry(
+        expert_id="custom:isolated",
+        display_name="Isolated Expert",
+        domain="medical",
+        subdomain="safety",
+        risk_tier="high",
+    )
+
+    registered = ontology.register(entry)
+    entry.risk_tier = "low"
+    registered.risk_tier = "low"
+
+    panel = ontology.panel_for_domain("medical")
+    assert panel.risk_tier == "high"
+    assert panel.blocked_without_panel is True
+
+    invalid = ontology.get("custom:isolated")
+    assert invalid is not None
+    invalid.risk_tier = "bogus"
+
+    with pytest.raises(ValueError):
+        ontology.register(invalid, replace=True)
+
+    assert ontology.get("custom:isolated").risk_tier == "high"
+
+
 def test_panel_for_domain_uses_max_risk_ordering():
     ontology = OpenWorldExpertOntology(
         [

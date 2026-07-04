@@ -68,14 +68,18 @@ class OpenWorldExpertOntology:
             self.register(entry)
 
     def register(self, entry: ExpertOntologyEntry | dict[str, Any], *, replace: bool = False) -> ExpertOntologyEntry:
-        normalized = entry if isinstance(entry, ExpertOntologyEntry) else ExpertOntologyEntry.model_validate(entry)
+        normalized = ExpertOntologyEntry.model_validate(
+            entry.model_dump(mode="python") if isinstance(entry, ExpertOntologyEntry) else entry
+        )
         if normalized.expert_id in self._entries and not replace:
             raise ValueError(f"Expert ontology entry already registered: {normalized.expert_id}")
-        self._entries[normalized.expert_id] = normalized
-        return normalized
+        stored = normalized.model_copy(deep=True)
+        self._entries[normalized.expert_id] = stored
+        return stored.model_copy(deep=True)
 
     def get(self, expert_id: str) -> ExpertOntologyEntry | None:
-        return self._entries.get(expert_id)
+        entry = self._entries.get(expert_id)
+        return entry.model_copy(deep=True) if entry is not None else None
 
     def list_entries(self, *, domain: str | None = None, risk_tier: RiskTier | None = None) -> list[ExpertOntologyEntry]:
         entries = list(self._entries.values())
@@ -83,7 +87,7 @@ class OpenWorldExpertOntology:
             entries = [entry for entry in entries if entry.domain == domain]
         if risk_tier is not None:
             entries = [entry for entry in entries if entry.risk_tier == risk_tier]
-        return sorted(entries, key=lambda entry: entry.expert_id)
+        return [entry.model_copy(deep=True) for entry in sorted(entries, key=lambda entry: entry.expert_id)]
 
     def coverage_for(self, capability_traits: Iterable[str]) -> list[ExpertOntologyEntry]:
         requested = {trait.strip().lower() for trait in capability_traits if trait.strip()}
@@ -92,7 +96,7 @@ class OpenWorldExpertOntology:
             for entry in self._entries.values()
             if requested.issubset({trait.lower() for trait in entry.capability_traits})
         ]
-        return sorted(matches, key=lambda entry: entry.expert_id)
+        return [entry.model_copy(deep=True) for entry in sorted(matches, key=lambda entry: entry.expert_id)]
 
     def classify_domain(self, text: str) -> DomainPanel:
         normalized = text.lower()
@@ -142,7 +146,7 @@ class OpenWorldExpertOntology:
         return self.panel_for_domain("general")
 
     def panel_for_domain(self, domain: str) -> DomainPanel:
-        entries = self.list_entries(domain=domain)
+        entries = [entry for entry in self._entries.values() if entry.domain == domain]
         risk_tier = _max_risk_tier(entries)
 
         high_risk = risk_tier in {"high", "critical"}
