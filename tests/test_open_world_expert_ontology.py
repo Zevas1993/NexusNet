@@ -8,6 +8,7 @@ def test_bootstrap_ontology_covers_high_risk_domains_with_required_panels():
 
     expected_domains = {"crypto", "finance", "medical", "holistic_medicine", "legal", "security"}
     actual_domains = {entry.domain for entry in ontology.list_entries()}
+    assert len(ontology.list_entries()) == 8
     assert expected_domains.issubset(actual_domains)
 
     crypto_panel = ontology.panel_for_domain("crypto")
@@ -26,6 +27,20 @@ def test_bootstrap_ontology_covers_high_risk_domains_with_required_panels():
     assert "contraindication_screening" in holistic.forbidden_actions
     assert "peer_reviewed" in holistic.evidence_standard
     assert "medical-safety-reviewer" in holistic.verifier_pool
+
+    formal = ontology.get("formal:methods-verifier")
+    assert formal is not None
+    assert formal.domain == "software"
+
+    security = ontology.get("security:threat-modeler")
+    assert security is not None
+    assert security.domain == "security"
+    assert security.risk_tier == "high"
+    assert "threat_modeling" in security.capability_traits
+
+    security_panel = ontology.panel_for_domain("security")
+    assert security_panel.risk_tier == "high"
+    assert security_panel.blocked_without_panel is True
 
 
 def test_domain_classifier_routes_crypto_finance_and_holistic_queries_to_high_risk_panels():

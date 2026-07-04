@@ -433,6 +433,25 @@ def _bootstrap_entries() -> list[ExpertOntologyEntry]:
             promotion_gates=["proof_check", "sandbox_eval"],
         ),
         ExpertOntologyEntry(
+            expert_id="security:threat-modeler",
+            display_name="Security Threat Modeler",
+            domain="security",
+            subdomain="threat-modeling",
+            capability_traits=["security", "threat_modeling", "misuse_analysis", "secure_design"],
+            risk_tier="high",
+            regulated_status="sensitive",
+            evidence_standard=["official_docs", "repo_source", "benchmark_result"],
+            allowed_actions=["analysis", "threat_modeling", "mitigation_planning", "sandbox_recommendation"],
+            forbidden_actions=["exploit_execution", "credential_access", "persistence_instruction"],
+            source_requirements=["system_design_ref", "asset_inventory", "threat_context", "security_policy"],
+            teacher_pool=["qwen3-coder-next", "devstral-2"],
+            critic_pool=["critique"],
+            verifier_pool=["security", "legal-risk"],
+            retriever_pool=["retrieval"],
+            eval_family=["threat-modeling", "misuse-safety", "secure-design"],
+            promotion_gates=["security_review", "misuse_safety_review", "sandbox_eval", "operator_approval"],
+        ),
+        ExpertOntologyEntry(
             expert_id="world:world-model-researcher",
             display_name="World Model Researcher",
             domain="world_models",
@@ -493,7 +512,7 @@ Run:
 python -c "from nexusnet.experts import build_default_expert_ontology; print(len(build_default_expert_ontology().list_entries()))"
 ```
 
-Expected: `7`
+Expected: `8`
 
 - [ ] **Step 5: Commit ontology implementation**
 
