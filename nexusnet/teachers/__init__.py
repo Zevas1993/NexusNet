@@ -1,6 +1,7 @@
 from .benchmarks import TeacherBenchmarkRegistry
 from .catalog import build_default_teacher_assignments, build_default_teacher_profiles
 from .capability_cards import build_teacher_capability_card
+from .candidate_universe import TeacherCandidate, TeacherCandidateUniverse, build_default_teacher_candidate_universe
 from .cohorts import TeacherCohortAnalyzer
 from .cohort_thresholds import TeacherCohortThresholdRegistry
 from .disagreement import build_teacher_disagreement
@@ -25,6 +26,8 @@ from .trends import TeacherTrendAnalyzer
 
 __all__ = [
     "TeacherBenchmarkRegistry",
+    "TeacherCandidate",
+    "TeacherCandidateUniverse",
     "TeacherCatalogLoader",
     "TeacherEnsemblePolicy",
     "TeacherRegistry",
@@ -40,6 +43,7 @@ __all__ = [
     "build_teacher_evidence_bundle",
     "build_teacher_scorecard",
     "build_teacher_capability_card",
+    "build_default_teacher_candidate_universe",
     "build_default_teacher_profiles",
     "build_default_teacher_assignments",
     "build_disagreement_artifact",

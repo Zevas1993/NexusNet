@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from nexusnet.teachers.candidate_universe import TeacherCandidate, build_default_teacher_candidate_universe
 
 
@@ -74,3 +76,17 @@ def test_evidenced_shadow_candidate_can_be_promotion_ready():
     assert summary["candidate_count"] >= 4
     assert summary["promotion_ready_count"] == 1
     assert "qwen3-coder-next-shadow" in summary["promotion_ready_candidate_ids"]
+
+
+def test_register_rejects_duplicate_candidate_ids_by_default_without_replacing_original():
+    universe = build_default_teacher_candidate_universe()
+    original = universe.get("qwen3-coder-next")
+    assert original is not None
+    replacement = original.model_copy(update={"candidate_status": "active"})
+
+    with pytest.raises(ValueError, match="already registered"):
+        universe.register(replacement)
+
+    assert universe.get("qwen3-coder-next") == original
+    assert universe.register(replacement, replace=True) == replacement
+    assert universe.get("qwen3-coder-next") == replacement
