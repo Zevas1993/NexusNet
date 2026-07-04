@@ -217,6 +217,7 @@ class DistillationExportRequest(BaseModel):
     trace_limit: int = 100
     include_dreams: bool = True
     include_curriculum: bool = True
+    include_mock_traces: bool = False
 
 
 class DistillationExportResult(BaseModel):
@@ -233,6 +234,19 @@ class ModelAttachRequest(BaseModel):
     teacher_id: str | None = None
     attach_role: Literal["teacher", "specialist", "student"] = "teacher"
     set_active: bool = True
+
+
+class CoreModelAttachRequest(BaseModel):
+    mode: Literal["mock", "dev", "product"] = "dev"
+    model_ref: str | None = None
+    tokenizer_ref: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    router_hidden_dim: int | None = None
+    expert_hidden_dim: int | None = None
+    allow_mock: bool = False
+    plan_only: bool = False
+    strict_product_mode: bool = True
+    role: Literal["teacher", "specialist", "student"] = "teacher"
 
 
 class TeacherCapabilityCard(BaseModel):

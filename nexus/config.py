@@ -8,7 +8,7 @@ from typing import Any
 
 import yaml
 
-VERSION = "0.6.0-phase1"
+VERSION = "0.6.0a1"
 
 
 def _project_root() -> Path:

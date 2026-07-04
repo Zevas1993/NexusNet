@@ -98,6 +98,18 @@ class RuntimeProfile(BaseModel):
     updated_at: datetime = Field(default_factory=utcnow)
 
 
+class ModelRuntimePlanRequest(BaseModel):
+    model_id: str
+    model_path: str | None = None
+    model_format: str | None = None
+    architecture: str | None = None
+    modality: str | None = None
+    quantization: str | None = None
+    context_tokens: int = 4096
+    task: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class ToolManifest(BaseModel):
     tool_name: str
     permission_class: str
@@ -217,6 +229,7 @@ class OperatorResult(BaseModel):
     critique: CritiqueReport | None = None
     approval_required: bool = False
     trace: ExecutionTrace
+    runtime_selection: dict[str, Any] = Field(default_factory=dict)
 
 
 class ExperimentRecord(BaseModel):

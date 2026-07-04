@@ -46,9 +46,13 @@ def test_live_runtime_selection_falls_back_through_brain_and_records_retrieval_p
     assert response.status_code == 200
     payload = response.json()
     trace = payload["trace"]
-    assert trace["runtime_selection"]["selected_runtime_name"] == "onnx-genai"
-    assert trace["runtime_name"] != trace["runtime_selection"]["selected_runtime_name"]
-    assert trace["runtime_name"] in trace["runtime_selection"]["fallback_runtime_names"] + ["mock"]
+    runtime_selection = trace["runtime_selection"]
+    selected_runtime = runtime_selection["selected_runtime_name"]
+    if selected_runtime == "onnx-genai":
+        assert "onnx-genai" in client.app.state.services.runtime_registry.adapters
+    assert runtime_selection["requested_runtime_name"] != runtime_selection["served_runtime_name"]
+    assert trace["runtime_name"] == runtime_selection["served_runtime_name"]
+    assert trace["runtime_name"] in runtime_selection["fallback_runtime_names"] + ["mock"]
     assert trace["metrics"]["fallback_used"] is True
     assert trace["retrieval_policy"] == "lexical+graph-merged"
     assert trace["metrics"]["graph_contribution_count"] >= 1

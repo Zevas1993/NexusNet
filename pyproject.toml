@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nexusnet"
-version = "0.5.1a"
+version = "0.6.0a1"
 description = "Nexus platform foundation with NexusNet native-core research scaffolding"
 authors = [{name="NexusNet Team"}]
 readme = "README.md"

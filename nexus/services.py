@@ -15,7 +15,7 @@ from .foundry import DatasetRefinery
 from .governance import GovernanceService
 from .manifest import build_workspace_manifest
 from .memory import MemoryService
-from .models import ModelRegistry
+from .models import ModelRegistry, ModelRuntimePlanner
 from .operator import OperatorKernel
 from .operator.routing import ExpertSelector
 from .permissions import PermissionContext
@@ -40,7 +40,7 @@ from nexusnet.autonomous_growth import AutonomousGrowthControlPlane
 from nexusnet.aos import build_default_ao_registry as build_brain_ao_registry
 from nexusnet.browser import BrowserContextMemory, BrowserProfilePolicy
 from nexusnet.canon import NexusNetCanonRegistry
-from nexusnet.core import AutonomousUpdateController, CoreEvidenceBridge, EBTScoringContract, NexusBrain, SelfReviewGate
+from nexusnet.core import AutonomousUpdateController, CoreEvidenceBridge, EBTScoringContract, NexusBrain, NexusNetCore, SelfReviewGate
 from nexusnet.core.self_improvement import SelfImprovementLineageRegistry
 from nexusnet.curriculum import CurriculumEngine, DatasetRadar
 from nexusnet.curriculum.skill_refinement import SkillRefinementService
@@ -157,6 +157,7 @@ class NexusServices:
     agent_registry: Any
     runtime_registry: RuntimeRegistry
     model_registry: ModelRegistry
+    model_runtime_planner: ModelRuntimePlanner
     memory: MemoryService
     retrieval: RetrievalService
     critique: CritiqueEngine
@@ -170,6 +171,7 @@ class NexusServices:
     brain_ebt: EBTScoringContract
     brain_trace_evals: TraceFirstEvalRegistry
     brain: NexusBrain
+    nexusnet_core: NexusNetCore
     brain_teachers: TeacherRegistry
     brain_aos: Any
     brain_agent_registry: BrainAgentRegistry
@@ -345,6 +347,7 @@ def build_services(project_root: str | None = None) -> NexusServices:
     runtime_registry.bootstrap()
     model_registry = ModelRegistry(store, runtime_registry, runtime_configs)
     model_registry.bootstrap()
+    model_runtime_planner = ModelRuntimePlanner(runtime_registry=runtime_registry, runtime_configs=runtime_configs)
     memory = MemoryService(paths, store)
     brain_memory_node = MemoryNode(project_root=paths.project_root, runtime_configs=runtime_configs)
     runtime_configs["planes"] = brain_memory_node.summary()["raw_config"]
@@ -420,6 +423,13 @@ def build_services(project_root: str | None = None) -> NexusServices:
     )
     brain.wake()
     brain.bootstrap_from_registry()
+    nexusnet_core = NexusNetCore(
+        paths=paths,
+        brain=brain,
+        hardware_scanner=brain_runtime_registry.hardware_scanner,
+        system_profiler=brain_runtime_registry.system_profiler,
+        memory_node=brain_memory_node,
+    )
     brain_teacher_evidence = TeacherEvidenceService(
         store=store,
         artifacts_dir=paths.artifacts_dir,
@@ -923,6 +933,8 @@ def build_services(project_root: str | None = None) -> NexusServices:
         brain_runtime_registry=brain_runtime_registry,
         brain_gateway=brain_gateway,
         brain_promotions=brain_promotions,
+        model_runtime_planner=model_runtime_planner,
+        nexusnet_core=nexusnet_core,
     )
     return NexusServices(
         version=VERSION,
@@ -934,6 +946,7 @@ def build_services(project_root: str | None = None) -> NexusServices:
         agent_registry=agent_registry,
         runtime_registry=runtime_registry,
         model_registry=model_registry,
+        model_runtime_planner=model_runtime_planner,
         memory=memory,
         retrieval=retrieval,
         critique=critique,
@@ -947,6 +960,7 @@ def build_services(project_root: str | None = None) -> NexusServices:
         brain_ebt=brain_ebt,
         brain_trace_evals=brain_trace_evals,
         brain=brain,
+        nexusnet_core=nexusnet_core,
         brain_teachers=brain_teachers,
         brain_aos=brain_aos,
         brain_agent_registry=brain_agent_registry,

@@ -39,6 +39,7 @@ def attach_base_model(
     promotion_action: str | None = None,
     promotion_decision_id: str | None = None,
     startup_log_path: str | None = None,
+    compatibility_provenance: dict[str, Any] | None = None,
 ) -> tuple[BaseModelAdapter, dict[str, Any]]:
     registration = model_registry.resolve_model(model_hint)
     selected_runtime_name = runtime_name or registration.runtime_name
@@ -81,6 +82,21 @@ def attach_base_model(
                 ),
                 "promotion_action": promotion_action or cached_record.get("promotion_action"),
                 "promotion_decision_id": promotion_decision_id or cached_record.get("promotion_decision_id"),
+                "compatibility_provenance": {
+                    **dict(cached_record.get("compatibility_provenance") or {}),
+                    **dict(compatibility_provenance or {}),
+                },
+                "compatibility_plan_id": (compatibility_provenance or {}).get("compatibility_plan_id")
+                or cached_record.get("compatibility_plan_id"),
+                "compatibility_status": (compatibility_provenance or {}).get("compatibility_status")
+                or cached_record.get("compatibility_status"),
+                "attachment_mode": (compatibility_provenance or {}).get("attachment_mode")
+                or cached_record.get("attachment_mode"),
+                "product_evidence": (
+                    (compatibility_provenance or {}).get("product_evidence")
+                    if (compatibility_provenance or {}).get("product_evidence") is not None
+                    else cached_record.get("product_evidence")
+                ),
             }
             attachment_cache[adapter_key] = merged_record
             return cached_adapter, dict(merged_record)
@@ -115,6 +131,11 @@ def attach_base_model(
         "native_candidate_confidence": native_candidate_confidence,
         "promotion_action": promotion_action,
         "promotion_decision_id": promotion_decision_id,
+        "compatibility_provenance": dict(compatibility_provenance or {}),
+        "compatibility_plan_id": (compatibility_provenance or {}).get("compatibility_plan_id"),
+        "compatibility_status": (compatibility_provenance or {}).get("compatibility_status"),
+        "attachment_mode": (compatibility_provenance or {}).get("attachment_mode"),
+        "product_evidence": (compatibility_provenance or {}).get("product_evidence"),
         "startup_log_path": startup_log_path,
         "hardware_profile": hardware_profile or {},
         "runtime_decision": runtime_decision or {},
@@ -151,6 +172,11 @@ def attach_base_model(
                 "native_candidate_confidence": native_candidate_confidence,
                 "promotion_action": promotion_action,
                 "promotion_decision_id": promotion_decision_id,
+                "compatibility_provenance": dict(compatibility_provenance or {}),
+                "compatibility_plan_id": (compatibility_provenance or {}).get("compatibility_plan_id"),
+                "compatibility_status": (compatibility_provenance or {}).get("compatibility_status"),
+                "attachment_mode": (compatibility_provenance or {}).get("attachment_mode"),
+                "product_evidence": (compatibility_provenance or {}).get("product_evidence"),
                 "startup_log_path": startup_log_path,
                 "capability_profile": capability_profile,
             }

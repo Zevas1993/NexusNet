@@ -10,7 +10,7 @@ __all__ = [
     "SessionContext",
 ]
 
-__version__ = "0.6.0-phase1"
+__version__ = "0.6.0a1"
 
 
 def __getattr__(name: str):

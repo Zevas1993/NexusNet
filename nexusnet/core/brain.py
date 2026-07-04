@@ -6,7 +6,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from nexus.config import NexusPaths
+from nexus.config import NexusPaths, env_flag
 from nexus.critique import CritiqueEngine
 from nexus.memory import MemoryService
 from nexus.models import ModelRegistry
@@ -24,6 +24,7 @@ from ..moe import MoEFusionScaffoldService
 from ..schemas import BrainGenerateResult, BrainGenerateRequest, InferenceTrace, SessionContext
 from ..telemetry import BrainTelemetryLogger
 from ..traces import build_product_trace_event
+from .compatibility_provenance import normalize_compatibility_provenance
 from .execution_policy import CoreExecutionPolicyEngine
 from .execution_trace import CoreExecutionTraceRecorder, build_lineage_tags, persist_core_execution_artifact
 from .model_ingestion import ModelIngestionService
@@ -55,6 +56,12 @@ def _sanitized_native_hive_metadata_ref(value: Any, *, fallback: str) -> str:
         return raw[:180]
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
     return f"{fallback}::{digest}"
+
+
+class RuntimeUnavailableError(RuntimeError):
+    def __init__(self, detail: dict[str, Any]):
+        super().__init__(str(detail.get("message") or "No real runtime is available for the requested model."))
+        self.detail = detail
 
 
 class NexusBrain:
@@ -417,10 +424,19 @@ class NexusBrain:
         attachment_record: dict | None = None
         attempted_runtimes: list[str] = []
         fallback_used = False
+        inference_cfg = (self.runtime_registry.runtime_configs.get("inference", {}) if hasattr(self.runtime_registry, "runtime_configs") else {}) or {}
+        runtime_policy = (inference_cfg.get("policy", {}) or {})
+        product_mode = env_flag("NEXUSNET_PRODUCT_MODE", bool(runtime_policy.get("product_mode", False)))
+        allow_mock_runtime = env_flag("NEXUSNET_ALLOW_MOCK_RUNTIME", bool(runtime_policy.get("allow_mock_runtime", not product_mode)))
+        requested_runtime_name = registration.runtime_name
+        selected_runtime_name = runtime_override or registration.runtime_name
+        runtime_selection_payload = dict(runtime_selection or {})
+        compatibility_provenance = normalize_compatibility_provenance(runtime_selection_payload)
         planned_runtimes = self._planned_runtimes(
             registration.runtime_name,
             runtime_override=runtime_override,
             fallback_chain=fallback_chain,
+            allow_mock_runtime=allow_mock_runtime,
         )
         for runtime_name in planned_runtimes:
             attempted_runtimes.append(runtime_name)
@@ -429,6 +445,8 @@ class NexusBrain:
             except Exception:
                 continue
             profile = runtime_backend.profile()
+            if runtime_name == "mock" and not allow_mock_runtime:
+                continue
             if not profile.available and runtime_name != "mock":
                 continue
             try:
@@ -441,6 +459,7 @@ class NexusBrain:
                     execution_policy=execution_policy,
                     native_execution=native_execution,
                     promotion_linkage=promotion_linkage,
+                    compatibility_provenance=compatibility_provenance,
                 )
                 execution_recorder.record(
                     "attach-base-model",
@@ -448,6 +467,10 @@ class NexusBrain:
                         "model_id": attachment_record.get("model_id"),
                         "runtime_name": attachment_record.get("runtime_name"),
                         "adapter_id": attachment_record.get("adapter_id"),
+                        "compatibility_plan_id": compatibility_provenance.get("compatibility_plan_id"),
+                        "compatibility_status": compatibility_provenance.get("compatibility_status"),
+                        "attachment_mode": compatibility_provenance.get("attachment_mode"),
+                        "product_evidence": compatibility_provenance.get("product_evidence"),
                     },
                 )
                 execution_recorder.record(
@@ -462,13 +485,32 @@ class NexusBrain:
                     prompt=execution_prompt,
                     messages=request.messages or [Message(role="user", content=raw_prompt)],
                 )
-                fallback_used = runtime_name != (runtime_override or registration.runtime_name)
+                fallback_used = runtime_name != registration.runtime_name
                 break
             except Exception as exc:
                 status = "warning"
                 error = str(exc)
                 adapter = None
         if adapter is None:
+            if not allow_mock_runtime:
+                raise RuntimeUnavailableError(
+                    {
+                        "error": "runtime-unavailable",
+                        "message": "No live runtime can serve the requested model and mock fallback is disabled.",
+                        "requested_model_id": registration.model_id,
+                        "requested_runtime": requested_runtime_name,
+                        "selected_runtime": selected_runtime_name,
+                        "served_model_id": None,
+                        "served_runtime": None,
+                        "runtime_lane": None,
+                        "fallback_used": False,
+                        "fallback_reason": None,
+                        "compatibility_plan_id": runtime_selection_payload.get("compatibility_plan_id"),
+                        "attempted_runtimes": attempted_runtimes,
+                        "blocked_reasons": ["mock-runtime-disabled", "no-live-runtime-available"],
+                        "product_mode": product_mode,
+                    }
+                )
             adapter, attachment_record = self._attach_base_model(
                 model_hint="mock/default",
                 role="teacher",
@@ -478,6 +520,7 @@ class NexusBrain:
                 execution_policy=execution_policy,
                 native_execution=native_execution,
                 promotion_linkage=promotion_linkage,
+                compatibility_provenance=compatibility_provenance,
             )
             execution_recorder.record(
                 "attach-base-model",
@@ -486,6 +529,10 @@ class NexusBrain:
                     "runtime_name": attachment_record.get("runtime_name"),
                     "adapter_id": attachment_record.get("adapter_id"),
                     "fallback": True,
+                    "compatibility_plan_id": compatibility_provenance.get("compatibility_plan_id"),
+                    "compatibility_status": compatibility_provenance.get("compatibility_status"),
+                    "attachment_mode": compatibility_provenance.get("attachment_mode"),
+                    "product_evidence": compatibility_provenance.get("product_evidence"),
                 },
             )
             output = adapter.generate(
@@ -495,6 +542,65 @@ class NexusBrain:
             )
             fallback_used = True
         latency_ms = int((time.perf_counter() - start_time) * 1000)
+        served_runtime_name = adapter.runtime_backend.runtime_name
+        served_model_id = "mock/default" if served_runtime_name == "mock" else adapter.model_id
+        fallback_used = fallback_used or served_model_id != registration.model_id or served_runtime_name != requested_runtime_name
+        fallback_reason = runtime_selection_payload.get("fallback_reason")
+        if fallback_used and not fallback_reason:
+            fallback_reason = (
+                f"requested {registration.model_id} on {requested_runtime_name}; "
+                f"served {served_model_id} on {served_runtime_name}"
+            )
+        runtime_selection_payload = {
+            **runtime_selection_payload,
+            "requested_model_id": registration.model_id,
+            "requested_runtime_name": requested_runtime_name,
+            "selected_runtime_name": selected_runtime_name,
+            "served_model_id": served_model_id,
+            "served_runtime_name": served_runtime_name,
+            "runtime_lane": served_runtime_name,
+            "attempted_runtimes": attempted_runtimes,
+            "fallback_used": fallback_used,
+            "fallback_reason": fallback_reason,
+            "mock_allowed": allow_mock_runtime,
+            "product_mode": product_mode,
+        }
+        compatibility_provenance = normalize_compatibility_provenance(runtime_selection_payload, attachment_record or {})
+        if compatibility_provenance:
+            runtime_selection_payload = {
+                **runtime_selection_payload,
+                "compatibility_provenance": compatibility_provenance,
+                "compatibility_plan_id": compatibility_provenance.get(
+                    "compatibility_plan_id",
+                    runtime_selection_payload.get("compatibility_plan_id"),
+                ),
+                "compatibility_status": compatibility_provenance.get("compatibility_status"),
+                "attachment_mode": compatibility_provenance.get("attachment_mode"),
+                "product_evidence": compatibility_provenance.get("product_evidence"),
+            }
+        if product_mode and fallback_used and compatibility_provenance.get("product_evidence") is not True:
+            raise RuntimeUnavailableError(
+                {
+                    "error": "runtime-unavailable",
+                    "message": "Product mode requires requested-runtime service or explicit product-grade compatibility evidence for fallback.",
+                    "requested_model_id": registration.model_id,
+                    "requested_runtime": requested_runtime_name,
+                    "selected_runtime": selected_runtime_name,
+                    "served_model_id": None,
+                    "served_runtime": None,
+                    "runtime_lane": None,
+                    "fallback_used": False,
+                    "fallback_reason": None,
+                    "compatibility_plan_id": runtime_selection_payload.get("compatibility_plan_id"),
+                    "attempted_runtimes": attempted_runtimes,
+                    "blocked_reasons": [
+                        "mock-runtime-disabled",
+                        "requested-runtime-unavailable",
+                        "product-evidence-required",
+                    ],
+                    "product_mode": product_mode,
+                }
+            )
 
         critique = self.critique.assess(
             trace_id=session_context.trace_id,
@@ -541,8 +647,8 @@ class NexusBrain:
             trace_id=session_context.trace_id,
             input_id=f"{session_context.session_id}:{session_context.trace_id}",
             capsule_id=session_context.expert,
-            model_id=adapter.model_id,
-            runtime_name=adapter.runtime_backend.runtime_name,
+            model_id=served_model_id,
+            runtime_name=served_runtime_name,
             memory_retrieval_count=len(recent_memory),
             memory_write_planned=True,
             fallback_used=fallback_used,
@@ -553,8 +659,8 @@ class NexusBrain:
         trace = InferenceTrace(
             trace_id=session_context.trace_id,
             session_id=session_context.session_id,
-            model_id=adapter.model_id,
-            runtime_name=adapter.runtime_backend.runtime_name,
+            model_id=served_model_id,
+            runtime_name=served_runtime_name,
             adapter_id=adapter.adapter_id,
             adapter_role=adapter.adapter_role,
             started_at=started_at,
@@ -571,10 +677,7 @@ class NexusBrain:
                 "memory_budget": session_context.memory_budget,
                 "compression_applied": compression is not None,
                 "retrieval_enabled": session_context.use_retrieval,
-                "runtime_selection": runtime_selection or {
-                    "selected_runtime_name": runtime_override or registration.runtime_name,
-                    "fallback_runtime_names": fallback_chain or [],
-                },
+                "runtime_selection": runtime_selection_payload,
                 "attempted_runtimes": attempted_runtimes,
                 "fallback_used": fallback_used,
                 "native_hive_forward_pass": native_hive_forward_pass,
@@ -665,6 +768,7 @@ class NexusBrain:
                 "selected_expert": session_context.expert,
                 "model_id": trace.model_id,
                 "runtime_name": trace.runtime_name,
+                "runtime_selection": runtime_selection_payload,
                 "metrics": trace.metrics,
                 "retrieval_policy": retrieval_policy_decision["policy_mode"],
                 "retrieval_policy_decision": retrieval_policy_decision,
@@ -674,6 +778,7 @@ class NexusBrain:
                     *[
                         ref
                         for ref in [
+                            (compatibility_provenance.get("compatibility_plan_id") and f"compatibility-plan::{compatibility_provenance.get('compatibility_plan_id')}"),
                             (promotion_linkage.get("decision_id") and f"native-promotion::{promotion_linkage.get('decision_id')}"),
                             (promotion_linkage.get("replacement_readiness_report_id") and f"replacement-readiness::{promotion_linkage.get('replacement_readiness_report_id')}"),
                             (promotion_linkage.get("candidate_id") and f"native-takeover::{promotion_linkage.get('candidate_id')}"),
@@ -731,6 +836,7 @@ class NexusBrain:
                 *[
                     ref
                     for ref in [
+                        (compatibility_provenance.get("compatibility_plan_id") and f"compatibility-plan::{compatibility_provenance.get('compatibility_plan_id')}"),
                         ((execution_policy.get("evidence_refs") or {}).get("teacher_bundle_id") and f"teacher-bundle::{(execution_policy.get('evidence_refs') or {}).get('teacher_bundle_id')}"),
                         ((execution_policy.get("evidence_refs") or {}).get("distillation_artifact_id") and f"distillation::{(execution_policy.get('evidence_refs') or {}).get('distillation_artifact_id')}"),
                         ((execution_policy.get("evidence_refs") or {}).get("native_takeover_candidate_id") and f"native-takeover::{(execution_policy.get('evidence_refs') or {}).get('native_takeover_candidate_id')}"),
@@ -1024,6 +1130,7 @@ class NexusBrain:
         execution_policy: dict[str, Any] | None = None,
         native_execution: dict[str, Any] | None = None,
         promotion_linkage: dict[str, Any] | None = None,
+        compatibility_provenance: dict[str, Any] | None = None,
     ) -> tuple[BaseModelAdapter, dict]:
         if self._wake_state is None:
             self.wake()
@@ -1066,6 +1173,7 @@ class NexusBrain:
             promotion_action=((promotion_linkage or {}).get("execution_action")),
             promotion_decision_id=((promotion_linkage or {}).get("decision_id")),
             startup_log_path=(self._wake_state or {}).get("log_path"),
+            compatibility_provenance=compatibility_provenance,
         )
         self.lifecycle_trace.record(
             "attach-base-model",
@@ -1073,12 +1181,22 @@ class NexusBrain:
                 "model_id": attachment_record.get("model_id"),
                 "runtime_name": attachment_record.get("runtime_name"),
                 "adapter_id": attachment_record.get("adapter_id"),
+                "compatibility_plan_id": (compatibility_provenance or {}).get("compatibility_plan_id"),
             },
         )
         return adapter, attachment_record
 
-    def _planned_runtimes(self, registration_runtime: str, *, runtime_override: str | None, fallback_chain: list[str] | None) -> list[str]:
-        planned = [runtime_override or registration_runtime, *(fallback_chain or []), registration_runtime, "mock"]
+    def _planned_runtimes(
+        self,
+        registration_runtime: str,
+        *,
+        runtime_override: str | None,
+        fallback_chain: list[str] | None,
+        allow_mock_runtime: bool = True,
+    ) -> list[str]:
+        planned = [runtime_override or registration_runtime, *(fallback_chain or []), registration_runtime]
+        if allow_mock_runtime:
+            planned.append("mock")
         ordered: list[str] = []
         for runtime_name in planned:
             if runtime_name and runtime_name not in ordered:

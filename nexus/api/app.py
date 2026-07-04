@@ -13,11 +13,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from ..schemas import ApprovalRequest, ChatRequest, RetrievalIngestRequest, RetrievalRequest
+from ..config import save_yaml_file
+from ..schemas import ApprovalRequest, ChatRequest, ModelRuntimePlanRequest, RetrievalIngestRequest, RetrievalRequest
 from ..services import NexusServices, build_services
+from nexusnet.core import AutonomousUpdateRequest, CompatibilityStatus, RuntimeUnavailableError, SelfReviewRequest
 from nexusnet.core.ebt import EBTScoreRequest
 from nexusnet.protocols import ProtocolAdapterPolicyRequest, ProtocolConsentRequest, ProtocolServerDefinition, ToolAttempt
-from nexusnet.schemas import CurriculumAssessmentRequest, DistillationExportRequest, DreamCycleRequest, GraphIngestRequest, ModelAttachRequest
+from nexusnet.schemas import CoreModelAttachRequest, CurriculumAssessmentRequest, DistillationExportRequest, DreamCycleRequest, GraphIngestRequest, ModelAttachRequest
 from nexusnet.adapters.dataset_forge import DatasetForgeRequest
 from nexusnet.adapters.decision_gate import FineTuneDecisionRequest
 from nexusnet.adapters.forge import AdapterRecordRequest
@@ -69,7 +71,6 @@ from nexusnet.canon.realization import (
     tool_execution_scorecard,
     visualops_scorecard,
 )
-from nexusnet.core import AutonomousUpdateRequest, SelfReviewRequest
 from nexusnet.core.self_improvement import (
     ExperienceCapture,
     ImprovementEvent,
@@ -1719,6 +1720,165 @@ def create_app(project_root: str | None = None) -> FastAPI:
             session_id=session_id,
             trace_id=trace_id,
         )
+
+    @application.post("/ops/brain/core/wake")
+    def ops_brain_core_wake():
+        state = services.nexusnet_core.wake()
+        return {
+            "status": "ok",
+            "awake": bool(state.get("awake")),
+            "core_state": state,
+            "hardware_profile": state.get("hardware_scan", {}),
+            "adaptive_config": state.get("adaptive_runtime_config", {}),
+            "trace": state.get("trace_event", {}),
+        }
+
+    @application.post("/ops/brain/core/attach")
+    def ops_brain_core_attach(request: CoreModelAttachRequest):
+        metadata = {
+            **dict(request.metadata or {}),
+            **({"model_ref": request.model_ref} if request.model_ref else {}),
+            **({"tokenizer_ref": request.tokenizer_ref} if request.tokenizer_ref else {}),
+        }
+        if request.model_ref and not metadata.get("model_id"):
+            metadata["model_id"] = request.model_ref
+        if request.mode == "mock" and not request.allow_mock:
+            trace = services.nexusnet_core.trace_logger.write(
+                event="base_model.attach.blocked",
+                component="NexusNetCore",
+                status="error",
+                metadata={
+                    "mode": "mock",
+                    "is_mock": True,
+                    "product_evidence": False,
+                    "model_id": metadata.get("model_id") or request.model_ref,
+                    "blocked_reason": "mock-attach-disabled",
+                },
+                error="Mock attach requires allow_mock=true.",
+            )
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "mock-attach-disabled",
+                    "message": "Mock core attach requires allow_mock=true.",
+                    "attached": False,
+                    "trace": trace,
+                },
+            )
+
+        compatibility_plan = None
+        should_plan = (
+            request.mode == "product"
+            or request.plan_only
+            or request.router_hidden_dim is not None
+            or request.expert_hidden_dim is not None
+        )
+        if should_plan:
+            compatibility_plan = services.nexusnet_core.compatibility_planner.plan(
+                metadata=metadata,
+                router_hidden_dim=request.router_hidden_dim,
+                expert_hidden_dim=request.expert_hidden_dim,
+                strict_product_mode=request.strict_product_mode and request.mode == "product",
+            )
+        plan_payload = compatibility_plan.model_dump(mode="json") if compatibility_plan is not None else {}
+
+        if request.plan_only:
+            trace = services.nexusnet_core.trace_logger.write(
+                event="base_model.attach.plan",
+                component="NexusNetCore",
+                status="ok",
+                metadata={
+                    "mode": request.mode,
+                    "is_mock": request.mode == "mock",
+                    "product_evidence": False,
+                    "model_id": metadata.get("model_id") or request.model_ref,
+                    "compatibility_status": plan_payload.get("status"),
+                    "compatibility_plan_id": plan_payload.get("compatibility_plan_id"),
+                },
+            )
+            return {
+                "status": "ok",
+                "attached": False,
+                "mode": request.mode,
+                "plan_only": True,
+                "attachment": None,
+                "compatibility_plan": plan_payload,
+                "trace": trace,
+            }
+
+        if (
+            request.mode == "product"
+            and request.strict_product_mode
+            and compatibility_plan is not None
+            and compatibility_plan.status not in {CompatibilityStatus.COMPATIBLE, CompatibilityStatus.ADAPTER_REQUIRED}
+        ):
+            trace = services.nexusnet_core.trace_logger.write(
+                event="base_model.attach.blocked",
+                component="NexusNetCore",
+                status="error",
+                metadata={
+                    "mode": "product",
+                    "is_mock": False,
+                    "product_evidence": False,
+                    "model_id": metadata.get("model_id") or request.model_ref,
+                    "compatibility_status": plan_payload.get("status"),
+                    "compatibility_plan_id": plan_payload.get("compatibility_plan_id"),
+                    "blocked_reason": "product-compatibility-validation-failed",
+                },
+                error="Product-mode attach failed compatibility validation.",
+            )
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "product-compatibility-validation-failed",
+                    "message": "Product-mode base-model attachment requires COMPATIBLE or ADAPTER_REQUIRED compatibility status.",
+                    "attached": False,
+                    "compatibility_plan": plan_payload,
+                    "trace": trace,
+                },
+            )
+
+        attachment = services.nexusnet_core.attach_base_model(
+            metadata=metadata,
+            model_hint=None,
+            role=request.role,
+            mode=request.mode,
+            compatibility_plan=compatibility_plan,
+            product_evidence=(
+                request.mode == "product"
+                and compatibility_plan is not None
+                and compatibility_plan.status in {CompatibilityStatus.COMPATIBLE, CompatibilityStatus.ADAPTER_REQUIRED}
+            ),
+        )
+        return {
+            "status": "ok",
+            "attached": True,
+            "mode": request.mode,
+            "attachment": attachment,
+            "compatibility_plan": plan_payload,
+            "trace": attachment.get("trace_event", {}),
+        }
+
+    @application.get("/ops/brain/core/trace")
+    def ops_brain_core_trace(
+        limit: int = 50,
+        component: str | None = None,
+        event: str | None = None,
+        status: str | None = None,
+        include_mock_traces: bool = False,
+    ):
+        events = services.nexusnet_core.trace_logger.read(
+            limit=limit,
+            component=component,
+            event=event,
+            status=status,
+            include_mock_traces=include_mock_traces,
+        )
+        return {
+            "status": "ok",
+            "count": len(events),
+            "events": events,
+        }
 
     @application.get("/ops/brain/wrapper-surface")
     def ops_brain_wrapper_surface(session_id: str | None = None):
@@ -5281,6 +5441,18 @@ def create_app(project_root: str | None = None) -> FastAPI:
     def ops_brain_backends(model_hint: str | None = None):
         return services.brain_runtime_registry.summary(model_hint)
 
+    @application.get("/ops/brain/runtimes/capabilities")
+    def ops_brain_runtimes_capabilities():
+        return services.model_runtime_planner.capabilities()
+
+    @application.post("/ops/brain/models/plan")
+    def ops_brain_models_plan(request: ModelRuntimePlanRequest):
+        return services.model_runtime_planner.plan(request)
+
+    @application.post("/ops/brain/models/validate")
+    def ops_brain_models_validate(request: ModelRuntimePlanRequest):
+        return services.model_runtime_planner.validate(request)
+
     @application.get("/ops/brain/aitune/validation")
     def ops_brain_aitune_validation(model_hint: str | None = None, simulate: bool = False):
         model = services.model_registry.resolve_model(model_hint) if model_hint else None
@@ -5604,6 +5776,80 @@ def create_app(project_root: str | None = None) -> FastAPI:
             "planes": services.runtime_configs.get("planes", {}),
         }
 
+    @application.post("/first-run/save")
+    def first_run_save(payload: dict[str, Any] = Body(...)):
+        env_payload = payload.get("env") or {}
+        rag_payload = payload.get("rag") or {}
+        allowed_env_keys = {
+            "OLLAMA_BASE_URL",
+            "OLLAMA_MODEL",
+            "VLLM_BASE_URL",
+            "VLLM_MODEL",
+            "TGI_BASE_URL",
+            "LIVE_ENGINES",
+            "OPENAI_COMPAT_BASE_URL",
+            "OPENAI_COMPAT_API_KEY",
+        }
+        env_updates = {
+            key: str(value)
+            for key, value in env_payload.items()
+            if key in allowed_env_keys and value is not None and str(value) != ""
+        }
+        env_path = services.paths.project_root / ".env"
+        existing_lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+        seen_keys: set[str] = set()
+        next_lines: list[str] = []
+        for line in existing_lines:
+            key = line.split("=", 1)[0].strip() if "=" in line and not line.lstrip().startswith("#") else None
+            if key in env_updates:
+                next_lines.append(f"{key}={env_updates[key]}")
+                seen_keys.add(key)
+            else:
+                next_lines.append(line)
+        for key in sorted(set(env_updates) - seen_keys):
+            next_lines.append(f"{key}={env_updates[key]}")
+        env_path.write_text("\n".join(next_lines).rstrip() + ("\n" if next_lines else ""), encoding="utf-8")
+
+        inference = dict(services.runtime_configs.get("inference", {}) or {})
+        if env_updates.get("OLLAMA_BASE_URL") or env_updates.get("OLLAMA_MODEL"):
+            inference["ollama"] = {
+                **dict(inference.get("ollama") or {}),
+                "base_url": env_updates.get("OLLAMA_BASE_URL") or (inference.get("ollama") or {}).get("base_url"),
+                "model": env_updates.get("OLLAMA_MODEL") or (inference.get("ollama") or {}).get("model", "llama3.1"),
+            }
+        if env_updates.get("VLLM_BASE_URL") or env_updates.get("VLLM_MODEL"):
+            inference["vllm"] = {
+                **dict(inference.get("vllm") or {}),
+                "endpoint": env_updates.get("VLLM_BASE_URL") or (inference.get("vllm") or {}).get("endpoint"),
+                "model": env_updates.get("VLLM_MODEL") or (inference.get("vllm") or {}).get("model", "default"),
+            }
+        if env_updates.get("TGI_BASE_URL"):
+            inference["tgi"] = {
+                **dict(inference.get("tgi") or {}),
+                "endpoint": env_updates["TGI_BASE_URL"],
+            }
+        if "LIVE_ENGINES" in env_updates:
+            inference.setdefault("policy", dict(inference.get("policy") or {}))
+            inference["policy"]["live_engines"] = env_updates["LIVE_ENGINES"] in {"1", "true", "TRUE", "yes", "on"}
+        save_yaml_file(services.paths.config_dir / "inference.yaml", inference)
+
+        rag = dict(services.runtime_configs.get("rag", {}) or {})
+        for key in ("enabled", "top_k", "corpus_dir"):
+            if key in rag_payload:
+                rag[key] = rag_payload[key]
+        save_yaml_file(services.paths.config_dir / "rag.yaml", rag)
+
+        services.runtime_configs["inference"] = inference
+        services.runtime_configs["rag"] = rag
+        return {
+            "ok": True,
+            "paths": {
+                "env": str(env_path),
+                "inference": str(services.paths.config_dir / "inference.yaml"),
+                "rag": str(services.paths.config_dir / "rag.yaml"),
+            },
+        }
+
     @application.post("/ops/approvals")
     def ops_approvals(request: ApprovalRequest):
         decision = services.governance.record_approval(request)
@@ -5629,13 +5875,22 @@ def create_app(project_root: str | None = None) -> FastAPI:
 
     @application.post("/chat")
     def chat(request: ChatRequest):
-        result = services.operator.execute_chat(request)
+        try:
+            result = services.operator.execute_chat(request)
+        except RuntimeUnavailableError as exc:
+            raise HTTPException(status_code=503, detail=exc.detail) from exc
         # Feed the release wrapper runtime: real use updates assimilation, global growth,
         # sanitized federation packets, and shadow-only autonomous update proposals.
         try:
             release_wrapper_runtime.record_chat_turn(request=request, result=result)
         except Exception:
             pass
+        runtime_selection = result.runtime_selection or result.trace.runtime_selection or {}
+        requested_model_id = runtime_selection.get("requested_model_id") or result.model_id
+        requested_runtime = runtime_selection.get("requested_runtime_name")
+        served_model_id = runtime_selection.get("served_model_id") or result.model_id
+        served_runtime = runtime_selection.get("served_runtime_name") or result.runtime_name
+        runtime_lane = runtime_selection.get("runtime_lane") or served_runtime
         return {
             "ok": result.status != "error",
             "status": result.status,
@@ -5645,9 +5900,20 @@ def create_app(project_root: str | None = None) -> FastAPI:
             "teacher_id": result.selected_teacher_id,
             "expert": result.selected_expert,
             "capsule": result.selected_expert,
-            "model_id": result.model_id,
-            "runtime": result.runtime_name,
-            "backend": result.runtime_name,
+            "requested_model_id": requested_model_id,
+            "requested_runtime": requested_runtime,
+            "served_model_id": served_model_id,
+            "served_runtime": served_runtime,
+            "runtime_lane": runtime_lane,
+            "fallback_used": bool(runtime_selection.get("fallback_used", False)),
+            "fallback_reason": runtime_selection.get("fallback_reason"),
+            "compatibility_plan_id": runtime_selection.get("compatibility_plan_id"),
+            "compatibility_status": runtime_selection.get("compatibility_status"),
+            "attachment_mode": runtime_selection.get("attachment_mode"),
+            "product_evidence": runtime_selection.get("product_evidence"),
+            "model_id": served_model_id,
+            "runtime": served_runtime,
+            "backend": served_runtime,
             "wrapper_mode": result.wrapper_mode,
             "output": result.output,
             "reply": result.output,
@@ -5656,6 +5922,7 @@ def create_app(project_root: str | None = None) -> FastAPI:
             "citations": result.citations,
             "approval_required": result.approval_required,
             "trace": result.trace.model_dump(mode="json"),
+            "runtime_selection": runtime_selection,
             "critique": result.critique.model_dump(mode="json") if result.critique else None,
         }
 

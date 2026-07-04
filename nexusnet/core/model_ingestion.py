@@ -47,6 +47,7 @@ class ModelIngestionService:
         promotion_action: str | None = None,
         promotion_decision_id: str | None = None,
         startup_log_path: str | None = None,
+        compatibility_provenance: dict[str, Any] | None = None,
     ) -> tuple[BaseModelAdapter, dict[str, Any]]:
         return attach_base_model(
             model_hint=model_hint,
@@ -76,6 +77,7 @@ class ModelIngestionService:
             promotion_action=promotion_action,
             promotion_decision_id=promotion_decision_id,
             startup_log_path=startup_log_path,
+            compatibility_provenance=compatibility_provenance,
         )
 
     def attachments(self) -> list[dict[str, Any]]:

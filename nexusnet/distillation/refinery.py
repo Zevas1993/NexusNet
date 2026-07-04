@@ -8,6 +8,7 @@ from nexus.foundry import DatasetRefinery
 from nexus.schemas import ExperimentRecord
 from nexus.storage import NexusStore
 
+from ..core.compatibility_provenance import normalize_compatibility_provenance, trace_is_non_product_evidence
 from ..foundry import FoundryRefinery
 from ..schemas import DistillationExportRequest, DistillationExportResult, TeacherDisagreementArtifact, TeacherScorecard
 from ..teachers.evidence import aggregate_teacher_evidence
@@ -36,10 +37,40 @@ class DistillationDatasetBuilder:
         source_kinds: set[str] = set()
         teacher_traces: list[dict] = []
         curriculum_records_for_evidence: list[dict] = []
+        excluded_mock_trace_count = 0
+        included_non_product_trace_count = 0
+        compatibility_plan_ids: set[str] = set()
+        compatibility_status_counts: dict[str, int] = {}
+        attachment_mode_counts: dict[str, int] = {}
+        product_evidence_counts: dict[str, int] = {}
         for trace in self.store.list_traces(limit=request.trace_limit):
             prompt = (trace.get("request") or {}).get("prompt") or ""
             if not prompt:
                 continue
+            runtime_selection = trace.get("runtime_selection") or (trace.get("metrics") or {}).get("runtime_selection") or {}
+            served_runtime = runtime_selection.get("served_runtime_name") or trace.get("runtime_name")
+            compatibility_provenance = normalize_compatibility_provenance(
+                trace,
+                runtime_selection,
+                ((trace.get("metrics") or {}).get("core_execution") or {}).get("model_attachment"),
+            )
+            non_product_trace = served_runtime == "mock" or trace_is_non_product_evidence(trace, compatibility_provenance)
+            if non_product_trace and not request.include_mock_traces:
+                excluded_mock_trace_count += 1
+                continue
+            if non_product_trace:
+                included_non_product_trace_count += 1
+            if compatibility_provenance.get("compatibility_plan_id"):
+                compatibility_plan_ids.add(str(compatibility_provenance["compatibility_plan_id"]))
+            if compatibility_provenance.get("compatibility_status"):
+                compatibility_status = str(compatibility_provenance["compatibility_status"])
+                compatibility_status_counts[compatibility_status] = compatibility_status_counts.get(compatibility_status, 0) + 1
+            if compatibility_provenance.get("attachment_mode"):
+                attachment_mode = str(compatibility_provenance["attachment_mode"])
+                attachment_mode_counts[attachment_mode] = attachment_mode_counts.get(attachment_mode, 0) + 1
+            if compatibility_provenance.get("product_evidence") is not None:
+                evidence_key = "true" if bool(compatibility_provenance["product_evidence"]) else "false"
+                product_evidence_counts[evidence_key] = product_evidence_counts.get(evidence_key, 0) + 1
             teacher_provenance = trace.get("teacher_provenance") or {}
             if teacher_provenance:
                 teacher_traces.append(trace)
@@ -52,8 +83,14 @@ class DistillationDatasetBuilder:
                         "trace_id": trace.get("trace_id"),
                         "model_id": trace.get("model_id"),
                         "runtime_name": trace.get("runtime_name"),
+                        "runtime_selection": runtime_selection,
                         "status": trace.get("status"),
                         "teacher_provenance": teacher_provenance,
+                        "compatibility_provenance": compatibility_provenance,
+                        "compatibility_plan_id": compatibility_provenance.get("compatibility_plan_id"),
+                        "compatibility_status": compatibility_provenance.get("compatibility_status"),
+                        "attachment_mode": compatibility_provenance.get("attachment_mode"),
+                        "product_evidence": compatibility_provenance.get("product_evidence"),
                         "selected_teacher_id": trace.get("selected_teacher_id"),
                         "selected_expert": trace.get("selected_expert"),
                         "retrieval_policy": trace.get("retrieval_policy"),
@@ -184,6 +221,13 @@ class DistillationDatasetBuilder:
                 "trace_limit": request.trace_limit,
                 "include_dreams": request.include_dreams,
                 "include_curriculum": request.include_curriculum,
+                "included_mock_traces": request.include_mock_traces,
+                "excluded_mock_trace_count": excluded_mock_trace_count,
+                "included_non_product_trace_count": included_non_product_trace_count,
+                "compatibility_plan_ids": sorted(compatibility_plan_ids),
+                "compatibility_status_counts": compatibility_status_counts,
+                "attachment_mode_counts": attachment_mode_counts,
+                "product_evidence_counts": product_evidence_counts,
                 "teacher_evidence": teacher_evidence,
             },
         )
@@ -200,6 +244,13 @@ class DistillationDatasetBuilder:
                     "teacher_evidence": teacher_evidence,
                     "dream_derived_included": request.include_dreams,
                     "curriculum_included": request.include_curriculum,
+                    "included_mock_traces": request.include_mock_traces,
+                    "excluded_mock_trace_count": excluded_mock_trace_count,
+                    "included_non_product_trace_count": included_non_product_trace_count,
+                    "compatibility_plan_ids": sorted(compatibility_plan_ids),
+                    "compatibility_status_counts": compatibility_status_counts,
+                    "attachment_mode_counts": attachment_mode_counts,
+                    "product_evidence_counts": product_evidence_counts,
                 },
             )
         result = DistillationExportResult(
@@ -210,6 +261,13 @@ class DistillationDatasetBuilder:
                 "trace_limit": request.trace_limit,
                 "include_dreams": request.include_dreams,
                 "include_curriculum": request.include_curriculum,
+                "included_mock_traces": request.include_mock_traces,
+                "excluded_mock_trace_count": excluded_mock_trace_count,
+                "included_non_product_trace_count": included_non_product_trace_count,
+                "compatibility_plan_ids": sorted(compatibility_plan_ids),
+                "compatibility_status_counts": compatibility_status_counts,
+                "attachment_mode_counts": attachment_mode_counts,
+                "product_evidence_counts": product_evidence_counts,
                 "source_kinds": sorted(source_kinds),
                 "lineage": lineage,
                 "lineage_artifact_id": lineage_record.artifact_id if lineage_record else None,

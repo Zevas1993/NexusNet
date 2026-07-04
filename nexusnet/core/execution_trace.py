@@ -52,6 +52,83 @@ class CoreExecutionTraceRecorder:
         return [item.as_dict() for item in self._stages]
 
 
+class ExecutionTraceLogger:
+    def __init__(self, path: str):
+        from pathlib import Path
+
+        self.path = Path(path)
+
+    def write(
+        self,
+        *,
+        event: str,
+        component: str,
+        status: str = "ok",
+        metadata: dict[str, Any] | None = None,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        payload = {
+            "timestamp": utcnow_iso(),
+            "event": event,
+            "component": component,
+            "status": status,
+            "metadata": metadata or {},
+            "error": error,
+        }
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with self.path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(payload, ensure_ascii=True, default=str) + "\n")
+        except Exception as exc:
+            payload = {
+                **payload,
+                "status": "warning",
+                "error": f"execution-trace-log-failed: {exc}",
+            }
+        return payload
+
+    def read(
+        self,
+        *,
+        limit: int = 50,
+        component: str | None = None,
+        event: str | None = None,
+        status: str | None = None,
+        include_mock_traces: bool = False,
+    ) -> list[dict[str, Any]]:
+        if not self.path.exists():
+            return []
+        events: list[dict[str, Any]] = []
+        try:
+            lines = self.path.read_text(encoding="utf-8").splitlines()
+        except Exception:
+            return []
+        for line in reversed(lines):
+            if not line.strip():
+                continue
+            try:
+                payload = json.loads(line)
+            except Exception:
+                continue
+            if component and payload.get("component") != component:
+                continue
+            if event and payload.get("event") != event:
+                continue
+            if status and payload.get("status") != status:
+                continue
+            metadata = payload.get("metadata") or {}
+            if not include_mock_traces and (
+                metadata.get("is_mock") is True
+                or metadata.get("mode") in {"mock", "dev"}
+                or metadata.get("product_evidence") is False
+            ):
+                continue
+            events.append(payload)
+            if len(events) >= max(int(limit), 0):
+                break
+        return events
+
+
 def build_lineage_tags(
     *,
     teacher_registry_layer: str | None = None,

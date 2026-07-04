@@ -24,6 +24,7 @@ from ..schemas import (
 from ..storage import NexusStore
 from .routing import ExpertSelector
 from nexusnet.core import NexusBrain
+from nexusnet.core.compatibility_provenance import normalize_compatibility_provenance
 from nexusnet.schemas import SessionContext
 
 
@@ -53,6 +54,8 @@ class OperatorKernel:
         brain_runtime_registry: Any | None = None,
         brain_gateway: Any | None = None,
         brain_promotions: Any | None = None,
+        model_runtime_planner: Any | None = None,
+        nexusnet_core: Any | None = None,
     ):
         self.store = store
         self.ao_registry = ao_registry
@@ -72,6 +75,8 @@ class OperatorKernel:
         self.brain_runtime_registry = brain_runtime_registry
         self.brain_gateway = brain_gateway
         self.brain_promotions = brain_promotions
+        self.model_runtime_planner = model_runtime_planner
+        self.nexusnet_core = nexusnet_core
 
     def execute_chat(self, request: ChatRequest) -> OperatorResult:
         operator_request = OperatorRequest(
@@ -151,6 +156,18 @@ class OperatorKernel:
                 )
             )
 
+        compatibility_plan = (
+            self.model_runtime_planner.plan(
+                {
+                    "model_id": selected_model.model_id,
+                    "context_tokens": selected_model.capability_card.context_window,
+                    "modality": (selected_model.capability_card.modalities or ["text"])[0],
+                    "quantization": (selected_model.capability_card.quantization or [None])[0],
+                }
+            )
+            if self.model_runtime_planner is not None
+            else {}
+        )
         runtime_decision = self.brain_runtime_registry.selector.select(selected_model.model_id) if self.brain_runtime_registry else None
         selected_runtime_name = runtime_decision.selected_runtime_name if runtime_decision is not None else selected_model.runtime_name
         if selected_runtime_name in self.runtime_registry.adapters:
@@ -171,6 +188,32 @@ class OperatorKernel:
         )
         if runtime_decision is not None:
             steps.append(TraceStep(name="brain_runtime_decision", detail=runtime_decision.model_dump(mode="json")))
+        if compatibility_plan:
+            steps.append(TraceStep(name="model_runtime_plan", detail=compatibility_plan))
+
+        runtime_selection_payload = runtime_decision.model_dump(mode="json") if runtime_decision is not None else {}
+        if compatibility_plan:
+            runtime_selection_payload = {
+                **runtime_selection_payload,
+                "runtime_compatibility_plan_id": compatibility_plan.get("compatibility_plan_id"),
+                "runtime_compatibility_plan": compatibility_plan,
+                "compatibility_plan_id": compatibility_plan.get("compatibility_plan_id"),
+                "compatibility_plan": compatibility_plan,
+            }
+        core_attach_provenance = self._core_attachment_provenance()
+        if core_attach_provenance:
+            runtime_selection_payload = {
+                **runtime_selection_payload,
+                "core_attachment_provenance": core_attach_provenance,
+                "compatibility_plan_id": core_attach_provenance.get(
+                    "compatibility_plan_id",
+                    runtime_selection_payload.get("compatibility_plan_id"),
+                ),
+                "compatibility_status": core_attach_provenance.get("compatibility_status"),
+                "attachment_mode": core_attach_provenance.get("attachment_mode"),
+                "product_evidence": core_attach_provenance.get("product_evidence"),
+                "compatibility_provenance": core_attach_provenance,
+            }
 
         brain_result = self.brain.generate(
             session_context=SessionContext(
@@ -198,7 +241,7 @@ class OperatorKernel:
             success_conditions=request.success_conditions,
             runtime_override=selected_runtime_name,
             fallback_chain=runtime_decision.fallback_runtime_names if runtime_decision is not None else [],
-            runtime_selection=runtime_decision.model_dump(mode="json") if runtime_decision is not None else None,
+            runtime_selection=runtime_selection_payload,
         )
         output = brain_result.output
         runtime = self.runtime_registry.get_adapter(brain_result.runtime_name)
@@ -323,6 +366,8 @@ class OperatorKernel:
                 traceability={
                     "trace_id": operator_request.trace_id,
                     "session_id": request.session_id,
+                    "compatibility_provenance": normalize_compatibility_provenance(runtime_selection_payload),
+                    "runtime_selection": runtime_selection_payload,
                     "policy_mode": brain_result.retrieval_policy_decision.get("policy_mode"),
                     "effective_policy_mode": brain_result.retrieval_policy_decision.get("effective_policy_mode"),
                     "graph_contribution_count": brain_result.retrieval_policy_decision.get("graph_contribution_count", 0),
@@ -443,7 +488,16 @@ class OperatorKernel:
             critique=critique,
             approval_required=approval_required,
             trace=trace,
+            runtime_selection=brain_result.runtime_selection,
         )
+
+    def _core_attachment_provenance(self) -> dict[str, Any]:
+        if self.nexusnet_core is None or not hasattr(self.nexusnet_core, "attachment_provenance"):
+            return {}
+        try:
+            return normalize_compatibility_provenance(self.nexusnet_core.attachment_provenance())
+        except Exception:
+            return {}
 
     def _assemble_prompt(self, prompt: str, expert: str, recent_memory: list[Message], retrieval_hits: list) -> str:
         parts = [f"Expert capsule: {expert}"]

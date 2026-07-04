@@ -17,7 +17,7 @@ with open('requirements.txt') as f:
 
 setup(
     name="nexusnet",
-    version="0.1.0",
+    version="0.6.0a1",
     author="NexusNet Team",
     author_email="team@nexusnet.ai",
     description="Universal Neural Network Core for AI Model Cognition",

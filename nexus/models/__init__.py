@@ -7,6 +7,7 @@ from typing import Any
 from ..runtimes import RuntimeRegistry
 from ..schemas import CapabilityCard, ModelRegistration
 from ..storage import NexusStore
+from .runtime_planner import ModelRuntimePlanner
 
 
 def _utcnow() -> datetime:
@@ -298,4 +299,4 @@ class ModelRegistry:
         return cloned
 
 
-__all__ = ["ModelRegistry"]
+__all__ = ["ModelRegistry", "ModelRuntimePlanner"]
