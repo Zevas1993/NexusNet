@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from nexusnet.experts import ExpertOntologyEntry, build_default_expert_ontology
+import pytest
+
+from nexusnet.experts import ExpertOntologyEntry, OpenWorldExpertOntology, build_default_expert_ontology
 
 
 def test_bootstrap_ontology_covers_high_risk_domains_with_required_panels():
@@ -62,6 +64,25 @@ def test_domain_classifier_routes_crypto_finance_and_holistic_queries_to_high_ri
     assert "source_retriever" in holistic.required_roles
 
 
+def test_domain_classifier_routes_obvious_high_risk_prompts_to_blocked_panels():
+    ontology = build_default_expert_ontology()
+
+    cases = [
+        ("Give medical treatment advice.", "medical"),
+        ("Give financial advice about stocks and investment risk.", "finance"),
+        ("Review HIPAA privacy compliance for patient data.", "medical"),
+        ("Find a credential vulnerability in this service.", "security"),
+        ("Review legal jurisdiction risk for this contract.", "legal"),
+    ]
+
+    for prompt, expected_domain in cases:
+        panel = ontology.classify_domain(prompt)
+
+        assert panel.domain == expected_domain
+        assert panel.risk_tier == "high"
+        assert panel.blocked_without_panel is True
+
+
 def test_capability_lookup_finds_formal_methods_and_world_model_experts():
     ontology = build_default_expert_ontology()
 
@@ -107,3 +128,74 @@ def test_temporary_expert_registration_is_shadow_scoped_and_does_not_replace_boo
     assert ontology.get("temporary:runtime-crypto-risk-taskforce") == temporary
     assert ontology.get("security:smart-contract-auditor") is not None
     assert ontology.get("temporary:runtime-crypto-risk-taskforce").metadata["production_mutation_allowed"] is False
+
+
+def test_register_rejects_duplicate_entries_by_default_without_replacing_original():
+    original = ExpertOntologyEntry(
+        expert_id="custom:duplicate",
+        display_name="Original Duplicate Expert",
+        domain="general",
+        subdomain="original",
+        risk_tier="low",
+    )
+    replacement = ExpertOntologyEntry(
+        expert_id="custom:duplicate",
+        display_name="Replacement Duplicate Expert",
+        domain="security",
+        subdomain="replacement",
+        risk_tier="high",
+    )
+    ontology = OpenWorldExpertOntology([original])
+
+    with pytest.raises(ValueError, match="already registered"):
+        ontology.register(replacement)
+
+    assert ontology.get("custom:duplicate") == original
+
+
+def test_register_allows_explicit_replacement():
+    original = ExpertOntologyEntry(
+        expert_id="custom:replaceable",
+        display_name="Original Replaceable Expert",
+        domain="general",
+        subdomain="original",
+        risk_tier="low",
+    )
+    replacement = ExpertOntologyEntry(
+        expert_id="custom:replaceable",
+        display_name="Replacement Replaceable Expert",
+        domain="security",
+        subdomain="replacement",
+        risk_tier="high",
+    )
+    ontology = OpenWorldExpertOntology([original])
+
+    registered = ontology.register(replacement, replace=True)
+
+    assert registered == replacement
+    assert ontology.get("custom:replaceable") == replacement
+
+
+def test_panel_for_domain_uses_max_risk_ordering():
+    ontology = OpenWorldExpertOntology(
+        [
+            ExpertOntologyEntry(
+                expert_id="mixed:low",
+                display_name="Mixed Low",
+                domain="mixed",
+                subdomain="low",
+                risk_tier="low",
+            ),
+            ExpertOntologyEntry(
+                expert_id="mixed:medium",
+                display_name="Mixed Medium",
+                domain="mixed",
+                subdomain="medium",
+                risk_tier="medium",
+            ),
+        ]
+    )
+
+    panel = ontology.panel_for_domain("mixed")
+
+    assert panel.risk_tier == "medium"

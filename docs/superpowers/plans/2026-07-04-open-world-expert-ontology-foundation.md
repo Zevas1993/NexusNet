@@ -200,6 +200,7 @@ EvidenceStandard = Literal[
     "speculative",
     "unsafe_or_disallowed",
 ]
+_RISK_ORDER: dict[RiskTier, int] = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
 
 class DomainPanel(BaseModel):
@@ -245,8 +246,10 @@ class OpenWorldExpertOntology:
         for entry in entries or []:
             self.register(entry)
 
-    def register(self, entry: ExpertOntologyEntry | dict[str, Any]) -> ExpertOntologyEntry:
+    def register(self, entry: ExpertOntologyEntry | dict[str, Any], *, replace: bool = False) -> ExpertOntologyEntry:
         normalized = entry if isinstance(entry, ExpertOntologyEntry) else ExpertOntologyEntry.model_validate(entry)
+        if normalized.expert_id in self._entries and not replace:
+            raise ValueError(f"Expert ontology entry already registered: {normalized.expert_id}")
         self._entries[normalized.expert_id] = normalized
         return normalized
 
@@ -274,11 +277,42 @@ class OpenWorldExpertOntology:
         normalized = text.lower()
         if any(token in normalized for token in ["solidity", "smart contract", "token", "defi", "blockchain", "wallet"]):
             return self.panel_for_domain("crypto")
-        if any(token in normalized for token in ["portfolio", "taxable", "brokerage", "finance", "market", "banking"]):
+        if any(
+            token in normalized
+            for token in [
+                "portfolio",
+                "taxable",
+                "brokerage",
+                "finance",
+                "financial",
+                "market",
+                "banking",
+                "stock",
+                "stocks",
+                "investment",
+                "investing",
+                "securities",
+            ]
+        ):
             return self.panel_for_domain("finance")
         if any(token in normalized for token in ["supplement", "herbal", "holistic", "functional medicine", "wellness"]):
             return self.panel_for_domain("holistic_medicine")
-        if any(token in normalized for token in ["diagnosis", "clinical", "medication", "radiology", "pathology"]):
+        if any(
+            token in normalized
+            for token in [
+                "diagnosis",
+                "clinical",
+                "medication",
+                "radiology",
+                "pathology",
+                "medical",
+                "treatment",
+                "patient",
+                "hipaa",
+                "healthcare",
+                "health data",
+            ]
+        ):
             return self.panel_for_domain("medical")
         if any(token in normalized for token in ["contract", "jurisdiction", "legal", "regulation", "compliance"]):
             return self.panel_for_domain("legal")
@@ -288,13 +322,7 @@ class OpenWorldExpertOntology:
 
     def panel_for_domain(self, domain: str) -> DomainPanel:
         entries = self.list_entries(domain=domain)
-        risk_tier: RiskTier = "medium"
-        if any(entry.risk_tier == "critical" for entry in entries):
-            risk_tier = "critical"
-        elif any(entry.risk_tier == "high" for entry in entries):
-            risk_tier = "high"
-        elif any(entry.risk_tier == "low" for entry in entries):
-            risk_tier = "low"
+        risk_tier = _max_risk_tier(entries)
 
         high_risk = risk_tier in {"high", "critical"}
         required_roles = (
@@ -310,6 +338,13 @@ class OpenWorldExpertOntology:
             evidence_standard=evidence,
             blocked_without_panel=high_risk,
         )
+
+
+def _max_risk_tier(entries: Iterable[ExpertOntologyEntry]) -> RiskTier:
+    risks = [entry.risk_tier for entry in entries]
+    if not risks:
+        return "medium"
+    return max(risks, key=lambda risk: _RISK_ORDER[risk])
 
 
 def build_default_expert_ontology() -> OpenWorldExpertOntology:
