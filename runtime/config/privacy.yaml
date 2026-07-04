@@ -1,0 +1,18 @@
+schema_version: nexusnet-privacy-v1
+surface_id: release-wrapper-privacy-config
+raw_prompt_export: forbidden
+raw_output_export: forbidden
+raw_session_id_export: forbidden
+per_plane_retention:
+  episodic: local_only_not_federated
+  semantic: sanitized_compressed_summary_only
+  temporal: sanitized_causal_graph_summary_only
+  tool_reliability: sanitized_status_metrics_only
+  personality: local_only_unless_explicit_opt_in
+  safety: sanitized_policy_status_only
+  dreams: distilled_summaries_only_no_personal_data
+federated_learning:
+  mandatory_packet_scope: sanitized_metadata_only
+  personal_data_requires_explicit_opt_in: true
+  secure_aggregation_required: true
+  differential_privacy_required: true

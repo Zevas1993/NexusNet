@@ -1,0 +1,15 @@
+schema_version: nexusnet-consent-v1
+surface_id: release-wrapper-consent-config
+personal_data_training_opt_in: false
+personal_data_federation_allowed: false
+personal_data_dream_training_allowed: false
+sanitized_metadata_federation_allowed: true
+sanitized_dream_research_allowed: true
+compliance_logging:
+  hashed_user_id_required: true
+  timestamp_required: true
+  raw_session_id_forbidden: true
+gdpr_ccpa_hooks:
+  access_request: planned-hook
+  deletion_request: planned-hook
+  export_request: planned-hook
