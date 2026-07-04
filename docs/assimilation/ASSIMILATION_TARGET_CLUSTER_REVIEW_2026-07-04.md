@@ -46,6 +46,15 @@ This pass used the local corpus plus current primary or near-primary sources whe
 - Domain and science benchmarks: `https://github.com/TsinghuaC3I/MedXpertQA`, `https://github.com/qiskit-community/Qiskit-QuantumKatas`, `https://github.com/AI4Finance-Foundation/FinRL`, `https://github.com/OpenBB-finance/OpenBB`, `https://github.com/danijar/dreamerv3`
 - Formal/proof teacher candidate: `https://huggingface.co/mistralai/Leanstral-1.5-119B-A6B`
 
+## Detailed Review Artifacts
+
+This cluster review is now accompanied by two follow-up artifacts:
+
+- `docs/assimilation/ASSIMILATION_TARGET_DETAILED_RULINGS_2026-07-04.md`: target-level rulings for the named target families in this review.
+- `docs/assimilation/assimilation_cluster_registry_2026-07-04.json`: machine-readable registry of the cluster outputs, representative targets, assimilation rules, rejected patterns, and gates.
+
+These artifacts reduce ambiguity for future agents, but they do not promote any target, prove source health, validate licenses, or replace file-level review of the 195-source corpus.
+
 ## Already Corrected Items
 
 | Target | Revised ruling |
@@ -668,8 +677,9 @@ These are not legitimate rejects:
 Recommended next docs after this review:
 
 1. Add or update ledger rows for these native subsystems where a row does not already exist.
-2. Create a machine-readable assimilation cluster registry so future agents can query target status without parsing prose.
+2. Keep the machine-readable assimilation cluster registry synchronized as cluster rulings change.
 3. Refresh source status for stale OpenClaw links and any 401/403/429 gated links manually.
 4. Build a teacher/expert taxonomy document that expands Orchestrators, Assistant Orchestrators, Experts, teachers, domain packs, and live-problem spawn/merge rules without putting the whole taxonomy into model context at once.
 5. Build a model/source radar job that watches model cards, papers, GitHub releases, licenses, and benchmark deltas, then proposes updates through the mother-brain governance queue.
 6. Specify the `NexusGraph Intelligence Fabric` schema, adapters, graph query contracts, impact-analysis contracts, detect-scope contracts, privacy filters, and Control Panel graph replay.
+7. Continue converting the 195-source raw corpus into reviewable target-level batches when a source file contains a distinct target not already represented in the detailed rulings.

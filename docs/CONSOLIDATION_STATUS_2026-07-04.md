@@ -48,6 +48,8 @@ Do not delete preserved artifacts or historical branch refs without explicit use
 The canonical clarification for rejected, blocked, planned, and future assimilation targets is:
 
 - `docs/assimilation/ASSIMILATION_TARGET_CLUSTER_REVIEW_2026-07-04.md`
+- `docs/assimilation/ASSIMILATION_TARGET_DETAILED_RULINGS_2026-07-04.md`
+- `docs/assimilation/assimilation_cluster_registry_2026-07-04.json`
 
 That review preserves useful target patterns while rejecting dependency lock-in, unsafe ownership models, unclear licensing, unsandboxed execution, and external products becoming the NexusNet brain.
 

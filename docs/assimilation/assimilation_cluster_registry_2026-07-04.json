@@ -1,0 +1,145 @@
+{
+  "schema_version": "2026-07-04.assimilation_cluster_registry.v1",
+  "status": "documentation_only_review_registry",
+  "branch": "codex/all-worktrees-integration",
+  "source_docs": [
+    "docs/assimilation/ASSIMILATION_TARGET_CLUSTER_REVIEW_2026-07-04.md",
+    "docs/assimilation/ASSIMILATION_TARGET_DETAILED_RULINGS_2026-07-04.md",
+    "docs/assimilation/NEXUSNET_ALL_ASSIMILATION_TARGETS_CONSOLIDATED_2026-05-31.md",
+    "docs/assimilation/ASSIMILATION_TARGET_SOURCE_REVERIFICATION_2026-05-31.md"
+  ],
+  "universal_rules": [
+    "NexusNet remains the mother brain and final owner of governance, routing, memory, expert birth, teacher selection, recursive dreaming, promotion, rollback, and creator observability.",
+    "External targets are pattern sources, optional adapter candidates, teacher candidates, eval fixtures, runtime references, UX references, or research prompts.",
+    "No external product, framework, model, database, workflow builder, codegraph, or runtime becomes the NexusNet brain or final control plane.",
+    "NexusGraph Intelligence Fabric spans everything NexusNet is permitted to perceive, connect to, learn from, reason over, govern, or mutate.",
+    "Source liveness is not implementation proof, and source-health failure is not automatic rejection.",
+    "Promotion requires source, license, provenance, security, privacy, local-eval, rollback, and governance gates."
+  ],
+  "clusters": [
+    {
+      "id": 1,
+      "name": "Workflow Builders And Node UI",
+      "native_output": "NexusNet Workflow Graph Studio",
+      "representative_targets": ["n8n", "Flowise", "Langflow", "Dify", "Node-RED", "Activepieces", "Windmill", "Kestra", "Airflow", "Huginn", "ComfyUI-style graphs"],
+      "assimilate": ["typed node graph editing", "triggers and schedules", "run history", "credential UX patterns", "workflow provenance", "visual and code authoring"],
+      "reject": ["external workflow builder as control plane", "untrusted code nodes with host privileges", "credential passthrough", "workflow success as correctness proof"],
+      "gates": ["node effect contract", "sandbox for code-capable nodes", "scoped secrets", "trace redaction", "eval and rollback evidence"]
+    },
+    {
+      "id": 2,
+      "name": "Skills, Recipes, MCP, And Protocol Tooling",
+      "native_output": "NexusNet SkillOps And Protocol Fabric",
+      "representative_targets": ["Agent Skills standard", "Gemini CLI skills", "Goose recipes", "OpenClaw", "Hermes/NemoClaw loops", "MCP", "Composio", "Pipedream", "skill marketplaces"],
+      "assimilate": ["progressive disclosure", "portable skill folders", "recipes", "MCP resources/prompts/tools", "connector metadata", "skill lifecycle"],
+      "reject": ["mega-skills", "silent mutation", "MCP as authority", "token passthrough", "standalone endpoints without receipts"],
+      "gates": ["source pinning", "license review", "sandbox execution", "skill eval", "security scan", "reversible disablement", "active skill budgets"]
+    },
+    {
+      "id": 3,
+      "name": "Agent Frameworks And Coding Agents",
+      "native_output": "Hive Agent Workbench",
+      "representative_targets": ["LangGraph", "Microsoft Agent Framework", "AutoGen lineage", "CrewAI", "OpenHands", "Aider", "Continue", "Cline/Roo", "Goose", "Gemini CLI", "Qwen-code", "Tabby"],
+      "assimilate": ["durable agent state", "multi-agent roles", "workspace isolation", "event-sourced traces", "patch provenance", "test evidence"],
+      "reject": ["framework replacing NexusBrain", "autonomous merge", "dependency installation without approval", "secret access without policy", "hidden framework state"],
+      "gates": ["worktree or sandbox isolation", "GitNexus impact before symbol edits", "detect-changes before commit", "test/eval proof", "retention review for new experts"]
+    },
+    {
+      "id": 4,
+      "name": "Runtime, Model Harnesses, And Edge Execution",
+      "native_output": "NexusNet Runtime Ladder And Model Passport Registry",
+      "representative_targets": ["llama.cpp", "Ollama", "vLLM", "SGLang", "TensorRT-LLM", "MLC-LLM", "mistral.rs", "LocalAI", "Open WebUI", "LM Studio", "PocketPal", "ONNX Runtime GenAI", "MediaPipe", "TFLite", "ncnn"],
+      "assimilate": ["multi-engine runtime abstraction", "GGUF/local inference", "server acceleration", "mobile packaging", "model catalog UX", "tool-calling compatibility", "device-fit metadata"],
+      "reject": ["single-runtime lock-in", "Ollama-only assumptions", "UI wrapper as brain", "unscreened downloads", "unknown licenses", "untracked binaries"],
+      "gates": ["model card review", "license review", "hardware benchmarks", "degradation thresholds", "tool-call tests", "privacy classification", "rollback to known-good runtime"]
+    },
+    {
+      "id": 5,
+      "name": "Knowledge, Retrieval, And Memory",
+      "native_output": "NexusNet Knowledge Forge",
+      "representative_targets": ["Pinecone Nexus", "Pinecone Assistant", "LlamaIndex", "LangChain retrieval", "Microsoft GraphRAG", "Neo4j", "Qdrant", "Weaviate", "Chroma", "pgvector", "FAISS", "semantic caches", "provenance crates", "evidence DAGs"],
+      "assimilate": ["context compiler", "artifact-first knowledge", "grounded QA UX", "loaders and retrievers", "hybrid search", "graph extraction", "raw retrieval fallback", "claim ledgers"],
+      "reject": ["vendor-owned knowledge brain", "raw retrieval removed entirely", "uncited synthesized facts as trusted knowledge", "knowledge artifact mutating runtime directly"],
+      "gates": ["field citations", "source hashes", "freshness metadata", "RBAC/privacy tags", "conflict objects", "replayable query events"]
+    },
+    {
+      "id": 6,
+      "name": "Evaluation, Observability, And Evidence",
+      "native_output": "EvalsAO Evidence Spine",
+      "representative_targets": ["Inspect AI", "lm-evaluation-harness", "DeepEval", "promptfoo", "OpenAI eval-style graders", "Langfuse", "Arize Phoenix", "OpenTelemetry GenAI", "agent/task benchmarks"],
+      "assimilate": ["benchmark runner adapters", "custom task evals", "calibrated judging", "dataset and prompt lineage", "trace-to-score links", "continuous evals", "evidence packets"],
+      "reject": ["single leaderboard proof", "opaque judge-only eval", "evals without trace refs", "monitoring as second control plane"],
+      "gates": ["scorecard", "regression threshold", "failure examples", "source refs", "rollback plan", "stricter gates for high-risk domains"]
+    },
+    {
+      "id": 7,
+      "name": "Security, Authority, Isolation, And Supply Chain",
+      "native_output": "Authority And Isolation Fabric",
+      "representative_targets": ["OWASP LLM Top 10", "MCP security guidance", "Semgrep", "Trivy", "Grype", "Snyk", "OSSF Scorecard", "Sigstore", "SLSA", "SCITT", "Biscuit", "object capabilities", "datalog tokens", "WASM", "Landlock", "seccomp", "hardened JS compartments"],
+      "assimilate": ["threat categories", "scoped identity", "capability tokens", "sandbox tiers", "SBOM/model-BOM/AI-BOM", "source pinning", "signed receipts"],
+      "reject": ["prompt-only security", "ambient credentials", "fail-open high-risk reviewer failure", "unsandboxed code nodes", "unclear update roots"],
+      "gates": ["permission envelope", "allow/deny/review receipt", "security scan", "source review", "sandbox", "eval", "rollback", "monitoring", "human/governance approval"]
+    },
+    {
+      "id": 8,
+      "name": "Self-Improvement, Recursive Dreaming, And World Models",
+      "native_output": "Recursive Dreaming And Imagination Foundry",
+      "representative_targets": ["Recursive Neural Dreaming", "DreamerV3", "PAN-style simulation", "AlphaEvolve", "Darwin-Godel-machine lineage", "GFlowNet", "causal intervention cortex", "active inference", "hippocampal replay", "developmental AI embryo"],
+      "assimilate": ["high-temperature hypothesis generation", "low-temperature critique", "world-model rollouts", "trace replay", "causal experiments", "intrinsic curriculum selection", "expert birth/split/merge/retire review"],
+      "reject": ["direct active self-modification from dreams", "dream as evidence", "consciousness claims", "wetlab instructions", "uncontained self-improvement"],
+      "gates": ["candidate-only dream outputs", "source/provenance review", "sandbox", "eval", "security/privacy review", "teacher review", "rollback", "operator approval"]
+    },
+    {
+      "id": 9,
+      "name": "Teacher Council And Expert Expansion",
+      "native_output": "Teacher Council And Expert Birth Registry",
+      "representative_targets": ["Leanstral", "Nemotron", "Keye-VL", "LFM", "MiniCPM", "Qwen", "DeepSeek", "Kimi", "Mistral", "Devstral", "medical teachers", "finance teachers", "quant teachers", "quantum teachers"],
+      "assimilate": ["dynamic teacher roster", "capability cards", "license status", "distillation rights", "hardware fit", "domain scorecards", "multi-teacher disagreement capture"],
+      "reject": ["fixed stale roster", "single god teacher", "unclear-rights outputs for training", "high-risk advice without human gates", "teacher replacing mother brain"],
+      "gates": ["source/license/provenance review", "distillation-rights review", "domain evals", "child-vs-parent scorecard", "archive-not-delete retirement", "human approval"]
+    },
+    {
+      "id": 10,
+      "name": "Domain Expert Packs",
+      "native_output": "Expert Pack Radar And Domain Curriculum Forge",
+      "representative_targets": ["medicine", "holistic medicine", "finance", "quant", "crypto", "law", "policy", "compliance", "cybersecurity", "mathematics", "formal methods", "quantum", "physics", "chemistry", "biology", "robotics", "education", "psychology", "business operations", "mobile", "privacy"],
+      "assimilate": ["expert-pack schema", "domain source ranking", "domain evals", "simulators", "merge/split rules", "risk policies", "escalation paths"],
+      "reject": ["giant static expert list in context", "uncited high-risk outputs", "autonomous trading/diagnosis/legal filing/security exploitation", "un-evaluable domain packs"],
+      "gates": ["minimum source set", "minimum eval set", "risk policy", "teacher pairings", "temporary live-problem spawn by default", "retention review for permanence"]
+    },
+    {
+      "id": 11,
+      "name": "UI, Visualizer, Companion, And Product Shell",
+      "native_output": "NexusNet Control Panel And Companion",
+      "representative_targets": ["static diagrams", "Three.js/control-panel visualizer", "PocketPal", "Open WebUI", "LocalAI WebUI", "Dify UX", "Langflow UX", "Flowise UX", "OpenJarvis productization"],
+      "assimilate": ["live hive visualizer", "deep replay drilldown", "mobile companion", "first-run init/doctor", "model-fit recommendations", "user-visible workflow/skill/teacher/expert/runtime controls"],
+      "reject": ["static image as final UI", "companion app as independent brain", "UI-only implementation proof", "product shell hiding readiness gaps"],
+      "gates": ["verified/planned/blocked/research labels", "read-only replay", "redacted companion sync", "permissioned device participation"]
+    },
+    {
+      "id": 12,
+      "name": "Productization, Ops, And Worktree Governance",
+      "native_output": "NexusNet Operational Spine",
+      "representative_targets": ["OpenJarvis", "Goose", "Sandcastle/worktree-per-agent", "GitNexus codegraph gate", "feature flags", "reversible patch transaction logs", "deterministic replay snapshots"],
+      "assimilate": ["first-run diagnostics", "doctor reports", "preset bundles", "worktree-per-agent", "GitNexus-first navigation", "impact analysis", "change detection", "rollback receipts"],
+      "reject": ["another product shell as real system", "dirty work as baseline", "branch/worktree confusion", "rollout without monitoring and rollback"],
+      "gates": ["canonical branch", "preserved historical refs", "GitNexus impact before symbol edits", "detect-changes before commit", "re-index after commit"]
+    },
+    {
+      "id": 13,
+      "name": "Mother Brain Graph Intelligence",
+      "native_output": "NexusGraph Intelligence Fabric",
+      "representative_targets": ["GitNexus", "CodegraphGate", "knowledge graphs", "GraphRAG", "Neo4j-style relationship modeling", "workflow graphs", "skill graphs", "model/runtime graphs", "policy/eval graphs", "replay ledgers", "all permitted connected state"],
+      "assimilate": ["persistent graph indexing for every permitted connected thing", "context query", "impact analysis", "post-change detect scope", "freshness and provenance gates", "self-improvement support", "creator-facing replay"],
+      "reject": ["external graph as mother brain", "graph output replacing source reading/tests/evals/review", "stale or uncited graph facts", "full graph stuffed into model context", "direct mutation from graph conclusions"],
+      "gates": ["source refs on nodes and edges", "artifact or signal version", "freshness state", "permissions", "privacy class", "ownership", "mutability", "confidence", "sandbox/eval/rollback/replay for mutations"]
+    }
+  ],
+  "focused_follow_up": [
+    "Refresh stale OpenClaw source pins.",
+    "Review skill marketplaces and connector catalogs with current source/license/security checks.",
+    "Refresh teacher/model roster before training or teaching use.",
+    "Create high-risk domain eval and escalation policies for medicine, finance, legal, cyber, and robotics.",
+    "Specify NexusGraph Intelligence Fabric schema, query contracts, adapters, privacy filters, mutability labels, and Control Panel replay."
+  ]
+}
