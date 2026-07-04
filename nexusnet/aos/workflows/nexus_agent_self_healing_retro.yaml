@@ -1,0 +1,31 @@
+workflow_id: nexus-agent-self-healing-retro
+label: Nexus Agent Self Healing Retro
+description: Classify parallel-agent review and gate failures into recipe, workflow, prompt, skill, gate, test, or docs improvements.
+version: "1.0"
+starter: true
+nodes:
+  - id: compare-spec-plan-diff
+    kind: review
+    prompt: Compare the source spec, plan, implementation evidence, validation result, and review findings.
+    artifacts:
+      - issue-to-pr-diff.json
+  - id: classify-failures
+    kind: self_healing
+    depends_on:
+      - compare-spec-plan-diff
+    prompt: Classify failures as missing_spec, weak_plan, unsafe_tool_request, missing_validation, model_mismatch, environment_conflict, gate_gap, or review_gap.
+    artifacts:
+      - self-healing-signals.json
+  - id: recommend-improvements
+    kind: artifact
+    depends_on:
+      - classify-failures
+    artifacts:
+      - improvement-candidates.json
+  - id: operator-approval
+    kind: approval
+    depends_on:
+      - recommend-improvements
+    approval:
+      mode: human
+      grants_execution: false

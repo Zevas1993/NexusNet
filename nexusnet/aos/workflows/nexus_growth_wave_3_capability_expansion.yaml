@@ -1,0 +1,45 @@
+workflow_id: nexus-growth-wave-3-capability-expansion
+label: Nexus Growth Wave 3 Capability Expansion
+description: Metadata-first lane for edge runtime certification, serving scorecards, stateful memory hierarchy, and citation-grounded research evidence.
+version: "1.0"
+starter: true
+requested_tools:
+  - filesystem.readonly
+nodes:
+  - id: edge-runtime-certification
+    kind: validation
+    prompt: Record runtime pack certification metadata for edge through premium hardware without downloading models or starting servers.
+    validation:
+      profile: runtime-pack-certification
+      gates:
+        - phase-7-runtime
+        - license-review
+        - execution-authority-required
+  - id: serving-gateway-scorecard
+    kind: artifact
+    depends_on:
+      - edge-runtime-certification
+    prompt: Record serving gateway performance metadata, including prefix-cache and structured-output posture, without provider registration.
+    artifacts:
+      - serving-scorecard.json
+  - id: stateful-memory-hierarchy
+    kind: artifact
+    depends_on:
+      - serving-gateway-scorecard
+    prompt: Record core, archival, shared, and contradiction memory metadata while keeping memory mutation denied.
+    artifacts:
+      - memory-hierarchy-record.json
+  - id: citation-grounded-research
+    kind: review
+    depends_on:
+      - stateful-memory-hierarchy
+    prompt: Ingest citation-grounded research evidence into candidate metadata with source URLs, credibility, license posture, and required eval suites.
+    fresh_context: true
+  - id: capability-hold
+    kind: approval
+    depends_on:
+      - citation-grounded-research
+    approval:
+      required: true
+      grants_execution: false
+      reason: Capability expansion remains metadata-only until eval, product-sweep, gateway, budget, privacy, and execution-authority gates pass.

@@ -1,0 +1,33 @@
+workflow_id: nexus-hardware-continuum-routing
+label: Nexus Hardware Continuum Routing
+description: Profile host capability, score local-first provider options, and record a governed fallback plan.
+version: "1.0"
+starter: true
+nodes:
+  - id: hardware-profile
+    kind: prompt
+    prompt: Record RAM, CPU, GPU, VRAM, thermal, offline, privacy, and budget posture without executing probes.
+    artifacts:
+      - hardware-profile.json
+  - id: local-scorecard
+    kind: validation
+    depends_on:
+      - hardware-profile
+    validation:
+      gates:
+        - phase-7-runtime
+        - runtime-certification
+        - provider-governance
+  - id: route-decision
+    kind: review
+    depends_on:
+      - local-scorecard
+    prompt: Choose the lowest governed tier that satisfies policy and quality requirements.
+    fresh_context: true
+  - id: fallback-hold
+    kind: approval
+    depends_on:
+      - route-decision
+    approval:
+      mode: tier5-fallback-review
+      grants_execution: false

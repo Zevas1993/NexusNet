@@ -1,0 +1,38 @@
+workflow_id: nexus-growth-wave-1-execution-security
+label: Nexus Growth Wave 1 Execution Security
+description: Metadata-first lane for sandbox manifests, deterministic tool boundaries, and protocol trust records.
+version: "1.0"
+starter: true
+requested_tools:
+  - filesystem.readonly
+nodes:
+  - id: sandbox-manifest-plan
+    kind: artifact
+    prompt: Record a portable sandbox manifest without creating a worktree, writing hooks, or executing commands.
+    artifacts:
+      - sandbox-manifest.json
+  - id: deterministic-boundary
+    kind: validation
+    depends_on:
+      - sandbox-manifest-plan
+    validation:
+      profile: deterministic-tool-boundary
+      gates:
+        - gateway-policy
+        - execution-authority-required
+        - product-sweep-security
+  - id: protocol-trust-registry
+    kind: artifact
+    depends_on:
+      - deterministic-boundary
+    prompt: Register protocol trust metadata for MCP, A2A, AG-UI, and OpenAPI-action candidates without provider registration.
+    artifacts:
+      - protocol-trust-record.json
+  - id: security-hold
+    kind: approval
+    depends_on:
+      - protocol-trust-registry
+    approval:
+      required: true
+      grants_execution: false
+      reason: Human approval can mark readiness only; sandbox execution, protocol execution, provider registration, and mutation require scoped execution authority.

@@ -1,0 +1,56 @@
+workflow_id: nexus-parallel-issue-to-pr
+label: Nexus Parallel Issue To PR
+description: Issue-as-spec parallel agent run lane with governed worktree planning, validation, and review.
+version: "1.0"
+starter: true
+requested_tools:
+  - git.worktree.create
+  - filesystem.write
+nodes:
+  - id: issue-intake
+    kind: prompt
+    prompt: Normalize the GitHub issue or local spec into a bounded implementation brief.
+    artifacts:
+      - issue-spec.json
+  - id: isolated-prepare
+    kind: parallel_run
+    depends_on:
+      - issue-intake
+    prompt: Plan the worktree, branch, ports, dependency bootstrap, and database isolation without mutation.
+    artifacts:
+      - parallel-run.json
+  - id: implementation-shadow
+    kind: prompt
+    depends_on:
+      - isolated-prepare
+    prompt: Record the intended implementation path as a shadow plan; mutation stays policy-gated.
+    fresh_context: true
+  - id: validation
+    kind: validation
+    depends_on:
+      - implementation-shadow
+    validation:
+      profile: python-fast
+      gates:
+        - product-sweep
+        - gateway-policy
+        - e2e-artifacts
+  - id: fresh-review
+    kind: review
+    depends_on:
+      - validation
+    prompt: Review in a fresh context and compare the implementation evidence against the issue/spec.
+    fresh_context: true
+  - id: adversarial-review
+    kind: review
+    depends_on:
+      - fresh-review
+    prompt: Challenge assumptions, failure modes, unsafe tool use, missing validation, and policy gaps.
+    fresh_context: true
+  - id: human-review
+    kind: approval
+    depends_on:
+      - adversarial-review
+    approval:
+      mode: human
+      grants_execution: false

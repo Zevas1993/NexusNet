@@ -1,0 +1,32 @@
+workflow_id: nexus-self-improvement-loop
+label: Nexus Self Improvement Loop
+description: Mine traces, reviews, evals, denied requests, and product-sweep failures into gated improvement proposals.
+version: "1.0"
+starter: true
+nodes:
+  - id: signal-mining
+    kind: prompt
+    prompt: Identify self-improvement signals from telemetry, eval failures, workflow history, reviews, and denied requests.
+    artifacts:
+      - self-improvement-signals.json
+  - id: proposal-draft
+    kind: self_healing
+    depends_on:
+      - signal-mining
+    prompt: Draft a proposal with target subsystem, evidence links, eval requirement, rollback requirement, and promotion gates.
+  - id: shadow-validation
+    kind: validation
+    depends_on:
+      - proposal-draft
+    validation:
+      gates:
+        - eval-gate
+        - self-improvement-gate
+        - product-sweep
+  - id: promotion-hold
+    kind: approval
+    depends_on:
+      - shadow-validation
+    approval:
+      mode: promotion-review
+      grants_execution: false

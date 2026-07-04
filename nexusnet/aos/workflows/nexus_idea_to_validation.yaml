@@ -1,0 +1,39 @@
+workflow_id: nexus-idea-to-validation
+label: Nexus Idea To Validation
+description: Governed Archon-style idea-to-validation flow with plan review and validation gates.
+version: "1.0"
+starter: true
+requested_tools:
+  - filesystem.readonly
+nodes:
+  - id: plan
+    kind: prompt
+    prompt: Explore the repo and produce a bounded implementation plan.
+    fresh_context: true
+    artifacts:
+      - plan.md
+  - id: operator-approval
+    kind: approval
+    depends_on:
+      - plan
+    approval:
+      mode: human
+      grants_execution: false
+  - id: implement-shadow
+    kind: prompt
+    depends_on:
+      - operator-approval
+    prompt: Implement only after gateway validation; record all artifacts.
+    fresh_context: true
+  - id: validate
+    kind: validation
+    depends_on:
+      - implement-shadow
+    validation:
+      commands:
+        - python -m pytest --collect-only -q
+  - id: review
+    kind: review
+    depends_on:
+      - validate
+    prompt: Review changes against the plan and gate evidence.

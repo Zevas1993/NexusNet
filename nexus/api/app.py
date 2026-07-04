@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 import time
 from typing import Any
@@ -14,6 +15,8 @@ from fastapi.staticfiles import StaticFiles
 
 from ..schemas import ApprovalRequest, ChatRequest, RetrievalIngestRequest, RetrievalRequest
 from ..services import NexusServices, build_services
+from nexusnet.core.ebt import EBTScoreRequest
+from nexusnet.protocols import ProtocolAdapterPolicyRequest, ProtocolConsentRequest, ProtocolServerDefinition, ToolAttempt
 from nexusnet.schemas import CurriculumAssessmentRequest, DistillationExportRequest, DreamCycleRequest, GraphIngestRequest, ModelAttachRequest
 from nexusnet.adapters.dataset_forge import DatasetForgeRequest
 from nexusnet.adapters.decision_gate import FineTuneDecisionRequest
@@ -104,6 +107,7 @@ from nexusnet.security import ArtifactScanRequest
 from nexusnet.telemetry import ConceptTelemetryRequest, GenAITraceEventRequest, SAEExperimentRequest
 from nexusnet.memory import EngramLookupRequest, EngramRecordRequest, SourceClaimRequest
 from nexusnet.vision import ComputerUsePlanRequest, OperatorEventRequest
+from nexusnet.training import TrainingDataExportRecord
 
 
 def create_app(project_root: str | None = None) -> FastAPI:
@@ -276,6 +280,11 @@ def create_app(project_root: str | None = None) -> FastAPI:
             for extension_id in step.get("requested_extensions", []) or []:
                 requested.add(extension_id)
         return sorted(requested)
+
+    def _parse_optional_datetime(value: str | None) -> datetime | None:
+        if not value:
+            return None
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
     def _recipe_allowed_tools(item: dict[str, Any]) -> list[str]:
         recipes_config = ((services.runtime_configs.get("goose_lane") or {}).get("recipes") or {})
@@ -755,6 +764,947 @@ def create_app(project_root: str | None = None) -> FastAPI:
                 "benchmark": str(services.paths.logs_dir / "benchmark.log"),
             },
         }
+
+    @application.get("/ops/brain/canon")
+    def ops_brain_canon():
+        return services.brain_canon.status_payload()
+
+    @application.get("/ops/brain/research-candidates")
+    def ops_brain_research_candidates():
+        return {
+            "status": "registry_backed",
+            "candidates": [candidate.model_dump(mode="json") for candidate in services.brain_canon.research_candidates()],
+            "audit_log": services.brain_canon.assimilation_audit_log(),
+            "license_summary": services.brain_canon.license_summary(),
+        }
+
+    @application.post("/ops/brain/research-candidates/{candidate_id}/status")
+    def ops_brain_research_candidate_status(candidate_id: str, payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_canon.update_research_candidate(
+                candidate_id=candidate_id,
+                integration_status=payload.get("integration_status"),
+                maturity=payload.get("maturity"),
+                notes=payload.get("notes"),
+                evidence=payload.get("evidence"),
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="research candidate not found") from exc
+
+    @application.post("/ops/brain/research-candidates/{candidate_id}/license-review")
+    def ops_brain_research_candidate_license_review(candidate_id: str, payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_canon.review_candidate_license(
+                candidate_id=candidate_id,
+                license_status=str(payload.get("license_status") or "requires_review"),
+                reviewer=str(payload.get("reviewer") or "operator"),
+                rationale=str(payload.get("rationale") or ""),
+                evidence=str(payload.get("evidence") or ""),
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="research candidate not found") from exc
+
+    @application.get("/ops/brain/research-candidates/{candidate_id}")
+    def ops_brain_research_candidate(candidate_id: str):
+        candidate = services.brain_canon.research_candidate(candidate_id)
+        if candidate is None:
+            raise HTTPException(status_code=404, detail="research candidate not found")
+        return {"candidate": candidate.model_dump(mode="json")}
+
+    @application.get("/ops/brain/product-status")
+    def ops_brain_product_status():
+        return {
+            **services.brain_canon.product_status(),
+            "ebt": services.brain_ebt.contract(),
+            "evals": services.brain_trace_evals.summary(),
+            "runtime": services.brain_product_runtime_profiles.summary(),
+            "protocol_security": services.brain_protocol_security.summary(),
+        }
+
+    @application.get("/ops/brain/product-sweep/gates")
+    def ops_brain_product_sweep_gates():
+        return services.brain_product_sweep_gatekeeper.gate_payload()
+
+    @application.get("/ops/brain/product-sweep/status")
+    def ops_brain_product_sweep_status():
+        payload = services.brain_product_sweep_gatekeeper.status_payload()
+        payload["status_surfaces"]["archon_pi_assimilation"] = {
+            "workflows": services.brain_workflows.summary(),
+            "parallel_runs": services.brain_parallel_runs.summary(),
+            "package_candidates": services.brain_package_candidates.summary(),
+            "plan_reviews": services.brain_plan_review.summary(),
+            "lifecycle_events": services.brain_lifecycle_events.summary(limit=50),
+            "promotion_allowed": False,
+            "external_package_execution_allowed": False,
+        }
+        payload["status_surfaces"]["assimilation_candidates"] = services.brain_assimilation.summary(limit=24)
+        payload["status_surfaces"]["normalized_telemetry"] = services.brain_normalized_telemetry.compact_summary()
+        payload["status_surfaces"]["eval_suites"] = services.brain_eval_suites.compact_summary()
+        payload["status_surfaces"]["runtime_scorecards"] = services.brain_runtime_scorecards.compact_summary()
+        payload["status_surfaces"]["adaptive_capabilities"] = services.brain_adaptive_capabilities.compact_summary()
+        payload["status_surfaces"]["research_scout"] = services.brain_research_scout.compact_summary()
+        payload["status_surfaces"]["self_improvement"] = services.brain_self_improvement.compact_summary()
+        payload["status_surfaces"]["tier5_cloud_fallback"] = services.brain_tier5_fallback.compact_summary()
+        payload["status_surfaces"]["context_graph"] = services.brain_context_graph.compact_summary()
+        payload["status_surfaces"]["factory_orchestration"] = services.brain_factory_orchestration.compact_summary()
+        payload["status_surfaces"]["execution_authority"] = services.brain_execution_authority.compact_summary()
+        payload["status_surfaces"]["harness_engineering"] = services.brain_harness_engineering.compact_summary()
+        payload["status_surfaces"]["autonomous_growth"] = services.brain_autonomous_growth.compact_summary()
+        payload["status_surfaces"]["space_agent_assimilation"] = services.brain_assimilation.space_agent_compact_summary()
+        payload["status_surfaces"]["protocol_capabilities"] = services.brain_protocol_capabilities.compact_summary()
+        payload["status_surfaces"]["memory_governance"] = services.brain_memory_governance.summary()
+        payload["status_surfaces"]["security_red_team"] = {
+            "owasp_genai_top_10": "encoded_as_product_sweep_security_gate_family",
+            "nist_ai_rmf_genai_profile": "encoded_as_product_sweep_security_gate_family",
+            "red_team_pack_sources": ["garak", "promptfoo", "PyRIT", "NeMo Guardrails"],
+            "runtime_provider_gate_required": True,
+            "package_candidate_gate_required": True,
+            "memory_write_gate_required": True,
+            "autonomous_code_agent_gate_required": True,
+            "execution_allowed": False,
+            "mutation_allowed": False,
+        }
+        return payload
+
+    @application.get("/ops/brain/protocol/adapters")
+    def ops_brain_protocol_adapters():
+        return services.brain_protocol_adapters.list_adapters()
+
+    @application.get("/ops/brain/protocol/adapters/{adapter_id}")
+    def ops_brain_protocol_adapter(adapter_id: str):
+        adapter = services.brain_protocol_adapters.get_adapter(adapter_id)
+        if adapter is None:
+            raise HTTPException(status_code=404, detail="protocol adapter not found")
+        return {"adapter": adapter.model_dump(mode="json")}
+
+    @application.post("/ops/brain/protocol/adapters/{adapter_id}/policy")
+    def ops_brain_protocol_adapter_policy(adapter_id: str, request: ProtocolAdapterPolicyRequest):
+        if services.brain_protocol_adapters.get_adapter(adapter_id) is None:
+            raise HTTPException(status_code=404, detail="protocol adapter not found")
+        return services.brain_protocol_adapters.apply_policy(adapter_id, request)
+
+    @application.get("/ops/brain/protocol/capabilities")
+    def ops_brain_protocol_capabilities():
+        return services.brain_protocol_capabilities.summary()
+
+    @application.post("/ops/brain/product-sweep/shadow-simulation")
+    def ops_brain_product_sweep_shadow_simulation(payload: dict[str, Any] = Body(...)):
+        return services.brain_product_sweep_gatekeeper.shadow_simulation(
+            name=str(payload.get("name") or "shadow-simulation"),
+            target=str(payload.get("target") or "product-sweep"),
+        )
+
+    @application.get("/ops/brain/workflows")
+    def ops_brain_workflows():
+        return services.brain_workflows.summary()
+
+    @application.get("/ops/brain/events")
+    def ops_brain_events(event_type: str | None = None, subject_prefix: str | None = None, limit: int = 50):
+        return services.brain_lifecycle_events.summary(event_type=event_type, subject_prefix=subject_prefix, limit=limit)
+
+    @application.get("/ops/brain/telemetry/normalized")
+    def ops_brain_telemetry_normalized(limit: int = 200):
+        return services.brain_normalized_telemetry.summary(limit=limit)
+
+    @application.get("/ops/brain/execution-authority")
+    def ops_brain_execution_authority(limit: int = 100):
+        return services.brain_execution_authority.summary(limit=limit)
+
+    @application.get("/ops/brain/harness-engineering")
+    def ops_brain_harness_engineering(limit: int = 100):
+        return services.brain_harness_engineering.summary(limit=limit)
+
+    @application.get("/ops/brain/growth-control")
+    def ops_brain_growth_control(limit: int = 100):
+        return services.brain_autonomous_growth.summary(limit=limit)
+
+    @application.post("/ops/brain/growth-control/activate")
+    def ops_brain_growth_control_activate(payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_autonomous_growth.activate(
+                wave_ids=[str(item) for item in (payload.get("wave_ids") or [])] or None,
+                operator_goal=str(payload.get("operator_goal") or ""),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/growth-control/sandbox-manifests")
+    def ops_brain_growth_control_sandbox_manifests(payload: dict[str, Any] = Body(...)):
+        return services.brain_autonomous_growth.record_sandbox_manifest(
+            workspace_ref=str(payload.get("workspace_ref") or "workspace"),
+            manifest=dict(payload.get("manifest") or {}),
+            sandbox_providers=[str(item) for item in (payload.get("sandbox_providers") or [])],
+            requested_capabilities=[str(item) for item in (payload.get("requested_capabilities") or [])],
+            linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+        )
+
+    @application.post("/ops/brain/growth-control/security-boundaries/derive")
+    def ops_brain_growth_control_security_boundaries_derive(payload: dict[str, Any] = Body(...)):
+        return services.brain_autonomous_growth.derive_security_boundary(
+            objective=str(payload.get("objective") or ""),
+            tool_requests=[dict(item) for item in (payload.get("tool_requests") or [])],
+            content_channels=[str(item) for item in (payload.get("content_channels") or [])],
+            linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+        )
+
+    @application.post("/ops/brain/growth-control/telemetry/export-plan")
+    def ops_brain_growth_control_telemetry_export_plan(payload: dict[str, Any] = Body(...)):
+        return services.brain_autonomous_growth.plan_trace_export(
+            trace_ids=[str(item) for item in (payload.get("trace_ids") or [])],
+            destination=str(payload.get("destination") or "local"),
+            formats=[str(item) for item in (payload.get("formats") or [])],
+            redaction_policy=dict(payload.get("redaction_policy") or {}),
+            linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+        )
+
+    @application.post("/ops/brain/growth-control/optimizer/shadow-run")
+    def ops_brain_growth_control_optimizer_shadow_run(payload: dict[str, Any] = Body(...)):
+        return services.brain_autonomous_growth.propose_shadow_optimizer(
+            target_subsystem=str(payload.get("target_subsystem") or "workflows"),
+            raw_trace_ids=[str(item) for item in (payload.get("raw_trace_ids") or [])],
+            summary_trace_ids=[str(item) for item in (payload.get("summary_trace_ids") or [])],
+            candidate_change=str(payload.get("candidate_change") or ""),
+            transfer_models=[str(item) for item in (payload.get("transfer_models") or [])],
+            linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+        )
+
+    @application.post("/ops/brain/growth-control/evals/paired")
+    def ops_brain_growth_control_evals_paired(payload: dict[str, Any] = Body(...)):
+        return services.brain_autonomous_growth.record_paired_eval(
+            subject=str(payload.get("subject") or "unknown-subject"),
+            baseline=dict(payload.get("baseline") or {}),
+            variant=dict(payload.get("variant") or {}),
+            acceptance_criteria=dict(payload.get("acceptance_criteria") or {}),
+            linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+        )
+
+    @application.post("/ops/brain/growth-control/runtime-pack-certifications")
+    def ops_brain_growth_control_runtime_pack_certifications(payload: dict[str, Any] = Body(...)):
+        return services.brain_autonomous_growth.certify_runtime_pack(
+            runtime_id=str(payload.get("runtime_id") or "unknown-runtime"),
+            hardware_tier=str(payload.get("hardware_tier") or "tier_2_mainstream_local"),
+            model_formats=[str(item) for item in (payload.get("model_formats") or [])],
+            accelerators=[str(item) for item in (payload.get("accelerators") or [])],
+            measurements=dict(payload.get("measurements") or {}),
+            linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+        )
+
+    @application.post("/ops/brain/growth-control/serving-scorecards")
+    def ops_brain_growth_control_serving_scorecards(payload: dict[str, Any] = Body(...)):
+        return services.brain_autonomous_growth.record_serving_scorecard(
+            provider_id=str(payload.get("provider_id") or "unknown-provider"),
+            features=dict(payload.get("features") or {}),
+            measurements=dict(payload.get("measurements") or {}),
+            linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+        )
+
+    @application.post("/ops/brain/growth-control/protocol-trust/record")
+    def ops_brain_growth_control_protocol_trust_record(payload: dict[str, Any] = Body(...)):
+        return services.brain_autonomous_growth.record_protocol_trust(
+            protocol_id=str(payload.get("protocol_id") or "unknown-protocol"),
+            server_ref=str(payload.get("server_ref") or "unknown-server"),
+            auth=dict(payload.get("auth") or {}),
+            capability_manifest=dict(payload.get("capability_manifest") or {}),
+            linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+        )
+
+    @application.post("/ops/brain/growth-control/memory-hierarchy/record")
+    def ops_brain_growth_control_memory_hierarchy_record(payload: dict[str, Any] = Body(...)):
+        return services.brain_autonomous_growth.record_memory_hierarchy(
+            agent_ref=str(payload.get("agent_ref") or "unknown-agent"),
+            core_blocks=[dict(item) for item in (payload.get("core_blocks") or [])],
+            archival_refs=[str(item) for item in (payload.get("archival_refs") or [])],
+            shared_blocks=[dict(item) for item in (payload.get("shared_blocks") or [])],
+            contradictions=[dict(item) for item in (payload.get("contradictions") or [])],
+            linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+        )
+
+    @application.post("/ops/brain/growth-control/research-evidence/ingest")
+    def ops_brain_growth_control_research_evidence_ingest(payload: dict[str, Any] = Body(...)):
+        return services.brain_autonomous_growth.ingest_research_evidence(
+            source_name=str(payload.get("source_name") or "unknown-source"),
+            source_url=str(payload.get("source_url") or ""),
+            claim=str(payload.get("claim") or ""),
+            citations=[dict(item) for item in (payload.get("citations") or [])],
+            credibility=dict(payload.get("credibility") or {}),
+            linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+        )
+
+    @application.post("/ops/brain/harness-engineering/specs/register")
+    def ops_brain_harness_engineering_specs_register(payload: dict[str, Any] = Body(...)):
+        return services.brain_harness_engineering.register_spec(
+            source=dict(payload.get("source") or {}),
+            harness_name=str(payload.get("harness_name") or "nexus-harness"),
+            target_subsystem=str(payload.get("target_subsystem") or "workflows"),
+            layers=dict(payload.get("layers") or {}),
+            execution_contracts=[dict(item) for item in (payload.get("execution_contracts") or [])],
+            durable_state_paths=[str(item) for item in (payload.get("durable_state_paths") or [])],
+            delegation_topology=str(payload.get("delegation_topology") or "orchestrator_workers"),
+            module_inventory=[str(item) for item in (payload.get("module_inventory") or [])],
+            linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+        )
+
+    @application.post("/ops/brain/harness-engineering/ablations/record")
+    def ops_brain_harness_engineering_ablations_record(payload: dict[str, Any] = Body(...)):
+        return services.brain_harness_engineering.record_ablation(
+            harness_id=str(payload.get("harness_id") or "unknown-harness"),
+            benchmark=str(payload.get("benchmark") or "unknown-benchmark"),
+            baseline=dict(payload.get("baseline") or {}),
+            variant=dict(payload.get("variant") or {}),
+            module_findings=[dict(item) for item in (payload.get("module_findings") or [])],
+            linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+        )
+
+    @application.post("/ops/brain/harness-engineering/optimization/propose")
+    def ops_brain_harness_engineering_optimization_propose(payload: dict[str, Any] = Body(...)):
+        return services.brain_harness_engineering.propose_optimization(
+            source=dict(payload.get("source") or {}),
+            target_harness_id=str(payload.get("target_harness_id") or "unknown-harness"),
+            failure_trace_ids=[str(item) for item in (payload.get("failure_trace_ids") or [])],
+            summary_trace_ids=[str(item) for item in (payload.get("summary_trace_ids") or [])],
+            proposed_change_summary=str(payload.get("proposed_change_summary") or ""),
+            candidate_changes=[str(item) for item in (payload.get("candidate_changes") or [])],
+            transfer_eval_models=[str(item) for item in (payload.get("transfer_eval_models") or [])],
+            linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+        )
+
+    @application.post("/ops/brain/harness-engineering/safety-rules/record")
+    def ops_brain_harness_engineering_safety_rules_record(payload: dict[str, Any] = Body(...)):
+        return services.brain_harness_engineering.record_safety_rule(
+            source=dict(payload.get("source") or {}),
+            rule_id=str(payload.get("rule_id") or "unnamed-rule"),
+            phase=str(payload.get("phase") or "action_execution"),
+            trigger=str(payload.get("trigger") or "tool.requested"),
+            predicate=str(payload.get("predicate") or "false"),
+            enforcement=str(payload.get("enforcement") or "deny"),
+            defense_layers=[str(item) for item in (payload.get("defense_layers") or [])],
+            linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+        )
+
+    @application.post("/ops/brain/execution-authority/leases/request")
+    def ops_brain_execution_authority_leases_request(payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_execution_authority.request_lease(
+                capability=str(payload["capability"]),
+                scope=dict(payload.get("scope") or {}),
+                expires_at=payload.get("expires_at"),
+                budget=dict(payload.get("budget") or {}),
+                rollback_plan=dict(payload.get("rollback_plan") or {}),
+                approval_id=payload.get("approval_id"),
+                approval_decision=str(payload.get("approval_decision") or "not_requested"),
+                gateway_decision=str(payload.get("gateway_decision") or "hold"),
+                product_sweep_gate_ids=[str(item) for item in (payload.get("product_sweep_gate_ids") or [])],
+                product_sweep_decision=str(payload.get("product_sweep_decision") or "not_evaluated"),
+                evidence=dict(payload.get("evidence") or {}),
+                requested_execution=bool(payload.get("requested_execution", True)),
+                requested_mutation=bool(payload.get("requested_mutation", False)),
+                linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/execution-authority/evaluate")
+    def ops_brain_execution_authority_evaluate(payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_execution_authority.evaluate(
+                lease_id=str(payload["lease_id"]),
+                capability=str(payload["capability"]),
+                scope=dict(payload.get("scope") or {}),
+                linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="execution lease not found") from exc
+
+    @application.get("/ops/brain/context-graph")
+    def ops_brain_context_graph(limit: int = 100):
+        return services.brain_context_graph.summary(limit=limit)
+
+    @application.post("/ops/brain/context-graph/index-plan")
+    def ops_brain_context_graph_index_plan(payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_context_graph.plan_index(
+                source=dict(payload.get("source") or {}),
+                corpus_root=str(payload.get("corpus_root") or services.paths.project_root),
+                content_kinds=[str(item) for item in (payload.get("content_kinds") or ["code", "docs"])],
+                assistant_platforms=[str(item) for item in (payload.get("assistant_platforms") or ["codex"])],
+                graph_ignore_patterns=[str(item) for item in (payload.get("graph_ignore_patterns") or [])],
+                changed_files=[str(item) for item in (payload.get("changed_files") or [])],
+                update_mode=str(payload.get("update_mode") or "full"),
+                linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/context-graph/query")
+    def ops_brain_context_graph_query(payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_context_graph.query(
+                graph_record_id=str(payload["graph_record_id"]),
+                question=str(payload["question"]),
+                mode=str(payload.get("mode") or "query"),
+                linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=400, detail=f"missing required field: {exc.args[0]}") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.get("/ops/brain/factory-orchestration")
+    def ops_brain_factory_orchestration(limit: int = 100):
+        return services.brain_factory_orchestration.summary(limit=limit)
+
+    @application.post("/ops/brain/factory-orchestration/triage")
+    def ops_brain_factory_orchestration_triage(payload: dict[str, Any] = Body(...)):
+        return services.brain_factory_orchestration.triage_batch(
+            source=dict(payload.get("source") or {}),
+            issues=[dict(item) for item in (payload.get("issues") or [])],
+            cadence=str(payload.get("cadence") or "scheduled_batch"),
+            max_parallel=int(payload.get("max_parallel") or 1),
+            priority_rules=dict(payload.get("priority_rules") or {}),
+            protected_paths=[str(item) for item in (payload.get("protected_paths") or [])],
+            token_budget=dict(payload.get("token_budget") or {}),
+            linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+        )
+
+    @application.post("/ops/brain/factory-orchestration/reproduction-check")
+    def ops_brain_factory_orchestration_reproduction_check(payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_factory_orchestration.reproduction_check(
+                issue_ref=str(payload["issue_ref"]),
+                reproduction_surface=str(payload.get("reproduction_surface") or "cli"),
+                required_tools=[str(item) for item in (payload.get("required_tools") or [])],
+                comment_policy=str(payload.get("comment_policy") or "draft_evidence_only"),
+                e2e_required=bool(payload.get("e2e_required", True)),
+                static_analysis_only=bool(payload.get("static_analysis_only", False)),
+                linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=400, detail=f"missing required field: {exc.args[0]}") from exc
+
+    @application.post("/ops/brain/factory-orchestration/pr-validation")
+    def ops_brain_factory_orchestration_pr_validation(payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_factory_orchestration.pr_validation(
+                pr_ref=str(payload["pr_ref"]),
+                required_validation_profiles=[str(item) for item in (payload.get("required_validation_profiles") or [])],
+                browser_validation_required=bool(payload.get("browser_validation_required", False)),
+                start_service_status=str(payload.get("start_service_status") or "not_started"),
+                deployment_target=payload.get("deployment_target"),
+                merge_policy=payload.get("merge_policy"),
+                linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=400, detail=f"missing required field: {exc.args[0]}") from exc
+
+    @application.get("/ops/brain/adaptive-capabilities")
+    def ops_brain_adaptive_capabilities():
+        return services.brain_adaptive_capabilities.summary()
+
+    @application.post("/ops/brain/adaptive-capabilities/profile")
+    def ops_brain_adaptive_capabilities_profile(payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_adaptive_capabilities.profile(
+                capability_family=str(payload.get("capability_family") or "inference"),
+                source=dict(payload.get("source") or {}),
+                hardware_profile=dict(payload.get("hardware_profile") or {}),
+                target_subsystem=payload.get("target_subsystem"),
+                requested_tier=payload.get("requested_tier"),
+                privacy_posture=payload.get("privacy_posture"),
+                cost_posture=payload.get("cost_posture"),
+                linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.get("/ops/brain/adaptive-capabilities/scorecards")
+    def ops_brain_adaptive_capabilities_scorecards():
+        return services.brain_adaptive_capabilities.scorecards()
+
+    @application.post("/ops/brain/adaptive-capabilities/route")
+    def ops_brain_adaptive_capabilities_route(payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_adaptive_capabilities.route(
+                capability_family=str(payload.get("capability_family") or "inference"),
+                source=dict(payload.get("source") or {}),
+                hardware_profile=dict(payload.get("hardware_profile") or {}),
+                target_subsystem=payload.get("target_subsystem"),
+                allow_cloud_fallback=bool(payload.get("allow_cloud_fallback", False)),
+                local_satisfies_policy=bool(payload.get("local_satisfies_policy", True)),
+                fallback_reason=payload.get("fallback_reason"),
+                privacy_posture=payload.get("privacy_posture"),
+                cost_posture=payload.get("cost_posture"),
+                linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.get("/ops/brain/research-scout/candidates")
+    def ops_brain_research_scout_candidates():
+        return services.brain_research_scout.summary()
+
+    @application.post("/ops/brain/research-scout/ingest")
+    def ops_brain_research_scout_ingest(payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_research_scout.ingest(
+                source_type=str(payload["source_type"]),
+                source_name=str(payload["source_name"]),
+                source_url=str(payload["source_url"]),
+                claimed_capability=str(payload.get("claimed_capability") or ""),
+                capability_family=str(payload.get("capability_family") or "research"),
+                hardware_tier_fit=[str(item) for item in (payload.get("hardware_tier_fit") or [])] or None,
+                license_posture=str(payload.get("license_posture") or "requires_review"),
+                risk_flags=[str(item) for item in (payload.get("risk_flags") or [])],
+                dependency_posture=str(payload.get("dependency_posture") or "candidate_only"),
+                confidence=float(payload.get("confidence", 0.5)),
+                required_eval_suite=str(payload.get("required_eval_suite") or "regression_behavior"),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/research-scout/run")
+    def ops_brain_research_scout_run(payload: dict[str, Any] = Body(default={})):
+        try:
+            return services.brain_research_scout.run(
+                query=str(payload.get("query") or "capability updates"),
+                source_types=[str(item) for item in (payload.get("source_types") or [])] or None,
+                live_fetch=bool(payload.get("live_fetch", False)),
+                max_candidates_per_source=int(payload.get("max_candidates_per_source") or 3),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.get("/ops/brain/self-improvement/proposals")
+    def ops_brain_self_improvement_proposals():
+        return services.brain_self_improvement.summary()
+
+    @application.post("/ops/brain/self-improvement/propose")
+    def ops_brain_self_improvement_propose(payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_self_improvement.propose(
+                category=str(payload["category"]),
+                target_subsystem=str(payload.get("target_subsystem") or "workflow"),
+                proposed_change_summary=str(payload.get("proposed_change_summary") or ""),
+                evidence_links=[str(item) for item in (payload.get("evidence_links") or [])],
+                eval_suite_id=str(payload.get("eval_suite_id") or "regression_behavior"),
+                rollback_requirement=str(payload.get("rollback_requirement") or "restore_previous_governed_artifact"),
+                linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/self-improvement/validate")
+    def ops_brain_self_improvement_validate(payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_self_improvement.validate(
+                proposal_id=str(payload["proposal_id"]),
+                eval_status=str(payload.get("eval_status") or "blocked"),
+                linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="self-improvement proposal not found") from exc
+
+    @application.post("/ops/brain/self-improvement/mine")
+    def ops_brain_self_improvement_mine(payload: dict[str, Any] = Body(default={})):
+        return services.brain_self_improvement.mine(
+            source_limit=int(payload.get("source_limit") or 100),
+            max_proposals=int(payload.get("max_proposals") or 8),
+            include_product_sweep=bool(payload.get("include_product_sweep", True)),
+        )
+
+    @application.post("/ops/brain/tier5/fallback/evaluate")
+    def ops_brain_tier5_fallback_evaluate(payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_tier5_fallback.evaluate(
+                provider_id=str(payload.get("provider_id") or "tier5-cloud-router"),
+                fallback_reason=str(payload.get("fallback_reason") or ""),
+                privacy_posture=payload.get("privacy_posture"),
+                cost_posture=payload.get("cost_posture"),
+                approval_decision=str(payload.get("approval_decision") or "not_requested"),
+                gateway_decision=str(payload.get("gateway_decision") or "hold"),
+                linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/workflows/execute")
+    def ops_brain_workflows_execute(
+        workflow_id: str = Body(...),
+        trigger_source: str = Body(default="manual"),
+        workspace_id: str = Body(default="default"),
+        agent_id: str = Body(default="standard-wrapper-agent"),
+        parameter_set: dict | None = Body(default=None),
+        linked_trace_ids: list[str] | None = Body(default=None),
+        requested_tools: list[str] | None = Body(default=None),
+        requested_extensions: list[str] | None = Body(default=None),
+        approval_path: dict | None = Body(default=None),
+        status: str | None = Body(default=None),
+    ):
+        try:
+            return services.brain_workflows.execute(
+                workflow_id=workflow_id,
+                trigger_source=trigger_source,
+                workspace_id=workspace_id,
+                agent_id=agent_id,
+                parameter_set=parameter_set or {},
+                linked_trace_ids=linked_trace_ids or [],
+                requested_tools=requested_tools or [],
+                requested_extensions=requested_extensions or [],
+                approval_path=approval_path or {},
+                status=status,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="workflow not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.get("/ops/brain/workflows/history")
+    def ops_brain_workflows_history(
+        workflow_id: str | None = None,
+        trigger_source: str | None = None,
+        status: str | None = None,
+        limit: int = 20,
+    ):
+        return services.brain_workflows.history(
+            workflow_id=workflow_id,
+            trigger_source=trigger_source,
+            status=status,
+            limit=limit,
+        )
+
+    @application.get("/ops/brain/parallel-runs")
+    def ops_brain_parallel_runs(source_type: str | None = None, status: str | None = None, limit: int = 50):
+        return services.brain_parallel_runs.summary(source_type=source_type, status=status, limit=limit)
+
+    @application.post("/ops/brain/parallel-runs/prepare")
+    def ops_brain_parallel_runs_prepare(
+        source_type: str = Body(...),
+        source_ref: str = Body(...),
+        base_branch: str = Body(default="main"),
+        workspace_id: str = Body(default="default"),
+        agent_id: str = Body(default="standard-wrapper-agent"),
+        database_mode: str = Body(default="none"),
+        requested_tools: list[str] | None = Body(default=None),
+        requested_extensions: list[str] | None = Body(default=None),
+        validation_profile: str = Body(default="python-fast"),
+        linked_trace_ids: list[str] | None = Body(default=None),
+    ):
+        try:
+            return services.brain_parallel_runs.prepare(
+                source_type=source_type,
+                source_ref=source_ref,
+                base_branch=base_branch,
+                workspace_id=workspace_id,
+                agent_id=agent_id,
+                database_mode=database_mode,
+                requested_tools=requested_tools or [],
+                requested_extensions=requested_extensions or [],
+                validation_profile=validation_profile,
+                linked_trace_ids=linked_trace_ids or [],
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.get("/ops/brain/parallel-runs/history")
+    def ops_brain_parallel_runs_history(source_type: str | None = None, status: str | None = None, limit: int = 50):
+        return services.brain_parallel_runs.history(source_type=source_type, status=status, limit=limit)
+
+    @application.post("/ops/brain/parallel-runs/{run_id}/review")
+    def ops_brain_parallel_runs_review(
+        run_id: str,
+        lane: str = Body(...),
+        decision: str = Body(...),
+        reviewer: str = Body(default="operator"),
+        findings: list[dict] | None = Body(default=None),
+        linked_trace_ids: list[str] | None = Body(default=None),
+    ):
+        try:
+            return services.brain_parallel_runs.review(
+                run_id=run_id,
+                lane=lane,
+                decision=decision,
+                reviewer=reviewer,
+                findings=findings or [],
+                linked_trace_ids=linked_trace_ids or [],
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="parallel run not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/parallel-runs/{run_id}/self-healing-report")
+    def ops_brain_parallel_runs_self_healing_report(
+        run_id: str,
+        signals: list[dict] = Body(...),
+        linked_trace_ids: list[str] | None = Body(default=None),
+    ):
+        try:
+            return services.brain_parallel_runs.self_healing_report(
+                run_id=run_id,
+                signals=signals,
+                linked_trace_ids=linked_trace_ids or [],
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="parallel run not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.get("/ops/brain/package-candidates")
+    def ops_brain_package_candidates(workspace_id: str | None = None, limit: int = 50):
+        return services.brain_package_candidates.summary(workspace_id=workspace_id, limit=limit)
+
+    @application.post("/ops/brain/package-candidates/ingest")
+    def ops_brain_package_candidates_ingest(
+        source_type: str = Body(...),
+        source_ref: str = Body(...),
+        workspace_id: str = Body(default="default"),
+        manifest: dict | None = Body(default=None),
+        metadata: dict | None = Body(default=None),
+    ):
+        return services.brain_package_candidates.ingest(
+            source_type=source_type,
+            source_ref=source_ref,
+            workspace_id=workspace_id,
+            manifest=manifest or {},
+            metadata=metadata or {},
+        )
+
+    @application.get("/ops/brain/plans")
+    def ops_brain_plans(limit: int = 50):
+        return services.brain_plan_review.summary(limit=limit)
+
+    @application.post("/ops/brain/plans/review")
+    def ops_brain_plans_review(
+        title: str = Body(...),
+        content: str = Body(...),
+        decision: str = Body(...),
+        plan_id: str | None = Body(default=None),
+        reviewer: str = Body(default="operator"),
+        annotations: list[dict] | None = Body(default=None),
+        linked_workflow_id: str | None = Body(default=None),
+    ):
+        return services.brain_plan_review.review(
+            plan_id=plan_id,
+            title=title,
+            content=content,
+            decision=decision,
+            reviewer=reviewer,
+            annotations=annotations or [],
+            linked_workflow_id=linked_workflow_id,
+        )
+
+    @application.get("/ops/brain/memory-os")
+    def ops_brain_memory_os():
+        return services.brain_memory_os.summarize()
+
+    @application.post("/ops/brain/memory-os/proposals")
+    def ops_brain_memory_os_proposals(payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_memory_governance.propose(
+                fact_id=str(payload["fact_id"]),
+                content=str(payload["content"]),
+                source=str(payload["source"]),
+                operation=str(payload.get("operation") or "store"),
+                evidence=dict(payload.get("evidence") or {}),
+                linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/memory-os/store")
+    def ops_brain_memory_os_store(payload: dict[str, Any] = Body(...)):
+        record = services.brain_memory_os.store(
+            fact_id=str(payload["fact_id"]),
+            content=str(payload["content"]),
+            source=str(payload["source"]),
+            evidence=dict(payload.get("evidence") or {}),
+            effective_at=_parse_optional_datetime(payload.get("effective_at")),
+        )
+        return record.model_dump(mode="json")
+
+    @application.post("/ops/brain/memory-os/update")
+    def ops_brain_memory_os_update(payload: dict[str, Any] = Body(...)):
+        record = services.brain_memory_os.update(
+            fact_id=str(payload["fact_id"]),
+            content=str(payload["content"]),
+            source=str(payload["source"]),
+            evidence=dict(payload.get("evidence") or {}),
+            effective_at=_parse_optional_datetime(payload.get("effective_at")),
+        )
+        return record.model_dump(mode="json")
+
+    @application.get("/ops/brain/memory-os/retrieve/{fact_id}")
+    def ops_brain_memory_os_retrieve(
+        fact_id: str,
+        as_of: str | None = None,
+        include_archived: bool = False,
+        include_discarded: bool = False,
+    ):
+        record = services.brain_memory_os.retrieve(
+            fact_id,
+            as_of=_parse_optional_datetime(as_of),
+            include_archived=include_archived,
+            include_discarded=include_discarded,
+        )
+        if record is None:
+            raise HTTPException(status_code=404, detail="memory fact not found")
+        return record.model_dump(mode="json")
+
+    @application.post("/ops/brain/memory-os/archive/{fact_id}")
+    def ops_brain_memory_os_archive(fact_id: str):
+        record = services.brain_memory_os.archive(fact_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="memory fact not found")
+        return record.model_dump(mode="json")
+
+    @application.post("/ops/brain/memory-os/discard/{fact_id}")
+    def ops_brain_memory_os_discard(fact_id: str):
+        record = services.brain_memory_os.discard(fact_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="memory fact not found")
+        return record.model_dump(mode="json")
+
+    @application.get("/ops/brain/memory-os/dereference/{memory_id}")
+    def ops_brain_memory_os_dereference(memory_id: str):
+        try:
+            return services.brain_memory_os.dereference(memory_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="memory record not found") from exc
+
+    @application.get("/ops/brain/memory-os/provenance/{fact_id}")
+    def ops_brain_memory_os_provenance(fact_id: str):
+        return services.brain_memory_os.provenance_lookup(fact_id)
+
+    @application.post("/ops/brain/security/protocol/evaluate")
+    def ops_brain_security_protocol_evaluate(attempt: ToolAttempt):
+        decision = services.brain_protocol_security.evaluate(attempt)
+        return decision.model_dump(mode="json")
+
+    @application.post("/ops/brain/security/protocol/servers")
+    def ops_brain_security_protocol_register_server(definition: ProtocolServerDefinition):
+        return services.brain_protocol_security.register_server(definition)
+
+    @application.get("/ops/brain/security/protocol/servers")
+    def ops_brain_security_protocol_servers():
+        return {
+            "servers": services.brain_protocol_security.servers(),
+            "summary": services.brain_protocol_security.summary(),
+        }
+
+    @application.post("/ops/brain/security/protocol/consent")
+    def ops_brain_security_protocol_consent(request: ProtocolConsentRequest):
+        decision = services.brain_protocol_security.consent(request)
+        return decision.model_dump(mode="json")
+
+    @application.get("/ops/brain/security/protocol/audit")
+    def ops_brain_security_protocol_audit():
+        events = services.brain_protocol_security.audit_log()
+        return {
+            "audit_event_count": len(events),
+            "events": events,
+            "summary": services.brain_protocol_security.summary(),
+        }
+
+    @application.get("/ops/brain/ebt/contract")
+    def ops_brain_ebt_contract():
+        return services.brain_ebt.contract()
+
+    @application.post("/ops/brain/ebt/score")
+    def ops_brain_ebt_score(request: EBTScoreRequest):
+        return services.brain_ebt.score(request)
+
+    @application.get("/ops/brain/evals/scenarios")
+    def ops_brain_eval_scenarios():
+        return services.brain_trace_evals.summary()
+
+    @application.get("/ops/brain/evals/suites")
+    def ops_brain_eval_suites():
+        return services.brain_eval_suites.summary()
+
+    @application.post("/ops/brain/evals/run")
+    def ops_brain_eval_run(payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_eval_suites.run(
+                suite_type=str(payload["suite_type"]),
+                subject=str(payload.get("subject") or "operator-request"),
+                linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/expert-council/deliberate")
+    def ops_brain_expert_council_deliberate(payload: dict[str, Any] = Body(...)):
+        decision = services.brain_expert_council.deliberate(
+            prompt=str(payload.get("prompt") or ""),
+            selected_experts=[str(expert) for expert in payload.get("selected_experts", [])],
+        )
+        return decision.model_dump(mode="json")
+
+    @application.post("/ops/brain/runtime/context-assembly")
+    def ops_brain_runtime_context_assembly(payload: dict[str, Any] = Body(...)):
+        return services.brain_product_runtime_profiles.assemble_context(
+            profile=str(payload.get("profile") or "local"),
+            target_tokens=int(payload.get("target_tokens") or 8192),
+            requested_adapter=payload.get("requested_adapter"),
+            task_type=str(payload.get("task_type") or "general"),
+        )
+
+    @application.get("/ops/brain/runtime/scorecards")
+    def ops_brain_runtime_scorecards():
+        return services.brain_runtime_scorecards.summary()
+
+    @application.post("/ops/brain/runtime/scorecards/evaluate")
+    def ops_brain_runtime_scorecards_evaluate(payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_runtime_scorecards.evaluate(
+                provider_id=str(payload["provider_id"]),
+                endpoint_url=payload.get("endpoint_url"),
+                model_hint=payload.get("model_hint"),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/training/export-record")
+    def ops_brain_training_export_record(record: TrainingDataExportRecord):
+        payload = record.export_payload()
+        return {
+            **payload,
+            "real_training_status": "gated",
+            "promotion_gate": "canon_traces_evals_memory_provenance_licenses_security",
+        }
+
+    @application.post("/ops/brain/training/export-dataset")
+    def ops_brain_training_export_dataset(payload: dict[str, Any] = Body(...)):
+        records = [TrainingDataExportRecord.model_validate(record) for record in payload.get("records", [])]
+        return services.brain_training_exporter.export_dataset(
+            name=str(payload.get("name") or "training-dataset"),
+            records=records,
+        )
+
+    @application.post("/ops/brain/training/reward-spec")
+    def ops_brain_training_reward_spec(payload: dict[str, Any] = Body(...)):
+        return services.brain_training_exporter.export_reward_spec(
+            name=str(payload.get("name") or "reward-spec"),
+            objectives=[str(item) for item in payload.get("objectives", [])],
+            metrics=dict(payload.get("metrics") or {}),
+            safety_constraints=[str(item) for item in payload.get("safety_constraints", [])],
+            provenance=[dict(item) for item in payload.get("provenance", [])],
+        )
+
+    @application.post("/ops/brain/training/eval-report")
+    def ops_brain_training_eval_report(payload: dict[str, Any] = Body(...)):
+        return services.brain_training_exporter.export_eval_report(
+            name=str(payload.get("name") or "eval-report"),
+            dataset_artifact_path=str(payload.get("dataset_artifact_path") or ""),
+            reward_spec_path=payload.get("reward_spec_path"),
+            scenario_ids=[str(item) for item in payload.get("scenario_ids", [])],
+            results=dict(payload.get("results") or {}),
+            license_status=str(payload.get("license_status") or "not_reviewed"),
+            security_gate_status=str(payload.get("security_gate_status") or "not_run"),
+        )
+
+    @application.get("/ops/brain/training/artifacts")
+    def ops_brain_training_artifacts():
+        return services.brain_training_exporter.list_artifacts()
 
     @application.get("/ops/brain/core")
     def ops_brain_core(
@@ -4126,6 +5076,22 @@ def create_app(project_root: str | None = None) -> FastAPI:
     @application.get("/ops/brain/assimilation/status")
     def ops_brain_assimilation_status():
         return {
+            "assimilation_candidates": services.brain_assimilation.summary(),
+            "normalized_telemetry": services.brain_normalized_telemetry.compact_summary(),
+            "eval_suites": services.brain_eval_suites.compact_summary(),
+            "runtime_scorecards": services.brain_runtime_scorecards.compact_summary(),
+            "adaptive_capabilities": services.brain_adaptive_capabilities.compact_summary(),
+            "research_scout": services.brain_research_scout.compact_summary(),
+            "self_improvement": services.brain_self_improvement.compact_summary(),
+            "tier5_cloud_fallback": services.brain_tier5_fallback.compact_summary(),
+            "context_graph": services.brain_context_graph.compact_summary(),
+            "factory_orchestration": services.brain_factory_orchestration.compact_summary(),
+            "execution_authority": services.brain_execution_authority.compact_summary(),
+            "harness_engineering": services.brain_harness_engineering.compact_summary(),
+            "autonomous_growth": services.brain_autonomous_growth.compact_summary(),
+            "space_agent_assimilation": services.brain_assimilation.space_agent_summary(),
+            "protocol_capabilities": services.brain_protocol_capabilities.compact_summary(),
+            "memory_governance": services.brain_memory_governance.summary(),
             "retrieval": {
                 "benchmark": services.brain_retrieval_rerank_bench.run(
                     query="retrieval provenance",
@@ -4176,6 +5142,35 @@ def create_app(project_root: str | None = None) -> FastAPI:
     @application.get("/ops/brain/canon/retrieval-planner")
     def ops_brain_canon_retrieval_planner():
         return services.brain_retrieval_planner.summary()
+
+    @application.post("/ops/brain/assimilation/candidates/ingest")
+    def ops_brain_assimilation_candidates_ingest(payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_assimilation.ingest(
+                category=str(payload["category"]),
+                source_name=str(payload["source_name"]),
+                source_url=str(payload["source_url"]),
+                license_posture=str(payload.get("license_posture") or "requires_review"),
+                target_subsystem=payload.get("target_subsystem"),
+                governance_status=str(payload.get("governance_status") or "gated"),
+                provenance=dict(payload.get("provenance") or {}),
+                scorecard=dict(payload.get("scorecard") or {}),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/assimilation/space-agent/review")
+    def ops_brain_assimilation_space_agent_review(payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_assimilation.review_space_agent(
+                source_url=str(payload["source_url"]),
+                commit_sha=str(payload.get("commit_sha") or ""),
+                license_posture=str(payload.get("license_posture") or "requires_review"),
+                observed_patterns=[str(item) for item in (payload.get("observed_patterns") or [])],
+                evidence=dict(payload.get("evidence") or {}),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @application.get("/ops/brain/retrieval/rerank-benchmark")
     def ops_brain_retrieval_rerank_benchmark(

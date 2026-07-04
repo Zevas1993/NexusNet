@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ..schemas import ReplacementReadinessReport
+from .readiness_authority import annotate_evidence_refs, authority_allows_replacement
 
 
 class ReplacementReadinessAdvisor:
@@ -20,7 +21,8 @@ class ReplacementReadinessAdvisor:
         metrics: dict,
         evidence_refs: dict,
     ) -> ReplacementReadinessReport:
-        ready = all(
+        annotated_evidence_refs = annotate_evidence_refs(evidence_refs)
+        gate_ready = all(
             [
                 subject_trend_ready,
                 fleet_gate_ready,
@@ -30,9 +32,10 @@ class ReplacementReadinessAdvisor:
                 governance_signed_off,
             ]
         )
+        ready = gate_ready and authority_allows_replacement(evidence_refs)
         if ready:
             replacement_mode = "replace"
-        elif subject_trend_ready or fleet_gate_ready or cohort_gate_ready:
+        elif gate_ready or subject_trend_ready or fleet_gate_ready or cohort_gate_ready:
             replacement_mode = "shadow"
         else:
             replacement_mode = "hold"
@@ -50,5 +53,5 @@ class ReplacementReadinessAdvisor:
             ready=ready,
             replacement_mode=replacement_mode,
             metrics=metrics,
-            evidence_refs=evidence_refs,
+            evidence_refs=annotated_evidence_refs,
         )

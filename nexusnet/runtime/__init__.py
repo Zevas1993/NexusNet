@@ -11,6 +11,7 @@ __all__ = [
     "ManifestAdapterConfig",
     "ModelPassportRequest",
     "RuntimeDecisionLedger",
+    "RuntimeScorecardService",
     "RuntimeWorkloadScorecardRegistry",
 ]
 
@@ -60,12 +61,16 @@ def __getattr__(name: str):
         from .model_passport import ModelPassportRequest
 
         return ModelPassportRequest
-    if name == "RuntimeWorkloadScorecardRegistry":
-        from .workload_scorecards import RuntimeWorkloadScorecardRegistry
-
-        return RuntimeWorkloadScorecardRegistry
     if name == "RuntimeDecisionLedger":
         from .decision_ledger import RuntimeDecisionLedger
 
         return RuntimeDecisionLedger
+    if name == "RuntimeScorecardService":
+        from .scorecards import RuntimeScorecardService
+
+        return RuntimeScorecardService
+    if name == "RuntimeWorkloadScorecardRegistry":
+        from .workload_scorecards import RuntimeWorkloadScorecardRegistry
+
+        return RuntimeWorkloadScorecardRegistry
     raise AttributeError(name)

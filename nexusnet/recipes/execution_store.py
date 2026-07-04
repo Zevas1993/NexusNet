@@ -262,6 +262,8 @@ class RecipeExecutionStore:
             families.add("recipe-driven")
         elif execution_kind == "runbook":
             families.add("runbook-driven")
+        elif execution_kind == "workflow":
+            families.add("workflow-dag")
         elif execution_kind == "gateway":
             families.update({"gateway-controlled", "gateway-only"})
         if payload.get("gateway_resolution_id") or payload.get("gateway_decision_path"):

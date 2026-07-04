@@ -1,0 +1,42 @@
+workflow_id: nexus-runtime-scorecard-review
+label: Nexus Runtime Scorecard Review
+description: Provider/runtime scorecard lane for OpenAI-compatible probes, capability metadata, and deny-by-default execution posture.
+version: "1.0"
+starter: true
+requested_tools:
+  - provider.registration
+nodes:
+  - id: provider-intake
+    kind: prompt
+    prompt: Record provider name, endpoint, local or remote posture, and candidate capability claims.
+    artifacts:
+      - runtime-provider-intake.json
+  - id: capability-scorecard
+    kind: artifact
+    depends_on:
+      - provider-intake
+    prompt: Record TTFT, throughput, structured output, tool calling, context, cache, quantization, and cost fields as metadata.
+    artifacts:
+      - runtime-scorecard.json
+  - id: security-gate
+    kind: validation
+    depends_on:
+      - capability-scorecard
+    validation:
+      gates:
+        - runtime-certification
+        - protocol-adapter-governance
+        - product-sweep-security
+  - id: operator-review
+    kind: approval
+    depends_on:
+      - security-gate
+    approval:
+      mode: human
+      grants_execution: false
+  - id: scorecard-report
+    kind: review
+    depends_on:
+      - operator-review
+    prompt: Summarize runtime scorecard readiness without starting servers or registering providers.
+    fresh_context: true

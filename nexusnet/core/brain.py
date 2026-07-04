@@ -23,6 +23,7 @@ from ..memory import MemoryNode, NeuralMemoryCortex
 from ..moe import MoEFusionScaffoldService
 from ..schemas import BrainGenerateResult, BrainGenerateRequest, InferenceTrace, SessionContext
 from ..telemetry import BrainTelemetryLogger
+from ..traces import build_product_trace_event
 from .execution_policy import CoreExecutionPolicyEngine
 from .execution_trace import CoreExecutionTraceRecorder, build_lineage_tags, persist_core_execution_artifact
 from .model_ingestion import ModelIngestionService
@@ -536,6 +537,18 @@ class NexusBrain:
                 "federated_packet_id": native_hive_forward_pass.get("federated_packet_id"),
             },
         )
+        product_trace = build_product_trace_event(
+            trace_id=session_context.trace_id,
+            input_id=f"{session_context.session_id}:{session_context.trace_id}",
+            capsule_id=session_context.expert,
+            model_id=adapter.model_id,
+            runtime_name=adapter.runtime_backend.runtime_name,
+            memory_retrieval_count=len(recent_memory),
+            memory_write_planned=True,
+            fallback_used=fallback_used,
+            critique_id=critique.critique_id,
+            critique_status=critique.status,
+        )
 
         trace = InferenceTrace(
             trace_id=session_context.trace_id,
@@ -609,6 +622,7 @@ class NexusBrain:
                 }
                 if retrieval_policy_decision["graph_contribution_count"]
                 else None,
+                "product_trace": product_trace,
             },
         )
         core_execution_artifact = persist_core_execution_artifact(

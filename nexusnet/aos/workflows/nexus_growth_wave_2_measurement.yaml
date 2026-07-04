@@ -1,0 +1,37 @@
+workflow_id: nexus-growth-wave-2-measurement
+label: Nexus Growth Wave 2 Measurement
+description: Metadata-first lane for normalized telemetry export plans, raw-trace optimizer shadows, and paired eval utility gates.
+version: "1.0"
+starter: true
+requested_tools:
+  - filesystem.readonly
+nodes:
+  - id: trace-export-plan
+    kind: artifact
+    prompt: Plan OpenTelemetry GenAI and OpenInference compatible exports with raw content redacted by default.
+    artifacts:
+      - telemetry-export-plan.json
+  - id: raw-trace-optimizer-shadow
+    kind: prompt
+    depends_on:
+      - trace-export-plan
+    prompt: Propose the narrowest shadow optimizer change from raw failure trace evidence; do not mutate prompts, workflows, gates, or model weights.
+    fresh_context: true
+  - id: paired-eval
+    kind: validation
+    depends_on:
+      - raw-trace-optimizer-shadow
+    validation:
+      profile: paired-skill-harness-utility
+      gates:
+        - raw-traces-required
+        - acceptance-criteria-required
+        - product-sweep-promotion-required
+  - id: measurement-hold
+    kind: approval
+    depends_on:
+      - paired-eval
+    approval:
+      required: true
+      grants_execution: false
+      reason: Passing paired evals creates validation readiness only; promotion still flows through product-sweep and execution-authority gates.

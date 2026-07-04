@@ -1,6 +1,7 @@
-from .logger import BrainTelemetryLogger
 from .concept_plane import ConceptTelemetryRegistry, ConceptTelemetryRequest, SAEExperimentRequest
 from .genai_observability import GenAITraceEventRequest, GenAITraceRegistry
+from .logger import BrainTelemetryLogger
+from .normalizer import NormalizedTelemetryService
 
 __all__ = [
     "BrainTelemetryLogger",
@@ -8,5 +9,6 @@ __all__ = [
     "ConceptTelemetryRequest",
     "GenAITraceEventRequest",
     "GenAITraceRegistry",
+    "NormalizedTelemetryService",
     "SAEExperimentRequest",
 ]

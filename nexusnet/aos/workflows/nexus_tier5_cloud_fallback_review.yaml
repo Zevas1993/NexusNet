@@ -1,0 +1,33 @@
+workflow_id: nexus-tier5-cloud-fallback-review
+label: Nexus Tier 5 Cloud Fallback Review
+description: Classify cloud fallback requests and require privacy, cost, telemetry, gateway, and product-sweep evidence.
+version: "1.0"
+starter: true
+nodes:
+  - id: fallback-request
+    kind: prompt
+    prompt: Record why local tiers cannot satisfy the request and identify the proposed governed cloud provider.
+    artifacts:
+      - tier5-fallback-request.json
+  - id: privacy-cost-gates
+    kind: validation
+    depends_on:
+      - fallback-request
+    validation:
+      gates:
+        - privacy-redaction-gate
+        - cost-budget-gate
+        - gateway-policy
+  - id: fallback-risk-review
+    kind: review
+    depends_on:
+      - privacy-cost-gates
+    prompt: Review data egress, source provenance, provider risk, telemetry span, and denial or approval-required state.
+    fresh_context: true
+  - id: operator-hold
+    kind: approval
+    depends_on:
+      - fallback-risk-review
+    approval:
+      mode: tier5-human-review
+      grants_execution: false
