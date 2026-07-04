@@ -541,6 +541,163 @@ def test_alignment_hold_clamps_live_readiness_to_shadow_mode():
     assert "alignment_max_safe_mode::native_shadow" in policy["fallback_triggers"]
 
 
+def test_core_execution_policy_blocks_ready_alignment_when_upstream_aitune_gate_is_blocked():
+    engine = CoreExecutionPolicyEngine()
+
+    policy = engine.decide(
+        trace_id="aitune-gated-policy",
+        session_id="aitune-gated-policy",
+        task_type="research",
+        selected_expert="researcher",
+        requested_model_id="mock/default",
+        runtime_execution_plan={
+            "selected_runtime_name": "mock",
+            "safe_mode_fallback": False,
+            "hardware_profile": {"max_context_tokens": 131072},
+            "quantization_decision": {"selected_quantization": "int8"},
+        },
+        memory_node_context={
+            "active_planes": ["conceptual", "temporal", "imaginal"],
+            "dreaming_planes": ["imaginal"],
+            "foundry_evidence_planes": ["metacognitive", "goal"],
+        },
+        fusion_scaffold={
+            "router": "mixtral-router",
+            "backbone": "mixtral",
+            "expert_ids": ["nexusnet-research-mini", "nexusnet-general-mini"],
+            "alignment": {
+                "ready_for_shadow_fusion": True,
+                "ready_for_challenger_shadow": True,
+                "ready_for_live_guarded": True,
+                "alignment_hold_required": False,
+                "alignment_blockers": [],
+                "max_safe_native_mode": "native_live_guarded",
+                "upstream_aitune_gate": {
+                    "status": "blocked-upstream-gate",
+                    "can_execute_here": False,
+                    "blockers": ["inference_architecture_blocks_cache_gate"],
+                },
+            },
+        },
+        evidence_feeds={
+            "teacher_evidence": {"bundle_count": 1, "latest_bundle_id": "teachbundle-aitune"},
+            "dreaming": {"artifact_count": 2, "latest_dream_id": "dream-aitune"},
+            "foundry": {
+                "lineage_artifact_count": 1,
+                "latest_distillation_artifact_id": "distill-aitune",
+                "latest_native_takeover_candidate_id": "nativecand-aitune",
+                "latest_takeover_scorecard_passed": True,
+                "latest_replacement_mode": "replace",
+                "latest_replacement_ready": True,
+                "latest_replacement_external_evaluation_passed": True,
+                "latest_replacement_governance_signed_off": True,
+                "latest_replacement_rollback_ready": True,
+                "replacement_modes": ["replace", "shadow"],
+                "guarded_live_ready": True,
+            },
+        },
+        teacher_registry_layer="v2026_live",
+        teacher_id="mixtral-8x7b",
+    )
+
+    assert policy["execution_mode"] == "teacher_fallback"
+    assert policy["alignment_summary"]["ready_for_shadow_fusion"] is False
+    assert policy["alignment_summary"]["ready_for_challenger_shadow"] is False
+    assert policy["alignment_summary"]["ready_for_live_guarded"] is False
+    assert policy["alignment_summary"]["max_safe_native_mode"] == "teacher_fallback"
+    assert "router_alignment_blocks_upstream_aitune_gate" in policy["alignment_summary"]["alignment_blockers"]
+    assert "upstream_aitune_gate_blocked" in policy["fallback_triggers"]
+
+
+def test_native_execution_planner_disables_direct_native_plan_from_blocked_upstream_aitune_gate():
+    planner = NativeExecutionPlanner()
+
+    native_plan = planner.plan(
+        trace_id="aitune-gated-native-plan",
+        selected_expert="researcher",
+        execution_policy={
+            "policy_id": "core-policy::aitune-gated-native-plan",
+            "execution_mode": "native_live_guarded",
+            "proposed_execution_mode": "native_live_guarded",
+            "legacy_execution_mode": "native-live-guarded",
+            "selected_internal_experts": ["nexusnet-research-mini", "nexusnet-general-mini"],
+            "fallback_triggers": [],
+            "alignment_summary": {
+                "alignment_hold_required": False,
+                "alignment_blockers": [],
+                "max_safe_native_mode": "native_live_guarded",
+                "upstream_aitune_gate": {
+                    "status": "blocked-upstream-gate",
+                    "can_execute_here": False,
+                    "blockers": ["inference_architecture_blocks_cache_gate"],
+                },
+            },
+        },
+        fusion_scaffold={"router": "mixtral-router", "backbone": "mixtral"},
+        memory_node_context={"active_planes": ["conceptual"]},
+        evidence_feeds={
+            "foundry": {
+                "latest_native_takeover_candidate_id": "nativecand-direct",
+                "guarded_live_ready": True,
+            }
+        },
+    )
+
+    assert native_plan["enabled"] is False
+    assert native_plan["execution_mode"] == "teacher_fallback"
+    assert native_plan["guarded_live_enabled"] is False
+    assert native_plan["alignment_hold_required"] is True
+    assert native_plan["alignment_max_safe_mode"] == "teacher_fallback"
+    assert "upstream_aitune_gate_blocked" in native_plan["fallback_triggers"]
+    assert "router_alignment_blocks_upstream_aitune_gate" in native_plan["alignment_blockers"]
+
+
+def test_internal_expert_harness_blocks_direct_guarded_live_from_upstream_aitune_gate():
+    internal_execution = InternalExpertExecutionService()
+
+    native_execution = internal_execution.execute(
+        prompt="Explain why a direct guarded live plan must still obey upstream runtime gates.",
+        selected_expert="researcher",
+        native_execution_plan={
+            "execution_id": "nativeexec::aitune-direct-harness",
+            "enabled": True,
+            "execution_mode": "native_live_guarded",
+            "legacy_execution_mode": "native-live-guarded",
+            "selected_internal_experts": ["nexusnet-research-mini"],
+            "primary_expert_id": "nexusnet-research-mini",
+            "teacher_fallback_path": "teacher-attached-model",
+            "fallback_triggers": [],
+            "challenger_compare_required": True,
+            "guarded_live_enabled": True,
+            "live_guidance_enabled": True,
+            "alignment_hold_required": False,
+            "alignment_blockers": [],
+            "upstream_aitune_gate": {
+                "status": "blocked-upstream-gate",
+                "can_execute_here": False,
+                "blockers": ["inference_architecture_blocks_cache_gate"],
+            },
+            "memory_planes": ["conceptual"],
+        },
+        execution_policy={
+            "policy_id": "core-policy::aitune-direct-harness",
+            "evidence_refs": {"teacher_bundle_id": "teachbundle-direct"},
+        },
+        evidence_feeds={
+            "teacher_evidence": {"latest_bundle_id": "teachbundle-direct"},
+            "foundry": {"latest_native_takeover_candidate_id": "nativecand-direct-harness"},
+        },
+    )
+
+    assert native_execution["guarded_live_allowed"] is False
+    assert native_execution["fallback_triggered"] is True
+    assert "upstream_aitune_gate_blocked" in native_execution["runtime_fallback_triggers"]
+    assert native_execution["alignment_hold_required"] is True
+    assert "router_alignment_blocks_upstream_aitune_gate" in native_execution["alignment_blockers"]
+    assert native_execution["native_candidate"]["activation_allowed"] is False
+    assert native_execution["native_candidate"]["blocked_reason"] == "alignment-hold-active"
+
+
 def test_alignment_hold_runtime_blocks_planner_live_and_recommends_shadow():
     internal_execution = InternalExpertExecutionService()
 

@@ -137,6 +137,8 @@ class DreamCycleRequest(BaseModel):
     seed: str | None = None
     model_hint: str | None = None
     variant_count: int = 3
+    knowledge_artifact_refs: list[str] = Field(default_factory=list)
+    knowledge_artifact_runtime_contexts: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class DreamVariant(BaseModel):
@@ -158,6 +160,8 @@ class DreamEpisode(BaseModel):
     variants: list[DreamVariant] = Field(default_factory=list)
     aggregate_score: float = 0.0
     findings: list[str] = Field(default_factory=list)
+    knowledge_artifact_refs: list[str] = Field(default_factory=list)
+    compiled_knowledge_context: dict[str, Any] = Field(default_factory=dict)
     artifact_path: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
 
@@ -650,6 +654,11 @@ class AOExecutionTrace(BaseModel):
 
 class AORegistrySnapshot(BaseModel):
     active_aos: list[dict[str, Any]] = Field(default_factory=list)
+    execution_count: int = 0
+    latest_execution: dict[str, Any] | None = None
+    execution_receipts: list[dict[str, Any]] = Field(default_factory=list)
+    replay: dict[str, Any] = Field(default_factory=dict)
+    runtime_boundary: str = "ao-execution-receipts-are-sanitized-trace-refs-no-raw-prompts-or-session-ids"
     created_at: datetime = Field(default_factory=utcnow)
 
 

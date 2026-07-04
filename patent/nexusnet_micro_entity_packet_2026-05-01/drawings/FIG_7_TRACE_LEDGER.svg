@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="850" height="1100" viewBox="0 0 850 1100">
+  <rect x="75" y="50" width="700" height="975" fill="white" stroke="black"/>
+  <text x="425" y="90" text-anchor="middle" font-family="Arial" font-size="22" font-weight="bold">FIG 7 TRACE LEDGER</text>
+  <text x="425" y="260" text-anchor="middle" font-family="Arial" font-size="18">Activation 150 | Route 152 | Genome 154 | Trace 156 | Checkpoint 132</text>
+</svg>

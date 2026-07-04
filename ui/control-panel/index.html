@@ -1,0 +1,1075 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NexusNet Control Panel</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="control-shell">
+    <section class="cockpit-shell" aria-label="NexusNet Mission Control cockpit">
+      <header class="cockpit-topbar">
+        <div class="title-stack">
+          <div class="eyebrow">Pilot Command Deck / Human Cockpit / Commanded Collective Hive</div>
+          <h1>NexusNet Mission Control</h1>
+          <p>Mecha-grade human cockpit for piloting the NexusNet Neural Core, AO hive, expert hive, tools, memory, security, runtime, and evolution loops.</p>
+        </div>
+        <div class="command-actions">
+          <div class="status-row">
+            <span id="connectionDot" class="dot"></span>
+            <span id="connectionText">Connecting</span>
+          </div>
+          <div class="session-box">
+            <label for="sessionInput">Session</label>
+            <div class="input-row">
+              <input id="sessionInput" type="text" placeholder="shared session id">
+              <button id="refreshButton" type="button" title="Refresh live state">Refresh</button>
+            </div>
+          </div>
+          <form id="canonCommandForm" class="session-box command-box">
+            <label for="canonCommandInput">Issue NexusBrain Command</label>
+            <textarea id="canonCommandInput" rows="3" placeholder="Command the NexusBrain, AO hive, expert hive, tools, memory, or evolution loop"></textarea>
+            <div class="input-row">
+              <select id="canonCommandPriority" title="Command priority">
+                <option value="normal">Normal</option>
+                <option value="high">High</option>
+                <option value="critical">Critical</option>
+              </select>
+              <button id="canonCommandButton" type="submit" title="Issue canon-bound NexusBrain command">Issue</button>
+            </div>
+            <small id="canonCommandStatus">Canon-bound commands are audited and routed through NexusBrain authority.</small>
+          </form>
+          <div class="rail-links">
+            <a href="/ui/wrapper/">Wrapper</a>
+            <a href="/ui/visualizer/">Visualizer</a>
+          </div>
+        </div>
+      </header>
+
+      <div class="cockpit-status-row">
+        <div>
+          <div class="eyebrow">Brain Authority</div>
+          <h2 id="activeTitle">Loading Control Panel</h2>
+        </div>
+        <div id="stateLegend" class="legend-row"></div>
+      </div>
+
+      <div class="cockpit-layout">
+        <aside class="cockpit-rail command-rail">
+          <div class="panel-number">Command Rail</div>
+          <div class="mode-label">COCKPIT MODE</div>
+          <div id="cockpitModeTabs" class="mode-tab-grid"></div>
+          <div class="section-title">Pilot Actions</div>
+          <div id="cockpitCommandActions" class="map-list"></div>
+        </aside>
+
+        <main class="pilot-viewport">
+          <section class="pilot-core">
+            <div class="pilot-frame top-left"></div>
+            <div class="pilot-frame top-right"></div>
+            <div class="pilot-frame bottom-left"></div>
+            <div class="pilot-frame bottom-right"></div>
+            <div class="core-brain cockpit-core">
+              <div class="core-ring"></div>
+              <div class="core-label">
+                <span>NEXUSNET</span>
+                <strong>NEURAL CORE</strong>
+                <span>AI BRAIN</span>
+              </div>
+            </div>
+            <article class="cockpit-core-readout">
+              <div class="eyebrow">Central Orchestration</div>
+              <h3>NEXUSNET NEURAL CORE AI BRAIN</h3>
+              <strong class="operating-model">Pilot Command Deck</strong>
+              <div id="cockpitCommandChain" class="command-chain">NexusBrain -> AO Hive -> Experts -> Tools/Outputs -> Memory Feedback -> NexusBrain</div>
+              <div id="cockpitStats" class="mini-metrics"></div>
+            </article>
+          </section>
+
+          <section class="operations-board">
+            <div class="panel-head compact">
+              <div>
+                <div class="eyebrow">AO / Expert Operations Board</div>
+                <h3>Orders, Reasoning, Evidence, Vetoes, Execution</h3>
+              </div>
+            </div>
+            <div id="cockpitOperationsBoard" class="ops-column-grid"></div>
+          </section>
+        </main>
+
+        <aside class="cockpit-rail alert-rail">
+          <div class="panel-number">Alert Rail</div>
+          <div id="cockpitAlertRail" class="alert-stack"></div>
+          <div class="section-title">Governance Gates</div>
+          <div id="cockpitGateMini" class="stack-list"></div>
+        </aside>
+      </div>
+
+      <section class="timeline-deck">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Operations Timeline</div>
+            <h3>Flow Trace, Decisions, Tool Runs, Memory Writes, Autonomous Proposals</h3>
+          </div>
+        </div>
+        <div id="cockpitTimeline" class="timeline-strip"></div>
+      </section>
+
+      <section class="canon-ledger-deck">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Canon Realization Ledger</div>
+            <h3>Book Requirements, Live Bindings, Gaps, Promotion Gates</h3>
+          </div>
+        </div>
+        <div id="canonRealizationLedger" class="canon-ledger-grid"></div>
+      </section>
+
+      <section class="completion-deck">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Canon Completion Matrix</div>
+            <h3>Operational Readiness Gates</h3>
+          </div>
+          <div class="completion-readout">
+            <strong id="completionPercent">--%</strong>
+            <span id="completionState" class="state-pill static-canon">pending</span>
+          </div>
+        </div>
+        <div id="completionScope" class="completion-scope">Measuring Canon control plane readiness...</div>
+        <div id="canonCompletionMatrix" class="completion-grid"></div>
+      </section>
+
+      <section class="evolution-dossier-deck">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Autonomous Evolution Dossier</div>
+            <h3>Self-Review, Shadow Runs, Eval Deltas, Rollback, Approval</h3>
+          </div>
+        </div>
+        <div id="evolutionDossier" class="evolution-dossier-grid"></div>
+      </section>
+
+      <section class="evolution-dossier-deck">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Self-Improvement Layer</div>
+            <h3>Experience Capture, Triage, Provenance, Queue, Regression Gates</h3>
+          </div>
+        </div>
+        <div id="selfImprovementScorecard" class="evolution-dossier-grid"></div>
+      </section>
+
+      <section class="evolution-dossier-deck">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Developmental Cortex</div>
+            <h3>Body Schema, Reference Frames, Simulation, Causal Lab, Growth Archive, Promotion Tribunal</h3>
+          </div>
+        </div>
+        <div id="developmentalCortexScorecard" class="evolution-dossier-grid"></div>
+      </section>
+
+      <section class="evolution-dossier-deck">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Self-Review Gate</div>
+            <h3>Independent Review, Verifiers, Evidence, Issue Resolution</h3>
+          </div>
+        </div>
+        <div id="selfReviewScorecard" class="evolution-dossier-grid"></div>
+      </section>
+    </section>
+
+    <section class="deck-header">
+      <div>
+        <div class="eyebrow">Brain Map Deck</div>
+        <h2>Architecture Inspection</h2>
+      </div>
+      <p>Secondary cockpit deck for inspecting the full 12-layer NexusNet neural architecture after the live command viewport.</p>
+    </section>
+
+    <section class="architecture-map brain-map-deck" aria-label="NexusNet brain control map">
+      <aside class="map-column left-map">
+        <section class="map-panel cyan">
+          <div class="panel-number">1. Input Layer</div>
+          <div id="inputGrid" class="map-list">
+            <span>User Commands</span>
+            <span>Uploaded Files</span>
+            <span>Project Notes</span>
+            <span>Code Snippets</span>
+            <span>Meeting Transcripts</span>
+            <span>External APIs</span>
+            <span>Webhooks / Events</span>
+            <span>Real-time Streams</span>
+          </div>
+        </section>
+
+        <section class="map-panel green">
+          <div class="panel-number">2. Context & Memory Layer</div>
+          <div id="memoryGrid" class="map-list">
+            <span>Project State</span>
+            <span>Continuity Packets</span>
+            <span>Knowledge Graph</span>
+            <span>Long-Term Memory Store</span>
+            <span>Vector / Embedding Store</span>
+            <span>Source-to-Claim Maps</span>
+          </div>
+        </section>
+
+        <section class="map-panel violet">
+          <div class="panel-number">12. Self-Improvement & Evolution Layer</div>
+          <div id="evolutionGrid" class="map-list"></div>
+        </section>
+      </aside>
+
+      <main class="brain-map">
+        <section class="orchestrator-panel violet">
+          <div class="panel-number">3. Neural Core Orchestrator (Central Brain)</div>
+          <div id="orchestratorStrip" class="node-strip"></div>
+        </section>
+
+        <section class="ao-panel violet">
+          <div class="panel-number">4. Assistant Orchestrators Hive</div>
+          <div class="consensus-banner">AO Consensus: proposal, evidence, veto, policy, route, and collective action.</div>
+          <div id="aoHiveStrip" class="node-strip"></div>
+        </section>
+
+        <section class="core-stage">
+          <div class="flow-ribbon cyan-flow"></div>
+          <div class="flow-ribbon green-flow"></div>
+          <div class="flow-ribbon violet-flow"></div>
+          <div class="core-brain">
+            <div class="core-ring"></div>
+            <div class="core-label">
+              <span>NEXUSNET</span>
+              <strong>NEURAL CORE</strong>
+              <span>AI BRAIN</span>
+            </div>
+          </div>
+          <article class="hive-card">
+            <div class="eyebrow">Hive Mind Collective Layer</div>
+            <h3>AI Hive Mind Operating Model</h3>
+            <strong class="operating-model">Commanded Collective Hive</strong>
+            <p>Central orchestration with AO and Expert mini-brains that receive orders, reason locally, respond with evidence, and escalate vetoes.</p>
+            <div id="hiveCommandChain" class="command-chain">NexusBrain -> AO Hive -> Experts -> Tools/Outputs -> Memory Feedback -> NexusBrain</div>
+            <div id="coreMetrics" class="mini-metrics"></div>
+          </article>
+        </section>
+
+        <section class="hive-operating-panel violet">
+          <div class="panel-number">AI Hive Mind Operating Model</div>
+          <div class="hive-operating-grid">
+            <article>
+              <h3>Command Chain</h3>
+              <div id="hiveCommandChainDetail" class="command-chain">NexusBrain -> AO Hive -> Experts -> Tools/Outputs -> Memory Feedback -> NexusBrain</div>
+            </article>
+            <article>
+              <h3>Hybrid Traits</h3>
+              <div id="hiveTraitGrid" class="token-grid"></div>
+            </article>
+            <article>
+              <h3>Mini-Brain Signal Contract</h3>
+              <div id="hiveSignalGrid" class="token-grid">
+                <span class="token">receives orders</span>
+                <span class="token">local reasoning</span>
+                <span class="token">evidence response</span>
+                <span class="token">veto / escalation</span>
+                <span class="token">consensus contribution</span>
+                <span class="token">execution status</span>
+              </div>
+            </article>
+          </div>
+          <div id="miniBrainGrid" class="mini-brain-grid"></div>
+        </section>
+
+        <section class="execution-panel blue">
+          <div class="panel-number">8. Agent / Tool Layer</div>
+          <div id="executionStrip" class="node-strip"></div>
+        </section>
+
+        <section class="build-panel gold">
+          <div class="panel-number">9. Build & Execution Layer</div>
+          <div id="buildStrip" class="node-strip"></div>
+        </section>
+
+        <section class="output-panel cyan">
+          <div class="panel-number">10. Output Layer & 11. Recursive Learning Loop</div>
+          <div id="outputStrip" class="node-strip"></div>
+        </section>
+      </main>
+
+      <aside class="map-column right-map">
+        <section class="map-panel cyan">
+          <div class="panel-number">5. Experts Hive</div>
+          <div id="expertGrid" class="expert-grid"></div>
+        </section>
+
+        <section class="map-panel gold">
+          <div class="panel-number">6. Governance & Observability Layer</div>
+          <div class="security-title">Security Panel</div>
+          <div id="securityGrid" class="icon-grid"></div>
+        </section>
+
+        <section class="map-panel teal">
+          <div class="panel-number">7. Communication & Integration Layer</div>
+          <div id="commsGrid" class="map-list"></div>
+        </section>
+
+        <section class="map-panel violet">
+          <div class="panel-number">System Principles</div>
+          <div id="systemPrinciples" class="map-list"></div>
+        </section>
+      </aside>
+    </section>
+
+    <section id="gateGrid" class="gate-grid"></section>
+
+    <section class="control-grid">
+      <aside class="surface-panel nav-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Control Center Nav</div>
+            <h3>Brain Surfaces</h3>
+          </div>
+        </div>
+        <nav id="pageNav" class="nav-list" aria-label="Control Panel Pages"></nav>
+      </aside>
+
+      <article class="surface-panel primary-panel">
+        <div class="panel-head">
+          <div>
+            <div class="eyebrow">Selected Surface</div>
+            <h3 id="pageTitle">Overview</h3>
+          </div>
+          <span id="pageState" class="state-pill">pending</span>
+        </div>
+        <p id="pageSummary" class="summary"></p>
+        <div id="metricGrid" class="metric-grid"></div>
+        <div class="section-title">Required Surfaces</div>
+        <div id="requiredList" class="token-grid"></div>
+        <div class="section-title">Book Compliance</div>
+        <div id="complianceList" class="token-grid"></div>
+        <div class="surface-action-row">
+          <button id="realizeSurfaceButton" type="button" title="Queue selected Canon surface through NexusBrain">Queue Next Canon Action</button>
+          <small id="realizeSurfaceStatus">Selected surface actions are issued through NexusBrain authority.</small>
+        </div>
+        <div class="section-title">Surface Drilldown</div>
+        <div id="surfaceDrilldownList" class="ref-list"></div>
+        <form id="canonProofForm" class="surface-proof-form">
+          <label for="canonProofQuestion">Record Answer Proof</label>
+          <select id="canonProofQuestion" title="Canon answer question"></select>
+          <input id="canonProofActor" type="text" value="Operator" aria-label="Proof actor">
+          <textarea id="canonProofDetail" rows="3" placeholder="Evidence, policy decision, artifact/model, update candidate, or research watch detail"></textarea>
+          <button id="canonProofButton" type="submit" title="Record answer proof through NexusBrain">Record Proof</button>
+          <small id="canonProofStatus">Proof is attached to the active NexusBrain command and audited.</small>
+        </form>
+        <div class="section-title">Operator Answer Links</div>
+        <div id="answerLinkGrid" class="answer-link-grid"></div>
+        <div class="section-title">Evidence References</div>
+        <div id="evidenceList" class="ref-list"></div>
+      </article>
+
+      <aside class="surface-panel radar-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Forward Radar</div>
+            <h3>Research Lanes</h3>
+          </div>
+        </div>
+        <div id="radarList" class="stack-list"></div>
+      </aside>
+    </section>
+
+    <section class="bottom-grid">
+      <article class="surface-panel runtime-scorecard-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Runtime Scorecard</div>
+            <h3>Formats, Quantization, Cache Economics, Hardware Fit</h3>
+          </div>
+        </div>
+        <div id="runtimeScorecard" class="runtime-scorecard-grid"></div>
+      </article>
+
+      <article class="surface-panel trust-scorecard-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Protocol Trust</div>
+            <h3>MCP, A2A, ACP, AG-UI Governance</h3>
+          </div>
+        </div>
+        <div id="protocolTrustScorecard" class="protocol-scorecard-grid"></div>
+      </article>
+
+      <article class="surface-panel protocol-trust-registry-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Protocol Trust Registry</div>
+            <h3>Identity, Consent, Permissions, Revocation, Sandbox</h3>
+          </div>
+        </div>
+        <div id="protocolTrustRegistryScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel communication-integration-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Communication Integration</div>
+            <h3>Webhooks, Bus, Events, Sync, Services, Collaboration</h3>
+          </div>
+        </div>
+        <div id="communicationIntegrationScorecard" class="communication-integration-grid"></div>
+      </article>
+
+      <article class="surface-panel input-ingestion-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Input Ingestion</div>
+            <h3>Commands, Files, Notes, Snippets, APIs, Events, Freshness</h3>
+          </div>
+        </div>
+        <div id="inputIngestionScorecard" class="input-ingestion-grid"></div>
+      </article>
+
+      <article class="surface-panel live-flow-scorecard-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Flow Correlation</div>
+            <h3>Route, Model, Memory, Tool, Policy, Eval, Output</h3>
+          </div>
+        </div>
+        <div id="liveFlowScorecard" class="live-flow-scorecard-grid"></div>
+      </article>
+
+      <article class="surface-panel neural-core-scorecard-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Neural Core Control</div>
+            <h3>Authority, Routing, Policy, Fallback, Self-Check</h3>
+          </div>
+        </div>
+        <div id="neuralCoreScorecard" class="neural-core-scorecard-grid"></div>
+      </article>
+
+      <article class="surface-panel observability-scorecard-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Governance Observability</div>
+            <h3>Trace Standards, Audit Controls, Redaction</h3>
+          </div>
+        </div>
+        <div id="observabilityScorecard" class="observability-scorecard-grid"></div>
+      </article>
+
+      <article class="surface-panel genai-observability-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">GenAI Observability</div>
+            <h3>OpenTelemetry GenAI Spans, Events, Redacted Export</h3>
+          </div>
+        </div>
+        <div id="genAIObservabilityScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel security-governance-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Security Governance</div>
+            <h3>Permissions, Guardrails, Audit, Privacy, Rollback</h3>
+          </div>
+        </div>
+        <div id="securityGovernanceScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel policy-kernel-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Policy Kernel</div>
+            <h3>Deterministic Rules, Waivers, Promotion Gates</h3>
+          </div>
+        </div>
+        <div id="policyKernelScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel agentic-pipeline-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Agentic Pipeline Runtime</div>
+            <h3>Manifests, Blocks, Events, Artifacts, Gate Checks</h3>
+          </div>
+        </div>
+        <div id="agenticPipelineScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel agent-opportunity-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Agent Opportunity Discovery</div>
+            <h3>Frontstage, Backstage, AAA Layers, Specialist Agents</h3>
+          </div>
+        </div>
+        <div id="agentOpportunityScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel harness-provider-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Harness Provider Registry</div>
+            <h3>Brain/Hands Split, Memory Portability, Sandbox Trust</h3>
+          </div>
+        </div>
+        <div id="harnessProviderScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel harness-routing-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Harness Model Router</div>
+            <h3>Model Cost, Data Sensitivity, Tool Use, Review Authority</h3>
+          </div>
+        </div>
+        <div id="harnessRoutingScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel harness-improvement-ledger-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Harness Improvement Ledger</div>
+            <h3>Harness Diffs, Shadow Runs, Held-Out Evals, Rollback</h3>
+          </div>
+        </div>
+        <div id="harnessImprovementLedger" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel edge-router-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Edge Workload Router</div>
+            <h3>Local, Browser, Mobile, WSL, Cloud Route Decisions</h3>
+          </div>
+        </div>
+        <div id="edgeWorkloadRouterScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel multimodal-computer-use-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Multimodal Computer Use</div>
+            <h3>Screen, OCR, VLM, Audio, Documents, OS/Browser Safety</h3>
+          </div>
+        </div>
+        <div id="multimodalComputerUseScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel inference-economy-router-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Inference Economy Router</div>
+            <h3>Manifest-Style Specificity, Complexity, Fallback, Cost Ledger</h3>
+          </div>
+        </div>
+        <div id="inferenceEconomyRouterScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel inference-architecture-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Inference Architecture</div>
+            <h3>Speculation, Cache Reuse, Batching, Prefill/Decode</h3>
+          </div>
+        </div>
+        <div id="inferenceArchitectureScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel cache-ledger-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Effective Context and KV Cache</div>
+            <h3>Measured Context, Recall, Prefix Reuse, KV Policy, Privacy Scope</h3>
+          </div>
+        </div>
+        <div id="cacheLedgerScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel runtime-workload-scorecards-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Runtime Workload Scorecards</div>
+            <h3>TTFT, Decode, Throughput, Memory, Cache, Cost, Fallbacks</h3>
+          </div>
+        </div>
+        <div id="runtimeWorkloadScorecards" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel quantization-catalog-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Quantization Catalog</div>
+            <h3>Formats, Runtimes, KV Cache, TurboQuant Shadow Lane</h3>
+          </div>
+        </div>
+        <div id="quantizationCatalogScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel browser-context-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Browser Context Memory</div>
+            <h3>Tabs, Pages, History Snippets, Local Search, Provenance</h3>
+          </div>
+        </div>
+        <div id="browserContextScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel engram-memory-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Engram Memory Index</div>
+            <h3>Explicit Hash Memory, Gating, Collisions, Provenance</h3>
+          </div>
+        </div>
+        <div id="engramMemoryScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel dataset-radar-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Dataset Radar</div>
+            <h3>Discovery, License Gates, Teacher Material, Candidate Refresh</h3>
+          </div>
+        </div>
+        <form id="datasetRadarRefreshForm" class="surface-proof-form">
+          <div class="input-row">
+            <select id="datasetRadarPreset" aria-label="Dataset Radar target-node preset">
+              <option value="coder-expert">Coder Expert</option>
+              <option value="math-reasoning">Math Reasoning</option>
+              <option value="research-open">Research Open</option>
+              <option value="multimodal-perception">Multimodal Perception</option>
+              <option value="instruction-preference">Instruction Preference</option>
+              <option value="foundation-web">Foundation Web</option>
+              <option value="cybersecurity-defensive">Cybersecurity Defensive</option>
+              <option value="patent-legal">Patent Legal</option>
+              <option value="biomedical-genomics">Biomedical Genomics</option>
+              <option value="engineering-cad">Engineering CAD</option>
+            </select>
+            <input id="datasetRadarQuery" type="text" placeholder="optional custom query; preset default used when blank" aria-label="Dataset Radar search query">
+            <select id="datasetRadarSort" aria-label="Dataset Radar sort">
+              <option value="lastModified">Last Modified</option>
+              <option value="trendingScore">Trending Score</option>
+              <option value="downloads">Downloads</option>
+            </select>
+            <input id="datasetRadarLimit" type="number" min="1" max="50" value="10" aria-label="Dataset Radar result limit">
+          </div>
+          <div class="input-row">
+            <input id="datasetRadarRequiredTags" type="text" placeholder="required tags, e.g. code agent" aria-label="Dataset Radar required discovery tags">
+            <input id="datasetRadarBlockedTags" type="text" placeholder="blocked tags, e.g. private pii" aria-label="Dataset Radar blocked discovery tags">
+            <input id="datasetRadarAuthors" type="text" placeholder="authors, e.g. bigcode HuggingFaceFW" aria-label="Dataset Radar author filters">
+            <select id="datasetRadarSourceFamilyFilter" aria-label="Dataset Radar source family filter">
+              <option value="">All families</option>
+              <option value="code_agent">Code Agent</option>
+              <option value="math_reasoning">Math Reasoning</option>
+              <option value="multimodal_audio_video">Multimodal Audio Video</option>
+              <option value="instruction_preference">Instruction Preference</option>
+              <option value="foundation_web">Foundation Web</option>
+              <option value="science_research">Science Research</option>
+              <option value="open_legal_text">Open Legal Text</option>
+              <option value="cybersecurity_defensive">Cybersecurity Defensive</option>
+              <option value="patents_legal">Patents Legal</option>
+              <option value="biomedical_genomics">Biomedical Genomics</option>
+              <option value="engineering_cad">Engineering CAD</option>
+            </select>
+          </div>
+          <div class="surface-action-row">
+            <button id="datasetRadarRefreshButton" type="submit" title="Refresh Dataset Radar candidates through the license and provenance gate">Refresh Dataset Radar</button>
+            <button id="datasetRadarBatchButton" type="button" title="Run all Dataset Radar target-node presets as one replayable batch">Run Preset Batch</button>
+            <small id="datasetRadarRefreshStatus">teacher councils request material through Dataset Radar; discoveries never auto-approve training use.</small>
+          </div>
+        </form>
+        <form id="datasetRadarCandidateReviewForm" class="surface-proof-form">
+          <div class="input-row">
+            <input id="datasetRadarReviewDatasetId" type="text" placeholder="candidate dataset id, e.g. example/apache-code-agent" aria-label="Dataset Radar candidate dataset id">
+            <select id="datasetRadarReviewState" aria-label="Dataset Radar candidate review state">
+              <option value="approved_teacher_context">Teacher Context</option>
+              <option value="approved_eval_only">Eval Only</option>
+              <option value="sealed_eval_only">Sealed Eval</option>
+              <option value="pending_license_review">Pending License</option>
+              <option value="blocked_unknown_license">Block Unknown</option>
+              <option value="blocked_tos_risk">Block ToS Risk</option>
+              <option value="blocked_private_or_personal">Block Private</option>
+            </select>
+            <button id="datasetRadarCandidateReviewButton" type="submit" title="Record a non-training candidate review decision">Record Candidate Review</button>
+          </div>
+          <input id="datasetRadarReviewReason" type="text" placeholder="review reason; training approval remains blocked by default" aria-label="Dataset Radar candidate review reason">
+        </form>
+        <form id="datasetRadarMaterialRequestForm" class="surface-proof-form">
+          <div class="input-row">
+            <input id="datasetRadarMaterialTarget" type="text" value="Coder Expert" aria-label="Dataset Radar material request target node">
+            <input id="datasetRadarMaterialTeacher" type="text" value="teacher:qwen3-coder-next" aria-label="Dataset Radar material request teacher">
+            <select id="datasetRadarMaterialSplit" aria-label="Dataset Radar material request split">
+              <option value="teacher_context">Teacher Context</option>
+              <option value="validation">Validation</option>
+              <option value="heldout">Heldout</option>
+              <option value="adversarial">Adversarial</option>
+              <option value="teacher_free_hidden">Sealed Eval</option>
+              <option value="train">Train</option>
+            </select>
+            <input id="datasetRadarMaterialLimit" type="number" min="1" max="200" value="24" aria-label="Dataset Radar material request limit">
+            <button id="datasetRadarMaterialRequestButton" type="submit" title="Request gated teacher/eval material through Dataset Radar">Request Material</button>
+          </div>
+        </form>
+        <form id="datasetRadarSourceDetailForm" class="surface-proof-form">
+          <div class="input-row">
+            <input id="datasetRadarSourceDetailDatasetId" type="text" placeholder="inspect source id, e.g. the-stack-v2 or example/apache-code-agent" aria-label="Dataset Radar source detail dataset id">
+            <button id="datasetRadarSourceDetailButton" type="submit" title="Inspect Dataset Radar source detail replay">Inspect Source Detail</button>
+          </div>
+        </form>
+        <div id="datasetRadarScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel dataset-forge-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Dataset Forge</div>
+            <h3>Sources, Splits, Eval Cases, Privacy, Provenance</h3>
+          </div>
+        </div>
+        <form id="datasetForgeManifestForm" class="surface-proof-form">
+          <div class="input-row">
+            <input id="datasetForgeManifestId" type="text" placeholder="dataset manifest id" aria-label="DatasetForge manifest id">
+            <input id="datasetForgePurpose" type="text" placeholder="manifest purpose" aria-label="DatasetForge manifest purpose">
+            <input id="datasetForgeMaterialRequestRef" type="text" placeholder="material request ref" aria-label="DatasetForge material request ref">
+            <select id="datasetForgeTaskType" aria-label="DatasetForge task type">
+              <option value="tool_use">Tool Use</option>
+              <option value="summarization">Summarization</option>
+              <option value="routing">Routing</option>
+              <option value="reasoning">Reasoning</option>
+              <option value="multimodal">Multimodal</option>
+              <option value="style">Style</option>
+            </select>
+          </div>
+          <div class="input-row">
+            <input id="datasetForgeSourceId" type="text" placeholder="source id" aria-label="DatasetForge source id">
+            <input id="datasetForgeRadarSourceId" type="text" placeholder="Dataset Radar source id" aria-label="DatasetForge Dataset Radar source id">
+            <select id="datasetForgeIntendedSplit" aria-label="DatasetForge intended split">
+              <option value="teacher_context">Teacher Context</option>
+              <option value="validation">Validation</option>
+              <option value="heldout">Heldout</option>
+              <option value="adversarial">Adversarial</option>
+              <option value="teacher_free_hidden">Sealed Eval</option>
+              <option value="train">Train</option>
+            </select>
+            <button id="datasetForgeApplyHandoffButton" type="button" title="Load the latest Dataset Radar handoff into this manifest form">Load Latest Handoff</button>
+          </div>
+          <textarea id="datasetForgeSourceText" rows="3" placeholder="operator-reviewed excerpt required before DatasetForge build" aria-label="DatasetForge reviewed source excerpt"></textarea>
+          <label class="checkbox-line">
+            <input id="datasetForgeOperatorApproved" type="checkbox">
+            <span>I reviewed this excerpt and approve building a DatasetForge manifest only; no training execution is authorized.</span>
+          </label>
+          <div class="input-row">
+            <button id="datasetForgeManifestButton" type="submit" title="Build a DatasetForge manifest from reviewed, gated source material">Build Dataset Manifest</button>
+            <small id="datasetForgeManifestStatus" class="status-note">Load a Dataset Radar handoff or enter a reviewed non-training source manually.</small>
+          </div>
+        </form>
+        <div id="datasetForgeScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel knowledge-artifacts-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Knowledge Artifact Compiler</div>
+            <h3>Compiled Context, Citations, Freshness, Conflicts, Fallback</h3>
+          </div>
+        </div>
+        <div id="knowledgeArtifactsScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel adapter-registry-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Adapter Registry</div>
+            <h3>LoRA/QLoRA Candidates, Datasets, Evals, Rollback</h3>
+          </div>
+        </div>
+        <div id="adapterRegistryScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel fine-tune-decision-gate-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Fine-Tune Decision Gate</div>
+            <h3>Prompt, RAG, Agent Loop, Rights, Eval, Adapter Eligibility</h3>
+          </div>
+        </div>
+        <div id="fineTuneDecisionGateScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel adapter-training-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Adapter Training Planner</div>
+            <h3>Data, LoRA/QLoRA, Hardware, Evals, GGUF Export</h3>
+          </div>
+        </div>
+        <div id="adapterTrainingScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel growth-engine-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Hive Model Growth Engine</div>
+            <h3>Birth, Dataset Forge, Teacher Review, Eval, Shadow Promotion</h3>
+          </div>
+        </div>
+        <div id="growthEngineScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel production-spine-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Production Spine</div>
+            <h3>Training, Runtime, MoE, Kernel, Eval, Federation, Replay, Release Gates</h3>
+          </div>
+        </div>
+        <div id="productionSpineScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel eval-registry-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Eval Registry</div>
+            <h3>Held-Out Suites, Benchmarks, Regression Gates</h3>
+          </div>
+        </div>
+        <div id="evalRegistryScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel artifact-trust-registry-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Artifact Trust Registry</div>
+            <h3>Signatures, Checksums, Provenance, Unsafe Format Scans</h3>
+          </div>
+        </div>
+        <div id="artifactTrustRegistryScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel autonomous-updates-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Autonomous Updates</div>
+            <h3>Eval, Trust, Rollback, Monitoring, Approval Gates</h3>
+          </div>
+        </div>
+        <div id="autonomousUpdatesScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel blackbox-recorder-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Black Box Recorder</div>
+            <h3>Command, Route, Policy, Memory, Eval, Artifact Proof</h3>
+          </div>
+        </div>
+        <div id="blackBoxRecorder" class="blackbox-recorder-grid"></div>
+      </article>
+
+      <article class="surface-panel hive-consensus-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Hive Consensus</div>
+            <h3>Central Command, AO Reasoning, Expert Evidence, Veto</h3>
+          </div>
+        </div>
+        <div id="hiveConsensusScorecard" class="hive-consensus-grid"></div>
+      </article>
+
+      <article class="surface-panel ao-hive-command-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">AO Hive Command</div>
+            <h3>Roles, Delegation, Context, Permissions, Governance</h3>
+          </div>
+        </div>
+        <div id="aoHiveScorecard" class="ao-hive-scorecard-grid"></div>
+      </article>
+
+      <article class="surface-panel experts-hive-command-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Experts Hive Command</div>
+            <h3>Domain Mini-Brains, Evidence, Consensus, Veto, Memory</h3>
+          </div>
+        </div>
+        <div id="expertsHiveScorecard" class="experts-hive-scorecard-grid"></div>
+      </article>
+
+      <article class="surface-panel researcher-swarm-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Researcher Swarm</div>
+            <h3>Forward Radar, Self Review, Promotion Loop</h3>
+          </div>
+        </div>
+        <div id="researcherSwarmScorecard" class="researcher-swarm-grid"></div>
+      </article>
+
+      <article class="surface-panel forward-radar-registry-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Forward Radar Registry</div>
+            <h3>Source, License, Security, Runtime, Eval, Observability, Rollback</h3>
+          </div>
+        </div>
+        <div id="forwardRadarScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel eval-scorecard-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Eval Suite</div>
+            <h3>Held-Out Tasks, Regression Gates, Promotion Evidence</h3>
+          </div>
+        </div>
+        <div id="evalSuiteScorecard" class="eval-scorecard-grid"></div>
+      </article>
+
+      <article class="surface-panel memory-scorecard-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Memory Provenance</div>
+            <h3>RAG Quality, Source-to-Claim Maps, Privacy</h3>
+          </div>
+        </div>
+        <div id="memoryProvenanceScorecard" class="memory-scorecard-grid"></div>
+      </article>
+
+      <article class="surface-panel memory-quality-ledger-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Memory Quality Ledger</div>
+            <h3>Claims, Sources, Graph Evidence, Answerability</h3>
+          </div>
+        </div>
+        <div id="memoryQualityScorecard" class="memory-scorecard-grid"></div>
+      </article>
+
+      <article class="surface-panel artifact-scorecard-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Artifact Trust</div>
+            <h3>Supply Chain, Signing, Scanner, License Controls</h3>
+          </div>
+        </div>
+        <div id="artifactTrustScorecard" class="artifact-scorecard-grid"></div>
+      </article>
+
+      <article class="surface-panel hardware-scorecard-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Hardware Matrix</div>
+            <h3>Browser, Edge, NPU, GPU, CPU Deployment Lanes</h3>
+          </div>
+        </div>
+        <div id="hardwareMatrixScorecard" class="hardware-scorecard-grid"></div>
+      </article>
+
+      <article class="surface-panel visualops-scorecard-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">VisualOps</div>
+            <h3>Screen, Document, Audio, OS/Browser Control Safety</h3>
+          </div>
+        </div>
+        <div id="visualOpsScorecard" class="visualops-scorecard-grid"></div>
+      </article>
+
+      <article class="surface-panel tool-execution-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Tool Execution</div>
+            <h3>Registry, Sandbox, Approval, Isolation, Replay</h3>
+          </div>
+        </div>
+        <div id="toolExecutionScorecard" class="tool-execution-grid"></div>
+      </article>
+
+      <article class="surface-panel assimilation-targets-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Assimilation Target Matrix</div>
+            <h3>Tool Registry, Checkpoints, Task Graph, Provider Resilience, Skill Systems Orchestrator</h3>
+          </div>
+        </div>
+        <div id="assimilationTargetScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel video-assimilation-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Video Assimilation</div>
+            <h3>Targets, Source Status, Shadow Gates, Operator Surfaces</h3>
+          </div>
+        </div>
+        <div id="videoAssimilationScorecard" class="evolution-dossier-grid"></div>
+        <div id="retrievalPlannerScorecard" class="evolution-dossier-grid"></div>
+        <div id="operatorEventsScorecard" class="evolution-dossier-grid"></div>
+        <div id="conceptTelemetryScorecard" class="evolution-dossier-grid"></div>
+      </article>
+
+      <article class="surface-panel hive-neural-substrate-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Hive Neural Substrate v0</div>
+            <h3>Planes, Sparse Experts, Recurrent Loop, Memory, Immune Gates, Federation</h3>
+          </div>
+        </div>
+        <div id="hiveNeuralSubstrateScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel sandbox-agent-factory-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Sandbox Agent Factory</div>
+            <h3>AFK Agents, Worktrees, Sandboxes, Review Lanes, Merge Gates</h3>
+          </div>
+        </div>
+        <div id="sandboxAgentFactoryScorecard" class="security-governance-grid"></div>
+      </article>
+
+      <article class="surface-panel output-delivery-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Output Delivery</div>
+            <h3>Deliverables, Artifacts, Exports, Packages, Memory Feedback</h3>
+          </div>
+        </div>
+        <div id="outputDeliveryScorecard" class="output-delivery-grid"></div>
+      </article>
+
+      <article class="surface-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Runtime Lab</div>
+            <h3>Quantization And Formats</h3>
+          </div>
+        </div>
+        <div id="quantCatalog" class="token-grid"></div>
+      </article>
+
+      <article class="surface-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="eyebrow">Canon Sources</div>
+            <h3>Build Inputs</h3>
+          </div>
+        </div>
+        <div id="sourceDocs" class="ref-list"></div>
+      </article>
+    </section>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

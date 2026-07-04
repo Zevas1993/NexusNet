@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from nexus.api.app import create_app
 from nexus.services import build_services
+from nexusnet.moe.fusion import MoEFusionScaffoldService
 from nexusnet.schemas import SessionContext
 from tests.test_nexus_phase1_foundation import make_project
 
@@ -111,6 +112,26 @@ def test_wrapper_surface_exposes_core_execution_traceability(tmp_path: Path):
     assert Path(core_execution["latest_artifact_path"]).exists()
     assert core_execution["trace_detail_template"] == "/ops/traces/{trace_id}"
     assert core_execution["core_summary_ref"] == "/ops/brain/core"
+
+
+def test_fusion_scaffold_blocks_native_readiness_from_upstream_aitune_gate():
+    scaffold = MoEFusionScaffoldService().execution_plan(
+        selected_expert="researcher",
+        upstream_aitune_gate={
+            "status": "blocked-upstream-gate",
+            "can_execute_here": False,
+            "blockers": ["inference_architecture_blocks_cache_gate"],
+        },
+    )
+
+    alignment = scaffold["alignment"]
+    assert scaffold["native_execution_ceiling"] == "teacher_fallback"
+    assert alignment["alignment_hold_required"] is True
+    assert alignment["ready_for_shadow_fusion"] is False
+    assert alignment["ready_for_challenger_shadow"] is False
+    assert alignment["ready_for_live_guarded"] is False
+    assert alignment["upstream_aitune_gate"]["can_execute_here"] is False
+    assert "router_alignment_blocks_upstream_aitune_gate" in alignment["alignment_blockers"]
 
 
 def test_core_summary_and_wrapper_surface_absorb_teacher_dream_and_foundry_evidence(tmp_path: Path):

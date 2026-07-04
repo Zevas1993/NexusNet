@@ -153,10 +153,7 @@ def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]
 
 
 def load_user_settings(paths: NexusPaths) -> dict[str, Any]:
-    home = Path.home()
     layers = [
-        home / ".nexus.json",
-        home / ".config" / "nexus" / "settings.json",
         paths.project_root / ".nexus.json",
         paths.project_root / ".nexus" / "settings.json",
         paths.project_root / ".nexus" / "settings.local.json",

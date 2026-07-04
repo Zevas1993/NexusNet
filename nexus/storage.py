@@ -140,6 +140,21 @@ class NexusStore:
             detail_json text not null,
             created_at text not null
         );
+        create table if not exists brain_operation_commands (
+            command_id text primary key,
+            session_id text not null,
+            lifecycle_state text not null,
+            command_json text not null,
+            created_at text not null
+        );
+        create table if not exists brain_operation_events (
+            event_id text primary key,
+            command_id text not null,
+            session_id text not null,
+            event_type text not null,
+            event_json text not null,
+            created_at text not null
+        );
         create table if not exists curriculum_transcript (
             record_id text primary key,
             subject text not null,
@@ -666,6 +681,91 @@ class NexusStore:
             }
             for row in rows
         ]
+
+    def save_brain_operation_command(self, payload: dict[str, Any]) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                insert into brain_operation_commands(command_id, session_id, lifecycle_state, command_json, created_at)
+                values (?, ?, ?, ?, ?)
+                on conflict(command_id) do update set
+                    lifecycle_state=excluded.lifecycle_state,
+                    command_json=excluded.command_json
+                """,
+                (
+                    payload["command_id"],
+                    payload["session_id"],
+                    payload["lifecycle_state"],
+                    _json_dump(payload),
+                    payload["created_at"],
+                ),
+            )
+
+    def list_brain_operation_commands(self, session_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+        sql = "select command_json from brain_operation_commands"
+        params: list[Any] = []
+        if session_id:
+            sql += " where session_id = ?"
+            params.append(session_id)
+        sql += " order by created_at desc limit ?"
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [_json_load(row["command_json"], {}) for row in rows]
+
+    def get_brain_operation_command(self, command_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "select command_json from brain_operation_commands where command_id = ?",
+                (command_id,),
+            ).fetchone()
+        if not row:
+            return None
+        return _json_load(row["command_json"], {})
+
+    def save_brain_operation_event(self, payload: dict[str, Any]) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                insert into brain_operation_events(event_id, command_id, session_id, event_type, event_json, created_at)
+                values (?, ?, ?, ?, ?, ?)
+                on conflict(event_id) do update set
+                    event_type=excluded.event_type,
+                    event_json=excluded.event_json
+                """,
+                (
+                    payload["event_id"],
+                    payload["command_id"],
+                    payload["session_id"],
+                    payload["event_type"],
+                    _json_dump(payload),
+                    payload["created_at"],
+                ),
+            )
+
+    def list_brain_operation_events(
+        self,
+        *,
+        session_id: str | None = None,
+        command_id: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        sql = "select event_json from brain_operation_events"
+        filters: list[str] = []
+        params: list[Any] = []
+        if session_id:
+            filters.append("session_id = ?")
+            params.append(session_id)
+        if command_id:
+            filters.append("command_id = ?")
+            params.append(command_id)
+        if filters:
+            sql += " where " + " and ".join(filters)
+        sql += " order by created_at desc limit ?"
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [_json_load(row["event_json"], {}) for row in rows]
 
     def save_curriculum_record(
         self,

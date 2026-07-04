@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="850" height="1100" viewBox="0 0 850 1100">
+  <rect x="75" y="50" width="700" height="975" fill="white" stroke="black"/>
+  <text x="425" y="90" text-anchor="middle" font-family="Arial" font-size="22" font-weight="bold">FIG 3 FORWARD PASS</text>
+  <text x="425" y="220" text-anchor="middle" font-family="Arial" font-size="18">Task -> Activation -> Memory -> Router -> Experts -> Eval -> Gate -> Output</text>
+</svg>

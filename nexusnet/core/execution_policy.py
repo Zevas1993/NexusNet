@@ -87,21 +87,33 @@ class CoreExecutionPolicyEngine:
         alignment_blockers_from_foundry = list(foundry.get("latest_native_alignment_blockers") or [])
         alignment_max_safe_mode_from_foundry = foundry.get("latest_native_alignment_max_safe_mode")
         alignment_ready = bool(alignment.get("ready_for_shadow_fusion"))
+        upstream_aitune_gate = _upstream_aitune_gate(alignment.get("upstream_aitune_gate") or {})
+        upstream_aitune_blocked = _upstream_aitune_gate_blocked(upstream_aitune_gate)
         alignment_hold_required = bool(alignment.get("alignment_hold_required")) or alignment_hold_required_from_foundry
         alignment_blockers = list(dict.fromkeys((alignment.get("alignment_blockers") or []) + alignment_blockers_from_foundry))
+        if upstream_aitune_blocked:
+            alignment_ready = False
+            alignment_hold_required = True
+            alignment_blockers = list(dict.fromkeys(alignment_blockers + ["router_alignment_blocks_upstream_aitune_gate"]))
         alignment_max_safe_mode = (
+            "teacher_fallback"
+            if upstream_aitune_blocked
+            else (
             alignment.get("max_safe_native_mode")
             or alignment_max_safe_mode_from_foundry
             or ("teacher_fallback" if not alignment_ready else "native_live_guarded")
+            )
         )
-        ready_for_challenger_shadow = bool(alignment.get("ready_for_challenger_shadow", alignment_ready))
-        ready_for_live_guarded = bool(alignment.get("ready_for_live_guarded", alignment_max_safe_mode == "native_live_guarded"))
+        ready_for_challenger_shadow = bool(alignment.get("ready_for_challenger_shadow", alignment_ready)) and not upstream_aitune_blocked
+        ready_for_live_guarded = bool(alignment.get("ready_for_live_guarded", alignment_max_safe_mode == "native_live_guarded")) and not upstream_aitune_blocked
 
         fallback_triggers: list[str] = []
         guarded_live_blockers: list[str] = []
 
         if not alignment_ready:
             fallback_triggers.append("router_alignment_incomplete")
+        if upstream_aitune_blocked:
+            fallback_triggers.append("upstream_aitune_gate_blocked")
         if safe_mode_fallback:
             fallback_triggers.append("runtime_safe_mode_active")
         if not teacher_bundle_count:
@@ -332,6 +344,7 @@ class CoreExecutionPolicyEngine:
                 "alignment_hold_required": alignment_hold_required,
                 "alignment_blockers": alignment_blockers,
                 "max_safe_native_mode": alignment_max_safe_mode,
+                "upstream_aitune_gate": upstream_aitune_gate,
                 "projection_required_count": alignment.get("projection_required_count"),
                 "context_bridge_count": alignment.get("context_bridge_count"),
                 "incompatible_expert_ids": alignment.get("incompatible_expert_ids", []),
@@ -455,3 +468,27 @@ class CoreExecutionPolicyEngine:
         if "research" in normalized:
             return "evidence-first"
         return "synthesis-first"
+
+
+def _upstream_aitune_gate(gate: dict[str, Any]) -> dict[str, Any]:
+    blockers = list(gate.get("blockers") or gate.get("readiness_blockers") or [])
+    status = str(gate.get("status") or "not_provided")
+    can_execute_here = gate.get("can_execute_here")
+    if can_execute_here is False and not blockers:
+        blockers.append("upstream_aitune_execution_not_ready")
+    if status in {"blocked", "blocked-upstream-gate"} and not blockers:
+        blockers.append("upstream_aitune_gate_blocked")
+    return {
+        **gate,
+        "status": status,
+        "can_execute_here": can_execute_here,
+        "blockers": blockers,
+    }
+
+
+def _upstream_aitune_gate_blocked(gate: dict[str, Any]) -> bool:
+    return bool(
+        gate.get("can_execute_here") is False
+        or gate.get("status") in {"blocked", "blocked-upstream-gate"}
+        or gate.get("blockers")
+    )

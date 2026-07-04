@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from .certification import ExtensionBundleCertificationService
@@ -31,18 +32,11 @@ class ExtensionCatalogService:
         self.policy = ExtensionBundlePolicyService(artifacts_dir=artifacts_dir or project_root)
         self.provenance = ExtensionBundleProvenanceService(artifacts_dir=artifacts_dir or project_root)
         self.certification = ExtensionBundleCertificationService(artifacts_dir=artifacts_dir or project_root)
+        self._bundle_cache_ttl_seconds = 5.0
+        self._bundle_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 
     def summary(self, *, workspace_id: str = "default") -> dict[str, Any]:
-        visible = [
-            item
-            for item in self.extensions
-            if workspace_id in item.get("workspace_scopes", []) or "*" in item.get("workspace_scopes", [])
-        ]
-        bundles = sorted(
-            [self._bundle_record(item=item, workspace_id=workspace_id) for item in visible],
-            key=lambda item: str(item.get("created_at") or ""),
-            reverse=True,
-        )
+        bundles = self._visible_bundle_records(workspace_id=workspace_id)
         enabled = [item for item in bundles if item.get("enabled_state") == "enabled"]
         approval_required_count = sum(
             1
@@ -151,7 +145,7 @@ class ExtensionCatalogService:
 
     def policy_set_summary(self, *, workspace_id: str = "default") -> dict[str, Any]:
         policy_summary = self.policy.policy_set_summary()
-        bundles = self.summary(workspace_id=workspace_id).get("extensions", [])
+        bundles = self._visible_bundle_records(workspace_id=workspace_id)
         bundle_counts: dict[str, int] = {}
         latest_bundles: dict[str, dict[str, Any]] = {}
         for bundle in bundles:
@@ -584,6 +578,24 @@ class ExtensionCatalogService:
         payload["mcp_compatible"] = payload.get("extension_kind") in {"mcp", "acp-provider"}
         payload["roots"] = [str(root).replace("{project_root}", self.project_root) for root in payload.get("roots", [])]
         return payload
+
+    def _visible_bundle_records(self, *, workspace_id: str) -> list[dict[str, Any]]:
+        now = time.monotonic()
+        cached = self._bundle_cache.get(workspace_id)
+        if cached and now - cached[0] <= self._bundle_cache_ttl_seconds:
+            return cached[1]
+        visible = [
+            item
+            for item in self.extensions
+            if workspace_id in item.get("workspace_scopes", []) or "*" in item.get("workspace_scopes", [])
+        ]
+        bundles = sorted(
+            [self._bundle_record(item=item, workspace_id=workspace_id) for item in visible],
+            key=lambda item: str(item.get("created_at") or ""),
+            reverse=True,
+        )
+        self._bundle_cache[workspace_id] = (now, bundles)
+        return bundles
 
     def _bundle_record(self, *, item: dict[str, Any], workspace_id: str) -> dict[str, Any]:
         bundle_id = str(item.get("extension_id"))

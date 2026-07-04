@@ -35,6 +35,67 @@ class RecursiveDreamEngine:
         source_trace_id = base_trace.get("trace_id") if base_trace else request.trace_id
         expert = (base_trace or {}).get("selected_expert") or "researcher"
         model_hint = request.model_hint or (base_trace or {}).get("model_id") or "mock/default"
+        compiled_knowledge_context = _compiled_knowledge_context(
+            request.knowledge_artifact_refs,
+            request.knowledge_artifact_runtime_contexts,
+        )
+
+        if compiled_knowledge_context["allowed"] is False:
+            findings = ["kac_runtime_context_not_allowed", *compiled_knowledge_context["blocked_reasons"]]
+            payload = self.shadow_pool.record_episode(
+                seed=seed,
+                scenario={
+                    "source_trace_id": source_trace_id,
+                    "model_hint": model_hint,
+                    "variant_count": 0,
+                    "compiled_knowledge_context": compiled_knowledge_context,
+                },
+                outcome={"variants": [], "aggregate_score": 0.0},
+                critique={"findings": findings, "shadow_only": True, "blocked": True},
+            )
+            episode = DreamEpisode(
+                dream_id=payload["dream_id"],
+                seed=seed,
+                source_trace_id=source_trace_id,
+                status="rejected",
+                variants=[],
+                aggregate_score=0.0,
+                findings=findings,
+                knowledge_artifact_refs=request.knowledge_artifact_refs,
+                compiled_knowledge_context=compiled_knowledge_context,
+                artifact_path=payload.get("artifact_path"),
+            )
+            self.memory.record_dream_episode(
+                subject=f"dream::{source_trace_id or payload['dream_id']}",
+                detail=episode.model_dump(mode="json"),
+            )
+            self.experiments.record(
+                ExperimentRecord(
+                    kind="dream_cycle",
+                    name=episode.dream_id,
+                    status="rejected",
+                    lineage={
+                        "source_trace_id": source_trace_id,
+                        "seed": seed,
+                        "knowledge_artifact_refs": request.knowledge_artifact_refs,
+                        "compiled_knowledge_context": compiled_knowledge_context,
+                    },
+                    metrics={"aggregate_score": 0.0, "variant_count": 0},
+                    artifacts=[payload.get("artifact_path")] if payload.get("artifact_path") else [],
+                )
+            )
+            self.governance.record_event(
+                "nexusnet.dream.rejected",
+                {
+                    "dream_id": episode.dream_id,
+                    "source_trace_id": source_trace_id,
+                    "aggregate_score": 0.0,
+                    "status": "rejected",
+                    "knowledge_artifact_refs": request.knowledge_artifact_refs,
+                    "compiled_knowledge_context": compiled_knowledge_context,
+                },
+            )
+            return episode
 
         variants: list[DreamVariant] = []
         for mode, prompt in self._build_variants(seed, request.variant_count):
@@ -44,7 +105,13 @@ class RecursiveDreamEngine:
                     expert=expert,
                     task_type="dream",
                     use_retrieval=False,
-                    metadata={"dream_mode": mode, "source_trace_id": source_trace_id, "shadow_only": True},
+                    metadata={
+                        "dream_mode": mode,
+                        "source_trace_id": source_trace_id,
+                        "shadow_only": True,
+                        "knowledge_artifact_refs": request.knowledge_artifact_refs,
+                        "compiled_knowledge_context": compiled_knowledge_context,
+                    },
                 ),
                 prompt=prompt,
                 model_hint=model_hint,
@@ -69,6 +136,7 @@ class RecursiveDreamEngine:
                 "source_trace_id": source_trace_id,
                 "model_hint": model_hint,
                 "variant_count": len(variants),
+                "compiled_knowledge_context": compiled_knowledge_context,
             },
             outcome={"variants": [variant.model_dump(mode="json") for variant in variants], "aggregate_score": aggregate_score},
             critique={"findings": findings, "shadow_only": True},
@@ -81,6 +149,8 @@ class RecursiveDreamEngine:
             variants=variants,
             aggregate_score=aggregate_score,
             findings=findings,
+            knowledge_artifact_refs=request.knowledge_artifact_refs,
+            compiled_knowledge_context=compiled_knowledge_context,
             artifact_path=payload.get("artifact_path"),
         )
         self.memory.record_dream_episode(
@@ -92,14 +162,26 @@ class RecursiveDreamEngine:
                 kind="dream_cycle",
                 name=episode.dream_id,
                 status="shadow",
-                lineage={"source_trace_id": source_trace_id, "seed": seed},
+                lineage={
+                    "source_trace_id": source_trace_id,
+                    "seed": seed,
+                    "knowledge_artifact_refs": request.knowledge_artifact_refs,
+                    "compiled_knowledge_context": compiled_knowledge_context,
+                },
                 metrics={"aggregate_score": aggregate_score, "variant_count": len(variants)},
                 artifacts=[payload.get("artifact_path")] if payload.get("artifact_path") else [],
             )
         )
         self.governance.record_event(
             "nexusnet.dream.recorded",
-            {"dream_id": episode.dream_id, "source_trace_id": source_trace_id, "aggregate_score": aggregate_score, "status": "shadow"},
+            {
+                "dream_id": episode.dream_id,
+                "source_trace_id": source_trace_id,
+                "aggregate_score": aggregate_score,
+                "status": "shadow",
+                "knowledge_artifact_refs": request.knowledge_artifact_refs,
+                "compiled_knowledge_context": compiled_knowledge_context,
+            },
         )
         return episode
 
@@ -153,3 +235,50 @@ class RecursiveDreamEngine:
         if not findings:
             findings.append("Dream cycle produced shadow candidates suitable for benchmark review.")
         return findings
+
+
+def _compiled_knowledge_context(
+    artifact_refs: list[str],
+    runtime_contexts: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    runtime_gate = _knowledge_artifact_runtime_gate(runtime_contexts or [])
+    return {
+        "surface_id": "knowledge-artifact-compiler",
+        "artifact_refs": artifact_refs,
+        "access_rule": "artifact-refs-only-through-KRC",
+        "mutation_allowed": False,
+        "visibility": "recursive-dream-context" if artifact_refs else "none",
+        "requires_krc_runtime_context_allowed": True,
+        "blocks_stale_or_quarantined_context": True,
+        "blocks_raw_retrieval_fallback_context": True,
+        "runtime_gate_source": "KnowledgeArtifactCompiler.query",
+        "allowed": runtime_gate["allowed"],
+        "runtime_context_evidence_count": runtime_gate["runtime_context_evidence_count"],
+        "blocked_artifact_refs": runtime_gate["blocked_artifact_refs"],
+        "blocked_reasons": runtime_gate["blocked_reasons"],
+        "context_boundary": "compiled artifacts can seed dream scenarios only by explicit refs",
+    }
+
+
+def _knowledge_artifact_runtime_gate(runtime_contexts: list[dict[str, Any]]) -> dict[str, Any]:
+    blocked_refs: list[str] = []
+    blocked_reasons: list[str] = []
+    for context in runtime_contexts:
+        artifact_ref = str(context.get("artifact_id") or context.get("artifact_ref") or context.get("context") or "")
+        fallback_state = str(context.get("fallback_state") or "")
+        if context.get("runtime_context_allowed") is True and fallback_state == "compiled_artifact" and artifact_ref:
+            continue
+        if artifact_ref:
+            blocked_refs.append(artifact_ref)
+        reason = str(
+            fallback_state
+            or (context.get("quarantine_state") or {}).get("reason")
+            or "krc_runtime_context_not_allowed"
+        )
+        blocked_reasons.append(reason)
+    return {
+        "allowed": not blocked_refs and not blocked_reasons,
+        "runtime_context_evidence_count": len(runtime_contexts),
+        "blocked_artifact_refs": sorted(set(blocked_refs)),
+        "blocked_reasons": sorted(set(blocked_reasons)),
+    }

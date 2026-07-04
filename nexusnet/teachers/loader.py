@@ -125,7 +125,16 @@ class TeacherCatalogLoader:
                 entry["notes"] = _dedupe(entry["notes"] + list(raw.get("notes", [])))
                 entry["registry_layers"] = _dedupe(entry["registry_layers"] + [layer_name])
                 entry["locality"] = raw.get("locality", entry.get("locality"))
-                for field in ("supports_tools", "supports_structured_output", "budget_class", "risk_tier", "context_window"):
+                for field in (
+                    "supports_tools",
+                    "supports_structured_output",
+                    "budget_class",
+                    "risk_tier",
+                    "context_window",
+                    "hardware_targets",
+                    "bounded_lanes",
+                    "specialties",
+                ):
                     if raw.get(field) is not None:
                         entry[field] = raw.get(field)
 

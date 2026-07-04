@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="850" height="1100" viewBox="0 0 850 1100">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="black"/>
+    </marker>
+  </defs>
+  <rect x="75" y="50" width="700" height="975" fill="white" stroke="black"/>
+  <text x="425" y="90" text-anchor="middle" font-family="Arial" font-size="21" font-weight="bold" fill="black">FIG. 5 OPTIONAL GROWTH-COMPONENT HANDLING</text>
+
+  <rect x="95" y="135" width="120" height="48" fill="white" stroke="black"/>
+  <text x="155" y="164" text-anchor="middle" font-family="Arial" font-size="12" fill="black">Evidence 321</text>
+  <rect x="245" y="135" width="120" height="48" fill="white" stroke="black"/>
+  <text x="305" y="164" text-anchor="middle" font-family="Arial" font-size="12" fill="black">Dreams 322</text>
+  <rect x="395" y="135" width="120" height="48" fill="white" stroke="black"/>
+  <text x="455" y="164" text-anchor="middle" font-family="Arial" font-size="12" fill="black">Labels 323</text>
+  <rect x="545" y="135" width="120" height="48" fill="white" stroke="black"/>
+  <text x="605" y="164" text-anchor="middle" font-family="Arial" font-size="12" fill="black">Replay 324</text>
+  <rect x="320" y="215" width="210" height="48" fill="white" stroke="black"/>
+  <text x="425" y="244" text-anchor="middle" font-family="Arial" font-size="12" fill="black">Curriculum Items 325</text>
+
+  <rect x="315" y="345" width="220" height="70" fill="white" stroke="black"/>
+  <text x="425" y="373" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Growth Service</text>
+  <text x="425" y="393" text-anchor="middle" font-family="Arial" font-size="14" fill="black">320</text>
+
+  <line x1="155" y1="183" x2="365" y2="345" stroke="black" marker-end="url(#arrow)"/>
+  <line x1="305" y1="183" x2="395" y2="345" stroke="black" marker-end="url(#arrow)"/>
+  <line x1="455" y1="183" x2="455" y2="345" stroke="black" marker-end="url(#arrow)"/>
+  <line x1="605" y1="183" x2="485" y2="345" stroke="black" marker-end="url(#arrow)"/>
+  <line x1="425" y1="263" x2="425" y2="345" stroke="black" marker-end="url(#arrow)"/>
+
+  <rect x="315" y="500" width="220" height="70" fill="white" stroke="black"/>
+  <text x="425" y="528" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Student Candidate</text>
+  <text x="425" y="548" text-anchor="middle" font-family="Arial" font-size="14" fill="black">326</text>
+  <line x1="425" y1="415" x2="425" y2="500" stroke="black" marker-end="url(#arrow)"/>
+
+  <rect x="105" y="650" width="155" height="60" fill="white" stroke="black"/>
+  <text x="182" y="674" text-anchor="middle" font-family="Arial" font-size="13" fill="black">Teacher Council</text>
+  <text x="182" y="692" text-anchor="middle" font-family="Arial" font-size="13" fill="black">330</text>
+
+  <rect x="348" y="650" width="155" height="60" fill="white" stroke="black"/>
+  <text x="425" y="674" text-anchor="middle" font-family="Arial" font-size="13" fill="black">Hidden Evaluator</text>
+  <text x="425" y="692" text-anchor="middle" font-family="Arial" font-size="13" fill="black">331</text>
+
+  <rect x="590" y="650" width="155" height="60" fill="white" stroke="black"/>
+  <text x="667" y="674" text-anchor="middle" font-family="Arial" font-size="13" fill="black">Sandbox Service</text>
+  <text x="667" y="692" text-anchor="middle" font-family="Arial" font-size="13" fill="black">260</text>
+
+  <line x1="425" y1="570" x2="182" y2="650" stroke="black" marker-end="url(#arrow)"/>
+  <line x1="425" y1="570" x2="425" y2="650" stroke="black" marker-end="url(#arrow)"/>
+  <line x1="425" y1="570" x2="667" y2="650" stroke="black" marker-end="url(#arrow)"/>
+
+  <rect x="315" y="790" width="220" height="60" fill="white" stroke="black"/>
+  <text x="425" y="814" text-anchor="middle" font-family="Arial" font-size="13" fill="black">Promotion Gate</text>
+  <text x="425" y="832" text-anchor="middle" font-family="Arial" font-size="13" fill="black">280</text>
+  <line x1="182" y1="710" x2="365" y2="790" stroke="black" marker-end="url(#arrow)"/>
+  <line x1="425" y1="710" x2="425" y2="790" stroke="black" marker-end="url(#arrow)"/>
+  <line x1="667" y1="710" x2="485" y2="790" stroke="black" marker-end="url(#arrow)"/>
+
+  <rect x="95" y="920" width="130" height="55" fill="white" stroke="black"/>
+  <text x="160" y="942" text-anchor="middle" font-family="Arial" font-size="12" fill="black">Retained</text>
+  <text x="160" y="960" text-anchor="middle" font-family="Arial" font-size="12" fill="black">Student 332</text>
+  <rect x="270" y="920" width="130" height="55" fill="white" stroke="black"/>
+  <text x="335" y="942" text-anchor="middle" font-family="Arial" font-size="12" fill="black">Retained</text>
+  <text x="335" y="960" text-anchor="middle" font-family="Arial" font-size="12" fill="black">Parent 333</text>
+  <rect x="445" y="920" width="130" height="55" fill="white" stroke="black"/>
+  <text x="510" y="942" text-anchor="middle" font-family="Arial" font-size="12" fill="black">Rejected</text>
+  <text x="510" y="960" text-anchor="middle" font-family="Arial" font-size="12" fill="black">Student 334</text>
+  <rect x="620" y="920" width="130" height="55" fill="white" stroke="black"/>
+  <text x="685" y="942" text-anchor="middle" font-family="Arial" font-size="12" fill="black">Optional Lineage</text>
+  <text x="685" y="960" text-anchor="middle" font-family="Arial" font-size="12" fill="black">Candidate 340</text>
+
+  <line x1="425" y1="850" x2="160" y2="920" stroke="black" marker-end="url(#arrow)"/>
+  <line x1="425" y1="850" x2="335" y2="920" stroke="black" marker-end="url(#arrow)"/>
+  <line x1="425" y1="850" x2="510" y2="920" stroke="black" marker-end="url(#arrow)"/>
+  <line x1="425" y1="850" x2="685" y2="920" stroke="black" marker-end="url(#arrow)"/>
+</svg>

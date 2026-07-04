@@ -13,16 +13,28 @@ class AITuneValidationRunner:
         self.matrix = matrix
         self.adapter = adapter
 
-    def readiness(self, *, capability: dict[str, Any], applicability: dict[str, Any] | None = None, model_id: str = "unbound") -> dict[str, Any]:
+    def readiness(
+        self,
+        *,
+        capability: dict[str, Any],
+        applicability: dict[str, Any] | None = None,
+        model_id: str = "unbound",
+        upstream_inference_gate: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         supported_lane = self.matrix.supported_lane()
         applicable = applicability or {
             "eligible": False,
             "reason": "No concrete model selected for AITune validation.",
             "target_lane": "unbound",
         }
+        gate = self._upstream_inference_gate(upstream_inference_gate)
+        gate_blockers = list((gate or {}).get("blockers", []))
         can_execute_here = bool(capability.get("available", False) and applicable.get("eligible", False))
         status = "ready-to-run-here" if can_execute_here else "ready-on-supported-host"
-        return {
+        if gate_blockers:
+            can_execute_here = False
+            status = "blocked-upstream-gate"
+        payload = {
             "status": status,
             "can_execute_here": can_execute_here,
             "target_lane": applicable.get("target_lane"),
@@ -37,6 +49,11 @@ class AITuneValidationRunner:
             "artifact_collection_commands": supported_lane.get("artifact_collection_commands", []),
             "model_id": model_id,
         }
+        if gate is not None:
+            payload["upstream_inference_gate"] = gate
+        if gate_blockers:
+            payload["readiness_blockers"] = gate_blockers
+        return payload
 
     def run(
         self,
@@ -45,18 +62,27 @@ class AITuneValidationRunner:
         applicability: dict[str, Any] | None = None,
         model_id: str = "unbound",
         simulate: bool = False,
+        upstream_inference_gate: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         applicable = applicability or {
             "eligible": False,
             "reason": "No concrete model selected for AITune validation.",
             "target_lane": "unbound",
         }
+        gate = self._upstream_inference_gate(upstream_inference_gate)
         matrix_payload = self.matrix.matrix(capability=capability, applicability=applicable, model_id=model_id)
-        readiness = self.readiness(capability=capability, applicability=applicable, model_id=model_id)
+        readiness = self.readiness(
+            capability=capability,
+            applicability=applicable,
+            model_id=model_id,
+            upstream_inference_gate=gate,
+        )
         can_execute_here = bool(readiness.get("can_execute_here"))
         execute_live = bool(can_execute_here and self.adapter is not None and bool(self.config.get("allow_live_invoke", False)))
         execution_mode = "simulate" if simulate and not execute_live else ("live" if execute_live else "skip-safe")
         current_status = "validation-ready" if can_execute_here else "skipped"
+        if readiness.get("status") == "blocked-upstream-gate":
+            current_status = "blocked-upstream-gate"
         if simulate and not execute_live:
             current_status = "simulated-supported-lane"
         health_report = self._health_report(
@@ -90,6 +116,11 @@ class AITuneValidationRunner:
             "health_report": health_report,
             "execution_plan": execution_plan,
         }
+        if gate is not None:
+            runner_payload["upstream_inference_gate"] = gate
+        if readiness.get("readiness_blockers"):
+            runner_payload["readiness_blockers"] = list(readiness.get("readiness_blockers", []))
+            runner_payload["skip_reason"] = " ".join(runner_payload["readiness_blockers"])
         if execute_live:
             work_dir = Path(self.artifacts.artifacts_dir) / "runtime" / "aitune" / "validation-work" / model_id.replace("/", "__")
             adapter_result = self.adapter.tune(
@@ -119,6 +150,7 @@ class AITuneValidationRunner:
                 "execution_mode": execution_mode,
                 "capability": capability,
                 "applicability": applicable,
+                "upstream_inference_gate": gate,
                 "benchmark_evidence": runner_payload["benchmark_evidence"],
                 "rollback_reference": applicable.get("rollback_reference"),
                 "host_specific": runner_payload["host_specific"],
@@ -134,6 +166,7 @@ class AITuneValidationRunner:
                     "execution_mode": execution_mode,
                     "selected_backend": runner_payload["benchmark_evidence"].get("selected_backend"),
                     "artifact_lineage": runner_payload["benchmark_evidence"].get("artifact_lineage", {}),
+                    "upstream_inference_gate": gate,
                     "host_specific": runner_payload["host_specific"],
                     "portable": runner_payload["portable"],
                     "rollback_reference": applicable.get("rollback_reference"),
@@ -155,6 +188,7 @@ class AITuneValidationRunner:
                 "matrix": matrix_payload,
                 "capability": capability,
                 "applicability": applicable,
+                "upstream_inference_gate": gate,
                 "health_report": health_report,
                 "execution_plan": execution_plan,
                 "execution_plan_markdown_path": execution_plan_markdown_artifact,
@@ -189,6 +223,8 @@ class AITuneValidationRunner:
             "can_execute_here": bool(readiness.get("can_execute_here", False)),
             "execution_mode": execution_mode,
             "reasons": list(capability.get("reasons", [])),
+            "upstream_inference_gate": readiness.get("upstream_inference_gate"),
+            "readiness_blockers": list(readiness.get("readiness_blockers", [])),
         }
 
     def _execution_plan(
@@ -226,6 +262,8 @@ class AITuneValidationRunner:
             "artifact_expectations": supported_lane.get("artifact_expectations", []),
             "ready_to_run_here": bool(readiness.get("can_execute_here", False)),
             "provider_health": capability.get("provider_health"),
+            "upstream_inference_gate": readiness.get("upstream_inference_gate"),
+            "readiness_blockers": list(readiness.get("readiness_blockers", [])),
             "execution_steps": [
                 {
                     "step_id": "preflight",
@@ -258,6 +296,8 @@ class AITuneValidationRunner:
                 f"- Target lane: {execution_plan.get('target_lane')}",
                 f"- Ready to run here: {execution_plan.get('ready_to_run_here')}",
                 f"- Provider health: {execution_plan.get('provider_health')}",
+                f"- Upstream inference gate: {execution_plan.get('upstream_inference_gate') or 'not provided'}",
+                f"- Readiness blockers: {', '.join(execution_plan.get('readiness_blockers', [])) or 'none'}",
                 "",
                 "## Host Requirements",
                 *[f"- {item}" for item in execution_plan.get("host_requirements", [])],
@@ -318,6 +358,23 @@ class AITuneValidationRunner:
                 "raw_artifact_path": None,
             },
             "host_constraints": list(capability.get("reasons", [])),
+        }
+
+    def _upstream_inference_gate(self, gate: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not gate:
+            return None
+        blockers = list(gate.get("blockers") or gate.get("promotion_blockers") or gate.get("readiness_blockers") or [])
+        status = str(gate.get("status") or "unknown")
+        promotion_allowed = bool(gate.get("promotion_allowed", not blockers and status != "blocked"))
+        if gate.get("promotion_allowed") is False and not blockers:
+            blockers.append("upstream_inference_gate_blocks_execution")
+        if status == "blocked" and not blockers:
+            blockers.append("upstream_inference_gate_status_blocked")
+        return {
+            **gate,
+            "status": status,
+            "promotion_allowed": promotion_allowed,
+            "blockers": blockers,
         }
 
 

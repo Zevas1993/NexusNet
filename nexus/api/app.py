@@ -1,23 +1,182 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 from pathlib import Path
+import time
 from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse, RedirectResponse
+from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..schemas import ApprovalRequest, ChatRequest, RetrievalIngestRequest, RetrievalRequest
 from ..services import NexusServices, build_services
 from nexusnet.schemas import CurriculumAssessmentRequest, DistillationExportRequest, DreamCycleRequest, GraphIngestRequest, ModelAttachRequest
+from nexusnet.adapters.dataset_forge import DatasetForgeRequest
+from nexusnet.adapters.decision_gate import FineTuneDecisionRequest
+from nexusnet.adapters.forge import AdapterRecordRequest
+from nexusnet.adapters.training_planner import AdapterTrainingPlanRequest
+from nexusnet.agents import AgentOpportunityRequest, SandboxAgentFactoryRunRequest
+from nexusnet.agents.harnesses import HarnessLedgerEntryRequest, HarnessRouteRequest
+from nexusnet.browser import BrowserContextIngestRequest, BrowserContextQueryRequest, BrowserProfilePolicyRequest
+from nexusnet.evals import EvalSuiteRequest, ShadowEvalRunRequest, VerifierSearchRequest
+from nexusnet.growth import GrowthCycleRequest
+from nexusnet.hive.hive_snapshot import hive_evidence_snapshot
+from nexusnet.hive.self_improvement_engine import default_engine as _self_improvement_engine
+from nexusnet.hive.continuous_assimilation import ContinuousAssimilationLoop
+from nexusnet.hive.multi_user_growth import MultiUserGrowthCoordinator
+from nexusnet.providers.model_providers import default_provider_registry as _default_provider_registry
+from nexusnet.release_health_heartbeat_supervisor_repair import (
+    build_completed_release_health_heartbeat_subsystem_repair_envelopes,
+    build_release_health_heartbeat_supervisor_repair_run_plan,
+)
+from nexusnet.release_wrapper import ReleaseWrapperRuntime, release_native_hive_heartbeat_history_evidence
+from nexusnet.knowledge import KnowledgeCompileRequest, KnowledgeRequestContract
+from nexusnet.research import ForwardRadarCandidateRequest
+from nexusnet.retrieval import RetrievalPlanRequest
+from nexusnet.runtime.cache_ledger import CacheLedgerEntryRequest
+from nexusnet.runtime.workload_scorecards import RuntimeWorkloadScorecardRequest
+from nexusnet.canon.realization import (
+    ao_hive_scorecard,
+    answer_operator_question,
+    artifact_trust_scorecard,
+    autonomous_evolution_dossier,
+    blackbox_recorder,
+    completion_assessment,
+    communication_integration_scorecard,
+    eval_suite_scorecard,
+    experts_hive_scorecard,
+    hardware_matrix_scorecard,
+    hive_consensus_scorecard,
+    input_ingestion_scorecard,
+    live_flow_scorecard,
+    memory_provenance_scorecard,
+    neural_core_scorecard,
+    observability_scorecard,
+    output_delivery_scorecard,
+    protocol_trust_scorecard,
+    researcher_swarm_scorecard,
+    runtime_quantization_scorecard,
+    security_governance_scorecard,
+    self_improvement_scorecard,
+    surface_drilldown,
+    tool_execution_scorecard,
+    visualops_scorecard,
+)
+from nexusnet.core import AutonomousUpdateRequest, SelfReviewRequest
+from nexusnet.core.self_improvement import (
+    ExperienceCapture,
+    ImprovementEvent,
+    ImprovementEvaluator,
+    ImprovementQueue,
+    LineageCandidateRequest,
+    MemoryUpdatePolicy,
+    PromptUpdatePolicy,
+    ProvenanceTracker,
+    RegressionGate,
+    TrainingCandidateBuilder,
+    triage_improvement_event,
+)
+from nexusnet.agents.pipelines import AgenticPipelineRequest
+from nexusnet.operations import CodegraphRunManifestRequest
+from nexusnet.hive import (
+    HiveActiveReleaseRequest,
+    HiveAssimilationCandidateRequest,
+    HiveCheckpointRewindRequest,
+    HiveForwardPassRequest,
+    HiveGlobalFederationReviewRequest,
+    HiveProductionizationRequest,
+    HiveRollbackRequest,
+    HiveRecursiveDreamRequest,
+    HiveShadowReleaseRequest,
+)
+from nexusnet.policy import PolicyKernel, PolicyScanRequest
+from nexusnet.protocols import ProtocolAdapterRequest
+from nexusnet.runtime.edge_router import EdgeWorkloadRequest
+from nexusnet.runtime.inference_economy_router import InferenceRouteRequest
+from nexusnet.runtime.inference_architecture import InferenceArchitectureRequest
+from nexusnet.runtime.model_passport import CertificationRunRequest, ModelPassportRequest
+from nexusnet.runtime.quantization.catalog import QuantizationRecommendationRequest
+from nexusnet.security import ArtifactScanRequest
+from nexusnet.telemetry import ConceptTelemetryRequest, GenAITraceEventRequest, SAEExperimentRequest
+from nexusnet.memory import EngramLookupRequest, EngramRecordRequest, SourceClaimRequest
+from nexusnet.vision import ComputerUsePlanRequest, OperatorEventRequest
 
 
 def create_app(project_root: str | None = None) -> FastAPI:
     services = build_services(project_root)
     application = FastAPI(title="Nexus API", version=services.version)
     application.state.services = services
+    # Continuous Ivy-League assimilation: real /chat usage feeds the birth loop (canon C39M0238).
+    # Privacy-safe: captures a content HASH + provenance, never raw prompts/outputs.
+    continuous_assimilation = ContinuousAssimilationLoop()
+    application.state.continuous_assimilation = continuous_assimilation
+    global_growth = MultiUserGrowthCoordinator()
+    application.state.global_growth = global_growth
+    services.brain_hive_substrate.global_growth = global_growth
+    application.state.global_growth_rehydration = services.brain_hive_substrate.hydrate_runtime_growth_from_artifacts()
+    self_improvement_queue = ImprovementQueue(services.paths.state_dir / "self_improvement_queue.json")
+    application.state.self_improvement_queue = self_improvement_queue
+    # The wrapper's pool of wrapped models (offline echo + canon cloud/local providers).
+    import os as _os
+    provider_registry = _default_provider_registry(
+        openrouter_key=_os.environ.get("OPENROUTER_API_KEY", ""),
+        requesty_key=_os.environ.get("REQUESTY_API_KEY", ""))
+    application.state.provider_registry = provider_registry
+    release_wrapper_runtime = ReleaseWrapperRuntime(
+        artifacts_dir=services.paths.artifacts_dir,
+        continuous_assimilation=continuous_assimilation,
+        global_growth=global_growth,
+        hive_substrate=services.brain_hive_substrate,
+        autonomous_updates=services.brain_autonomous_updates,
+        production_spine=services.brain_production_spine,
+        brain=services.brain,
+        improvement_queue=self_improvement_queue,
+        eval_registry=services.brain_eval_registry,
+        cache_ledger=services.brain_cache_ledger,
+        ao_registry=services.brain_aos,
+        provider_registry=provider_registry,
+        teacher_registry=services.brain_teachers,
+        teacher_evidence_service=services.brain_teacher_evidence,
+        developmental_cortex=services.brain_developmental_cortex,
+        growth_engine=services.brain_growth_engine,
+        promotion_service=services.brain_promotions,
+        foundry_benchmarks=services.brain_foundry_benchmarks,
+        authority_spine=services.brain_authority_spine,
+        evidence_store=services.brain_evidence_store,
+        eval_federation=services.brain_eval_federation,
+        tool_action_harness=services.brain_tool_action_harness,
+        runtime_decision_ledger=services.brain_runtime_decision_ledger,
+        quantization_catalog=services.brain_quantization_catalog,
+    )
+    application.state.release_wrapper_runtime = release_wrapper_runtime
+    services.brain.native_runtime_growth_review_bridge = release_wrapper_runtime.queue_native_runtime_growth_review
+    services.brain_ui_surface.release_runtime_status_provider = release_wrapper_runtime.summary
+    services.brain_ui_surface.release_readiness_provider = release_wrapper_runtime.release_readiness_manifest
+    services.brain_ui_surface.release_session_lifecycle_provider = release_wrapper_runtime.session_lifecycle
+    application.state.release_wrapper_startup_supervision = (
+        release_wrapper_runtime.record_automatic_release_health_heartbeat_loop(
+            session_id=None,
+            trigger="startup-auto",
+            base_url="http://127.0.0.1:0",
+            host="127.0.0.1",
+            port=0,
+            pid=0,
+        )
+    )
+    application.state.release_health_heartbeat_supervisor = (
+        release_wrapper_runtime.configure_release_health_heartbeat_supervisor(
+            session_id=None,
+            enabled=True,
+            interval_seconds=60,
+            max_pulses_per_tick=1,
+            schedule_immediately=False,
+            configured_by="startup",
+        )
+    )
 
     application.add_middleware(
         CORSMiddleware,
@@ -35,6 +194,74 @@ def create_app(project_root: str | None = None) -> FastAPI:
             for trace in services.store.list_traces(limit=200)
             if trace.get("session_id") == session_id and trace.get("trace_id")
         ][:limit]
+
+    def _rough_message_tokens(messages: list[Any]) -> int:
+        total = 0
+        for message in messages:
+            if isinstance(message, dict):
+                total += len(str(message.get("content") or "").split())
+            else:
+                total += len(str(getattr(message, "content", "") or "").split())
+        return total
+
+    def _privacy_compat_digest(value: str) -> str:
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+    production_spine_lifecycle_approval_subject = "release-wrapper-production-spine-release-lifecycle"
+
+    def _production_spine_lifecycle_admin_approval_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        approval_ref = str(
+            payload.get("approval_decision_id")
+            or payload.get("admin_approval_ref")
+            or payload.get("approval_ref")
+            or ""
+        ).strip()
+        if not approval_ref:
+            raise HTTPException(
+                status_code=400,
+                detail="Admin approval decision_id is required before running the production-spine release lifecycle.",
+            )
+
+        approvals = services.store.list_approvals(limit=500)
+        approval = next(
+            (
+                item
+                for item in approvals
+                if str(item.get("decision_id") or "") == approval_ref
+            ),
+            None,
+        )
+        if approval is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Admin approval decision_id was not found in the governance approval store.",
+            )
+        if approval.get("subject") != production_spine_lifecycle_approval_subject:
+            raise HTTPException(
+                status_code=400,
+                detail="Admin approval subject does not match the production-spine release lifecycle.",
+            )
+        if approval.get("decision") != "approved":
+            raise HTTPException(
+                status_code=400,
+                detail="Admin approval decision must be approved before the production-spine release lifecycle can run.",
+            )
+
+        metadata = approval.get("metadata") if isinstance(approval.get("metadata"), dict) else {}
+        return {
+            "schema_version": "nexusnet-release-wrapper-production-spine-lifecycle-approval-v1",
+            "surface_id": "release-wrapper-production-spine-lifecycle-approval",
+            "approval_ref": approval_ref,
+            "approval_subject": production_spine_lifecycle_approval_subject,
+            "decision": "approved",
+            "approver_digest": f"sha256:{_privacy_compat_digest(str(approval.get('approver') or ''))}",
+            "rationale_digest": f"sha256:{_privacy_compat_digest(str(approval.get('rationale') or ''))}",
+            "metadata_digest": f"sha256:{_privacy_compat_digest(json.dumps(metadata, sort_keys=True, default=str))}",
+            "metadata_key_count": len(metadata),
+            "created_at": str(approval.get("created_at") or ""),
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+        }
 
     def _recipe_requested_tools(item: dict[str, Any]) -> list[str]:
         requested: set[str] = set(item.get("approved_tools", []) or [])
@@ -72,6 +299,263 @@ def create_app(project_root: str | None = None) -> FastAPI:
                 workflow_id = normalized.removeprefix(prefix).strip()
                 return workflow_id or None
         return None
+
+    def _self_improvement_queue() -> ImprovementQueue:
+        return ImprovementQueue(services.paths.state_dir / "self_improvement_queue.json")
+
+    def _self_improvement_queue_summary() -> dict[str, Any]:
+        queue = _self_improvement_queue()
+        items = queue.list_items()
+        status_counts: dict[str, int] = {}
+        for item in items:
+            status_counts[item.status] = status_counts.get(item.status, 0) + 1
+        return {
+            "status_label": "LOCKED CANON",
+            "item_count": len(items),
+            "status_counts": status_counts,
+            "items": [item.model_dump(mode="json") for item in items],
+        }
+
+    def _autonomous_update_proposal(update_id: str) -> dict[str, Any] | None:
+        proposals = services.brain_autonomous_updates.summary(limit=500).get("proposals") or []
+        return next((proposal for proposal in proposals if str(proposal.get("update_id") or "") == update_id), None)
+
+    def _linked_improvement_queue_id(update_id: str) -> str | None:
+        proposal = _autonomous_update_proposal(update_id)
+        metadata = proposal.get("metadata") if isinstance((proposal or {}).get("metadata"), dict) else {}
+        queue_id = str(metadata.get("improvement_queue_id") or "")
+        return queue_id or None
+
+    def _improvement_queue_transition_plan(current_status: str, target_status: str) -> list[str]:
+        if current_status in {"rejected", "reverted"} or current_status == target_status:
+            return []
+        forward = ["proposed", "validated", "approved", "deployed", "monitored"]
+        if target_status == "reverted":
+            if current_status == "monitored":
+                return ["reverted"]
+            if current_status == "deployed":
+                return ["reverted"]
+            if current_status == "approved":
+                return ["reverted"]
+            if current_status in forward:
+                current_index = forward.index(current_status)
+                approved_index = forward.index("approved")
+                return [*forward[current_index + 1 : approved_index + 1], "reverted"]
+            return []
+        if current_status not in forward or target_status not in forward:
+            return []
+        current_index = forward.index(current_status)
+        target_index = forward.index(target_status)
+        if target_index <= current_index:
+            return []
+        return forward[current_index + 1 : target_index + 1]
+
+    def _sync_linked_improvement_queue(
+        update_id: str,
+        *,
+        target_status: str,
+        actor: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        queue_id = _linked_improvement_queue_id(update_id)
+        if queue_id is None:
+            return {
+                "status": "not-linked",
+                "update_id": update_id,
+                "queue_id": None,
+                "target_status": target_status,
+            }
+        queue = _self_improvement_queue()
+        try:
+            item = queue.get(queue_id)
+        except KeyError:
+            return {
+                "status": "missing-queue-item",
+                "update_id": update_id,
+                "queue_id": queue_id,
+                "target_status": target_status,
+            }
+        from_status = item.status
+        transition_path = _improvement_queue_transition_plan(str(item.status), target_status)
+        for status in transition_path:
+            item = queue.transition(
+                queue_id,
+                status,  # type: ignore[arg-type]
+                actor=actor,
+                reason=f"{reason}; autonomous_update={update_id}",
+            )
+        return {
+            "status": "transitioned" if item.status != from_status else "unchanged",
+            "update_id": update_id,
+            "queue_id": queue_id,
+            "from_status": from_status,
+            "queue_status": item.status,
+            "target_status": target_status,
+            "transition_path": transition_path,
+        }
+
+    def _run_linked_eval_replay(update_id: str) -> dict[str, Any]:
+        proposal = _autonomous_update_proposal(update_id)
+        if proposal is None:
+            return {"status": "not-linked", "update_id": update_id, "reason": "proposal-not-found"}
+        eval_refs = [str(ref) for ref in (proposal.get("eval_refs") or [])]
+        proposal_metadata = proposal.get("metadata") if isinstance(proposal.get("metadata"), dict) else {}
+        safe_payload = (
+            proposal_metadata.get("safe_payload") if isinstance(proposal_metadata.get("safe_payload"), dict) else {}
+        )
+        federated_import_shadow = bool(
+            proposal_metadata.get("federated_import_shadow")
+            or proposal_metadata.get("federated_packet_import_id")
+            or safe_payload.get("federated_packet_import_id")
+        )
+        dream_research_queue = bool(
+            proposal_metadata.get("dream_research_queue")
+            or proposal_metadata.get("improvement_queue_id")
+        )
+        suite_prefixes = (
+            (
+                "eval::release-wrapper-federated-import::",
+                "eval::release-wrapper-dream-research::",
+                "eval::release-wrapper-runtime::",
+            )
+            if federated_import_shadow
+            else
+            (
+                "eval::release-wrapper-dream-research::",
+                "eval::release-wrapper-federated-import::",
+                "eval::release-wrapper-runtime::",
+            )
+            if dream_research_queue
+            else (
+                "eval::release-wrapper-federated-import::",
+                "eval::release-wrapper-runtime::",
+                "eval::release-wrapper-dream-research::",
+            )
+        )
+        suite_id = next((ref for prefix in suite_prefixes for ref in eval_refs if ref.startswith(prefix)), None)
+        if suite_id is None:
+            return {"status": "not-linked", "update_id": update_id, "reason": "no-release-wrapper-eval-suite-ref"}
+        registry = services.brain_eval_registry.summary(limit=500)
+        suite = next((item for item in registry.get("suites", []) if item.get("suite_id") == suite_id), None)
+        if suite is None:
+            return {"status": "missing-eval-suite", "update_id": update_id, "suite_id": suite_id}
+        metadata = suite.get("metadata") if isinstance(suite.get("metadata"), dict) else {}
+        replay_template = metadata.get("replay_template") if isinstance(metadata.get("replay_template"), dict) else {}
+        replay_payload = dict(replay_template.get("payload") or {})
+        if not replay_payload:
+            return {"status": "missing-replay-template", "update_id": update_id, "suite_id": suite_id}
+        artifact_gate_refs = [
+            ref
+            for ref in eval_refs
+            if ref.startswith("evals-ao-artifact::")
+        ]
+        for value in (
+            proposal_metadata.get("evals_ao_artifact_gate_ref"),
+            safe_payload.get("evals_ao_artifact_gate_ref"),
+            metadata.get("gate_id"),
+        ):
+            gate_ref = str(value or "")
+            if gate_ref.startswith("evals-ao-artifact::") and gate_ref not in artifact_gate_refs:
+                artifact_gate_refs.append(gate_ref)
+        evidence_refs = [str(ref) for ref in (replay_payload.get("evidence_refs") or []) if str(ref or "")]
+        evaluator_refs = [str(ref) for ref in (replay_payload.get("evaluator_refs") or []) if str(ref or "")]
+        for gate_ref in artifact_gate_refs:
+            if gate_ref not in evidence_refs:
+                evidence_refs.append(gate_ref)
+            if gate_ref not in evaluator_refs:
+                evaluator_refs.append(gate_ref)
+        if artifact_gate_refs and "ao::EvalsAO" not in evaluator_refs:
+            evaluator_refs.append("ao::EvalsAO")
+        replay_payload["evidence_refs"] = evidence_refs
+        replay_payload["evaluator_refs"] = evaluator_refs
+        replay_payload["operator_approved"] = True
+        replay_metadata = replay_payload.get("metadata") if isinstance(replay_payload.get("metadata"), dict) else {}
+        replay_payload["metadata"] = {
+            **replay_metadata,
+            "admin_approved_update_id": update_id,
+            "approval_trigger": "autonomous-update-admin-approval",
+            "evals_ao_artifact_gate_ref": artifact_gate_refs[0] if artifact_gate_refs else None,
+            "evals_ao_artifact_gate_refs": artifact_gate_refs,
+            "proposal_eval_refs": eval_refs,
+        }
+        run = services.brain_eval_registry.run_shadow(suite_id, replay_payload)
+        return services.brain_autonomous_updates.attach_eval_replay(update_id, run)
+
+    def _self_improvement_review_payload(queue_id: str, *, operator_approved: bool = False) -> dict[str, Any]:
+        try:
+            item = _self_improvement_queue().get(queue_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=f"Unknown self-improvement queue item: {queue_id}") from exc
+        provenance = ProvenanceTracker().record(
+            item.event,
+            verifier_refs=[f"/ops/brain/self-improvement/queue/{queue_id}/review"],
+        )
+        evaluation = ImprovementEvaluator().evaluate(item.event, item.decision, provenance)
+        memory_candidate = MemoryUpdatePolicy().build_candidate(item.event, item.decision, provenance)
+        prompt_candidate = PromptUpdatePolicy().build_candidate(item.event, item.decision)
+        training_candidate = TrainingCandidateBuilder().build_candidate(item.event, item.decision, provenance)
+        regression_gate = RegressionGate().evaluate(
+            item,
+            evaluation,
+            test_results=[],
+            operator_approved=operator_approved,
+        )
+        policy_targets = [
+            {
+                "target_id": f"training::{training_candidate.event_id}",
+                "target_type": "training_candidate",
+                "metadata": {
+                    "contains_private_data": item.event.safety.contains_private_data,
+                    "uses_user_data": bool(item.event.input_modalities or item.event.context_sources),
+                    "operator_approved": operator_approved,
+                    "promotion_requested": training_candidate.export_ready,
+                    "eval_refs": item.event.evidence_refs,
+                },
+            },
+            {
+                "target_id": f"memory::{memory_candidate.event_id}",
+                "target_type": "memory_update",
+                "metadata": {
+                    "provenance_refs": provenance.evidence_refs,
+                    "retention_policy": memory_candidate.retention_policy,
+                    "requires_review": memory_candidate.requires_review,
+                },
+            },
+            {
+                "target_id": f"prompt::{prompt_candidate.event_id}",
+                "target_type": "autonomous_update",
+                "metadata": {
+                    "rollback_plan_ref": "self-improvement-regression-gate",
+                    "requires_review": prompt_candidate.requires_review,
+                    "policy_scope": prompt_candidate.policy_scope,
+                },
+            },
+        ]
+        if item.event.agent_task_type in {"coding", "debugging"}:
+            policy_targets.append(
+                {
+                    "target_id": f"code::{item.event.event_id}",
+                    "target_type": "code_change",
+                    "metadata": {
+                        "tests_provided": bool(item.event.metrics.get("tests_run") or item.event.evidence_refs),
+                    },
+                }
+            )
+        policy_scan = _policy_kernel().scan(policy_targets)
+        return {
+            "status_label": "LOCKED CANON",
+            "queue_item": item.model_dump(mode="json"),
+            "provenance": provenance.model_dump(mode="json"),
+            "evaluation": evaluation.model_dump(mode="json"),
+            "memory_candidate": memory_candidate.model_dump(mode="json"),
+            "prompt_candidate": prompt_candidate.model_dump(mode="json"),
+            "training_candidate": training_candidate.model_dump(mode="json"),
+            "regression_gate": regression_gate.model_dump(mode="json"),
+            "policy_scan": policy_scan.model_dump(mode="json"),
+        }
+
+    def _policy_kernel() -> PolicyKernel:
+        return PolicyKernel.default()
 
     def _build_goose_execution_context(
         *,
@@ -226,7 +710,7 @@ def create_app(project_root: str | None = None) -> FastAPI:
     @application.get("/")
     def root():
         if services.paths.ui_dir.exists():
-            return RedirectResponse(url="/ui/")
+            return RedirectResponse(url="/ui/wrapper/")
         return {"ok": True, "status": "ok", "version": services.version}
 
     @application.get("/health")
@@ -293,6 +777,2351 @@ def create_app(project_root: str | None = None) -> FastAPI:
     @application.get("/ops/brain/visualizer/state")
     def ops_brain_visualizer_state(session_id: str | None = None):
         return services.brain_visualizer.state(session_id=session_id)
+
+    @application.get("/ops/brain/operations")
+    def ops_brain_operations(session_id: str | None = None, limit: int = 25):
+        return services.brain_operations.summary(session_id=session_id, limit=limit)
+
+    @application.post("/ops/brain/operations/commands")
+    def ops_brain_operations_commands(
+        command_text: str = Body(...),
+        session_id: str | None = Body(default=None),
+        priority: str = Body(default="normal"),
+        target_surface: str = Body(default="mission-control-cockpit"),
+        context: dict[str, Any] | None = Body(default=None),
+    ):
+        return services.brain_operations.issue_command(
+            session_id=session_id,
+            command_text=command_text,
+            priority=priority,
+            target_surface=target_surface,
+            context=context,
+        )
+
+    @application.post("/ops/brain/operations/commands/{command_id}/events")
+    def ops_brain_operations_command_events(
+        command_id: str,
+        event_type: str = Body(...),
+        actor: str = Body(...),
+        detail: str = Body(...),
+        session_id: str | None = Body(default=None),
+        lifecycle_state: str | None = Body(default=None),
+        signal_type: str | None = Body(default=None),
+        state: str = Body(default="live_state"),
+        metadata: dict[str, Any] | None = Body(default=None),
+    ):
+        try:
+            return services.brain_operations.record_event(
+                command_id=command_id,
+                session_id=session_id,
+                event_type=event_type,
+                actor=actor,
+                detail=detail,
+                lifecycle_state=lifecycle_state,
+                signal_type=signal_type,
+                state=state,
+                metadata=metadata,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=f"Unknown brain operation command: {command_id}") from exc
+
+    @application.get("/ops/brain/canon/realization")
+    def ops_brain_canon_realization(session_id: str | None = None):
+        return services.brain_visualizer.canon_realization(session_id=session_id)
+
+    @application.get("/ops/brain/canon/completion")
+    def ops_brain_canon_completion(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        return completion_assessment(realization)
+
+    @application.get("/ops/brain/canon/runtime-scorecard")
+    def ops_brain_canon_runtime_scorecard(session_id: str | None = None, model_hint: str | None = None):
+        control_panel = services.brain_visualizer.state(session_id=session_id)["overlay_state"]["control_panel"]
+        return runtime_quantization_scorecard(
+            control_panel=control_panel,
+            backend_summary=services.brain_runtime_registry.summary(model_hint),
+        )
+
+    @application.get("/ops/brain/canon/evolution-dossier")
+    def ops_brain_canon_evolution_dossier(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        return autonomous_evolution_dossier(realization)
+
+    @application.post("/ops/brain/self-improvement/events")
+    def ops_brain_self_improvement_events(payload: dict[str, Any] = Body(...)):
+        event = ImprovementEvent.model_validate(payload)
+        decision = triage_improvement_event(event)
+        item = _self_improvement_queue().propose(
+            event,
+            decision=decision,
+            actor="NexusBrain",
+            reason="self-improvement event accepted through NexusBrain API",
+        )
+        return {
+            "status_label": "LOCKED CANON",
+            "event": event.model_dump(mode="json"),
+            "decision": decision.model_dump(mode="json"),
+            "queue_item": item.model_dump(mode="json"),
+        }
+
+    @application.post("/ops/brain/self-improvement/capture")
+    def ops_brain_self_improvement_capture(payload: dict[str, Any] = Body(...)):
+        event = ExperienceCapture().capture(**payload)
+        decision = triage_improvement_event(event)
+        item = _self_improvement_queue().propose(
+            event,
+            decision=decision,
+            actor="NexusBrain",
+            reason="raw interaction trace captured through NexusBrain API",
+        )
+        return {
+            "status_label": "LOCKED CANON",
+            "event": event.model_dump(mode="json"),
+            "decision": decision.model_dump(mode="json"),
+            "queue_item": item.model_dump(mode="json"),
+            "review": _self_improvement_review_payload(item.queue_id),
+        }
+
+    @application.get("/ops/brain/self-improvement/queue")
+    def ops_brain_self_improvement_queue(status: str | None = None):
+        summary = _self_improvement_queue_summary()
+        if status:
+            summary["items"] = [item for item in summary["items"] if item.get("status") == status]
+            summary["item_count"] = len(summary["items"])
+            summary["status_counts"] = {status: summary["item_count"]} if summary["item_count"] else {}
+        return summary
+
+    @application.get("/ops/brain/self-improvement/queue/{queue_id}/review")
+    def ops_brain_self_improvement_queue_review(queue_id: str, operator_approved: bool = False):
+        return _self_improvement_review_payload(queue_id, operator_approved=operator_approved)
+
+    @application.get("/ops/brain/canon/self-improvement")
+    def ops_brain_canon_self_improvement(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        return self_improvement_scorecard(realization, queue_summary=_self_improvement_queue_summary())
+
+    @application.get("/ops/brain/canon/developmental-cortex")
+    def ops_brain_canon_developmental_cortex():
+        return services.brain_developmental_cortex.scorecard()
+
+    @application.post("/ops/brain/developmental-cortex/assess")
+    def ops_brain_developmental_cortex_assess(payload: dict[str, Any] = Body(...)):
+        return services.brain_developmental_cortex.assess(payload)
+
+    @application.get("/ops/brain/canon/authority-spine")
+    def ops_brain_canon_authority_spine():
+        return services.brain_authority_spine.summary()
+
+    @application.post("/ops/brain/authority-spine/decisions")
+    def ops_brain_authority_spine_decisions(payload: dict[str, Any] = Body(...)):
+        return services.brain_authority_spine.evaluate(
+            action_id=str(payload["action_id"]),
+            actor_ref=str(payload.get("actor_ref") or "operator"),
+            effect_type=str(payload["effect_type"]),
+            capability_refs=list(payload.get("capability_refs") or []),
+            sandbox_state=str(payload.get("sandbox_state") or "none"),
+            operator_approved=bool(payload.get("operator_approved")),
+            evidence_refs=list(payload.get("evidence_refs") or []),
+        )
+
+    @application.get("/ops/brain/canon/evidence-store")
+    def ops_brain_canon_evidence_store():
+        return services.brain_evidence_store.projection()
+
+    @application.get("/ops/brain/canon/eval-federation")
+    def ops_brain_canon_eval_federation():
+        return services.brain_eval_federation.summary()
+
+    @application.get("/ops/brain/canon/tool-action-harness")
+    def ops_brain_canon_tool_action_harness():
+        return services.brain_tool_action_harness.summary()
+
+    @application.get("/ops/brain/canon/runtime-decision-ledger")
+    def ops_brain_canon_runtime_decision_ledger():
+        return services.brain_runtime_decision_ledger.summary()
+
+    @application.get("/ops/brain/canon/assimilation-target-catalog")
+    def ops_brain_canon_assimilation_target_catalog():
+        return services.brain_assimilation_catalog.summary()
+
+    @application.get("/ops/brain/canon/hive-neural-snapshot")
+    def ops_brain_canon_hive_neural_snapshot():
+        """Read-only shadow evidence: one composed pass through the real capsule-EBT hive layers
+        (neural core + collective + memory + regulation + dreaming). No second control plane; no
+        production mutation (canon Decision 9)."""
+        return hive_evidence_snapshot()
+
+    @application.get("/ops/brain/canon/self-improvement-coverage")
+    def ops_brain_canon_self_improvement_coverage():
+        """Read-only: the unified self-improvement engine's coverage - every improvable aspect of
+        NexusNet and whether a real improvement lane exists for it. Makes the compute-layer
+        self-improvement surface reachable from the running service (torch-free; runs no lanes)."""
+        cov = _self_improvement_engine().coverage()
+        return {
+            "surface_id": "self-improvement-coverage",
+            "authority": "NexusBrain",
+            "every_aspect_covered": cov["fully_covered"],
+            **cov,
+            "claim_boundary": "coverage-attestation-lanes-run-in-the-compute-layer-not-the-web-request",
+        }
+
+    @application.get("/ops/wrapper/providers")
+    def ops_wrapper_providers():
+        """The wrapper's pool of wrapped models the end user can select (canon C39 model selector).
+        Lists offline + cloud (OpenRouter/Requesty) + local (LM Studio/vLLM) providers, each tagged
+        local vs cloud. Cloud activates with an API key; local activates when its endpoint is reachable."""
+        return {
+            "surface_id": "wrapper-providers",
+            "authority": "NexusBrain",
+            "providers": provider_registry.list(),
+            "local": provider_registry.local_providers(),
+            "cloud": provider_registry.cloud_providers(),
+            "provider_readiness": provider_registry.readiness(),
+            "note": "cloud providers require an API key; local providers require a reachable endpoint",
+        }
+
+    @application.get("/ops/brain/canon/continuous-assimilation")
+    def ops_brain_canon_continuous_assimilation():
+        """Read-only: the wrapper-to-native GROWTH surface - how real /chat usage is assimilating the
+        wrapped models into expert nodes (provenance-tagged), and which nodes are now training-ready.
+        Privacy-safe: source-model names + counts only, never raw prompts/outputs."""
+        status = continuous_assimilation.status()
+        return {
+            "surface_id": "continuous-assimilation",
+            "authority": "NexusBrain",
+            **status,
+            "provenance": {n: continuous_assimilation.provenance(n) for n in status["nodes"]},
+            "claim_boundary": "wrapper-to-native-growth-signal-from-real-usage-no-raw-content",
+        }
+
+    @application.get("/ops/wrapper/release-runtime")
+    def ops_wrapper_release_runtime(session_id: str | None = None):
+        return release_wrapper_runtime.summary(session_id=session_id)
+
+    @application.get("/ops/wrapper/release-readiness")
+    def ops_wrapper_release_readiness(session_id: str | None = None):
+        return release_wrapper_runtime.release_readiness_manifest(session_id=session_id)
+
+    @application.get("/ops/wrapper/status-card")
+    def ops_wrapper_status_card(session_id: str | None = None):
+        return release_wrapper_runtime.status_card(session_id=session_id)
+
+    @application.get("/ops/wrapper/privacy-consent")
+    def ops_wrapper_privacy_consent(session_id: str | None = None):
+        return release_wrapper_runtime.privacy_consent(session_id=session_id)
+
+    @application.post("/ops/wrapper/privacy-consent")
+    def ops_wrapper_privacy_consent_update(payload: dict[str, Any] = Body(...)):
+        result = release_wrapper_runtime.record_privacy_consent_decision(
+            session_id=str(payload.get("session_id") or "") or None,
+            decision=str(payload.get("decision") or ""),
+            personal_data_training_opt_in=(
+                bool(payload["personal_data_training_opt_in"])
+                if "personal_data_training_opt_in" in payload
+                else None
+            ),
+            personal_data_federation_allowed=(
+                bool(payload["personal_data_federation_allowed"])
+                if "personal_data_federation_allowed" in payload
+                else None
+            ),
+            personal_data_dream_training_allowed=(
+                bool(payload["personal_data_dream_training_allowed"])
+                if "personal_data_dream_training_allowed" in payload
+                else None
+            ),
+            approved_by=str(payload.get("approved_by") or "admin"),
+            approval_ref=str(payload.get("approval_ref") or ""),
+        )
+        if str(result.get("status") or "").startswith("blocked"):
+            raise HTTPException(status_code=400, detail=result)
+        return result
+
+    @application.post("/ops/wrapper/boot-supervisor/run")
+    def ops_wrapper_boot_supervisor_run(payload: dict[str, Any] = Body(...)):
+        return release_wrapper_runtime.run_boot_supervisor_manifest(
+            session_id=str(payload.get("session_id") or "") or None,
+            base_url=str(payload.get("base_url") or "http://127.0.0.1:0"),
+            host=str(payload.get("host") or "127.0.0.1"),
+            port=int(payload.get("port") or 0),
+            pid=int(payload.get("pid") or 0),
+            readiness_command=str(payload.get("readiness_command") or ""),
+        )
+
+    @application.post("/ops/wrapper/release-health-heartbeat/run")
+    def ops_wrapper_release_health_heartbeat_run(payload: dict[str, Any] | None = Body(default=None)):
+        payload = payload or {}
+        return release_wrapper_runtime.run_release_health_heartbeat_loop(
+            session_id=str(payload.get("session_id") or "") or None,
+            trigger=str(payload.get("trigger") or "operator-request"),
+            max_cycles=int(payload.get("max_cycles") or 1),
+            interval_seconds=int(payload.get("interval_seconds") or 60),
+            max_retry_attempts=int(payload.get("max_retry_attempts") or 3),
+            retry_backoff_seconds=int(payload.get("retry_backoff_seconds") or 5),
+            base_url=str(payload.get("base_url") or "http://127.0.0.1:0"),
+            host=str(payload.get("host") or "127.0.0.1"),
+            port=int(payload.get("port") or 0),
+            pid=int(payload.get("pid") or 0),
+        )
+
+    @application.post("/ops/wrapper/release-health-heartbeat/supervisor/configure")
+    def ops_wrapper_release_health_heartbeat_supervisor_configure(
+        payload: dict[str, Any] | None = Body(default=None),
+    ):
+        payload = payload or {}
+        return release_wrapper_runtime.configure_release_health_heartbeat_supervisor(
+            session_id=str(payload.get("session_id") or "") or None,
+            enabled=bool(payload.get("enabled")),
+            interval_seconds=int(payload.get("interval_seconds") or 60),
+            max_pulses_per_tick=int(payload.get("max_pulses_per_tick") or 1),
+            schedule_immediately=bool(payload.get("schedule_immediately")),
+            configured_by=str(payload.get("configured_by") or "admin"),
+        )
+
+    @application.post("/ops/wrapper/release-health-heartbeat/supervisor/repair-run")
+    def ops_wrapper_release_health_heartbeat_supervisor_repair_run(
+        payload: dict[str, Any] | None = Body(default=None),
+    ):
+        payload = payload or {}
+        session_id = str(payload.get("session_id") or "release-health-heartbeat-supervisor")
+        runtime = ops_wrapper_release_runtime(session_id=session_id)
+        supervisor = (
+            runtime.get("release_health_heartbeat_supervisor")
+            if isinstance(runtime.get("release_health_heartbeat_supervisor"), dict)
+            else {}
+        )
+        latest_pulse = supervisor.get("latest_pulse") if isinstance(supervisor.get("latest_pulse"), dict) else {}
+        loop = latest_pulse.get("loop") if isinstance(latest_pulse.get("loop"), dict) else {}
+        repair_queue = loop.get("repair_queue") if isinstance(loop.get("repair_queue"), dict) else {}
+        update_id = str(payload.get("update_id") or repair_queue.get("latest_update_id") or "")
+        repair_context: dict[str, Any] = {}
+        if update_id:
+            supervisor_update_id = str(repair_queue.get("latest_update_id") or "")
+            supervisor_safe_update_id = (
+                supervisor_update_id.replace(":", "_").replace("/", "_").replace("\\", "_")
+            )
+            needs_pending_context = (
+                not loop
+                or not supervisor_update_id
+                or update_id not in {supervisor_update_id, supervisor_safe_update_id}
+            )
+            if needs_pending_context and hasattr(
+                release_wrapper_runtime,
+                "release_health_heartbeat_supervisor_repair_context",
+            ):
+                repair_context = release_wrapper_runtime.release_health_heartbeat_supervisor_repair_context(
+                    update_id=update_id,
+                    session_id=session_id,
+                    persist_pulse=True,
+                )
+                if repair_context.get("status") == "found":
+                    update_id = str(repair_context.get("update_id") or update_id)
+                    supervisor = (
+                        repair_context.get("supervisor")
+                        if isinstance(repair_context.get("supervisor"), dict)
+                        else supervisor
+                    )
+                    latest_pulse = (
+                        supervisor.get("latest_pulse")
+                        if isinstance(supervisor.get("latest_pulse"), dict)
+                        else {}
+                    )
+                    loop = latest_pulse.get("loop") if isinstance(latest_pulse.get("loop"), dict) else {}
+                    repair_queue = loop.get("repair_queue") if isinstance(loop.get("repair_queue"), dict) else {}
+        if not update_id:
+            raise HTTPException(
+                status_code=400,
+                detail="heartbeat supervisor repair requires a pulse repair proposal update_id",
+            )
+
+        proposal = _autonomous_update_proposal(update_id)
+        if proposal is None:
+            raise HTTPException(status_code=404, detail=f"Unknown autonomous update: {update_id}")
+
+        registry = services.brain_eval_registry.summary(limit=500)
+        registered_suite_ids = {
+            str(item.get("suite_id") or "")
+            for item in registry.get("suites", [])
+            if isinstance(item, dict) and str(item.get("suite_id") or "")
+        }
+        repair_plan = build_release_health_heartbeat_supervisor_repair_run_plan(
+            payload=payload,
+            supervisor=supervisor,
+            proposal=proposal,
+            registered_suite_ids=registered_suite_ids,
+            default_command=(
+                "pytest tests/test_release_wrapper_runtime.py::"
+                "test_release_wrapper_health_heartbeat_loop_runs_bounded_self_checks_with_backoff_and_repair_queue -q"
+            ),
+            digest=_privacy_compat_digest,
+        )
+        if repair_plan.get("status") != "planned":
+            raise HTTPException(
+                status_code=int(repair_plan.get("http_status") or 400),
+                detail=str(repair_plan.get("detail") or "heartbeat supervisor repair plan was blocked"),
+            )
+
+        if repair_plan["register_eval_suite"]:
+            services.brain_eval_registry.register(
+                EvalSuiteRequest.model_validate(repair_plan["eval_suite_request"])
+            )
+
+        command = str(repair_plan["command"])
+        actions: dict[str, dict[str, Any]] = {}
+        actions["admin_approval"] = ops_brain_autonomous_updates_admin_approval(
+            update_id,
+            repair_plan["admin_approval_payload"],
+        )
+        linked_eval_replay = actions["admin_approval"].get("linked_eval_replay")
+        actions["shadow_eval_replay"] = (
+            linked_eval_replay if isinstance(linked_eval_replay, dict) else {"status": "not-linked"}
+        )
+        actions["sandbox_tests"] = ops_brain_autonomous_updates_sandbox_tests(
+            update_id,
+            repair_plan["sandbox_tests_payload"],
+        )
+        if actions["sandbox_tests"].get("passed") is not True:
+            subsystem_repair_envelopes = build_completed_release_health_heartbeat_subsystem_repair_envelopes(
+                repair_plan.get("subsystem_repair_envelopes")
+                if isinstance(repair_plan.get("subsystem_repair_envelopes"), list)
+                else [],
+                actions=actions,
+            )
+            readiness_run = release_wrapper_runtime.record_release_readiness_evidence_run(
+                session_id=session_id,
+                update_id=update_id,
+                command=command,
+                actions=actions,
+                status="blocked-heartbeat-supervisor-repair-sandbox",
+                subsystem_repair_envelopes=subsystem_repair_envelopes,
+            )
+            return {
+                "surface_id": "release-health-heartbeat-supervisor-repair-run",
+                "status": "blocked-sandbox-failed",
+                "update_id": update_id,
+                "source_pulse_id": repair_plan.get("source_pulse_id"),
+                "source_loop_id": repair_plan.get("source_loop_id"),
+                "repair_context_source": repair_context.get("source") or "supervisor-pulse",
+                "subsystem_repair_envelopes": subsystem_repair_envelopes,
+                "subsystem_repair_envelope_count": len(subsystem_repair_envelopes),
+                "actions": actions,
+                "readiness_evidence_run": readiness_run,
+                "active_production_mutated": bool(readiness_run.get("active_production_mutated")),
+                "raw_content_included": False,
+            }
+        evidence_ref = str(actions["sandbox_tests"].get("evidence_ref") or "")
+        actions["apply"] = ops_brain_autonomous_updates_apply(
+            update_id,
+            {
+                "test_refs": [command],
+                "test_evidence_refs": [evidence_ref] if evidence_ref else [],
+            },
+        )
+        actions["rollback"] = ops_brain_autonomous_updates_rollback(
+            update_id,
+            {"reason": "heartbeat-supervisor-repair-run-rollback-verification"},
+        )
+        subsystem_repair_envelopes = build_completed_release_health_heartbeat_subsystem_repair_envelopes(
+            repair_plan.get("subsystem_repair_envelopes")
+            if isinstance(repair_plan.get("subsystem_repair_envelopes"), list)
+            else [],
+            actions=actions,
+        )
+        readiness_run = release_wrapper_runtime.record_release_readiness_evidence_run(
+            session_id=session_id,
+            update_id=update_id,
+            command=command,
+            actions=actions,
+            status="completed-heartbeat-supervisor-repair",
+            subsystem_repair_envelopes=subsystem_repair_envelopes,
+        )
+        return {
+            "schema_version": "nexusnet-release-health-heartbeat-supervisor-repair-run-v1",
+            "surface_id": "release-health-heartbeat-supervisor-repair-run",
+            "status": "completed",
+            "update_id": update_id,
+            "source_pulse_id": repair_plan.get("source_pulse_id"),
+            "source_loop_id": repair_plan.get("source_loop_id"),
+            "source_heartbeat_id": repair_plan.get("source_heartbeat_id"),
+            "repair_context_source": repair_context.get("source") or "supervisor-pulse",
+            "subsystem_repair_envelopes": subsystem_repair_envelopes,
+            "subsystem_repair_envelope_count": len(subsystem_repair_envelopes),
+            "actions": actions,
+            "readiness_evidence_run": readiness_run,
+            "active_production_mutated": bool(readiness_run.get("active_production_mutated")),
+            "raw_content_included": False,
+            "mutation_boundary": "admin-approved-shadow-eval-sandbox-safe-file-apply-rollback-only",
+            "privacy_boundary": "sanitized-heartbeat-repair-statuses-and-refs-only-no-prompts-outputs-session-ids",
+        }
+
+    @application.post("/ops/wrapper/domain-expert-growth/admin-replay")
+    def ops_wrapper_domain_expert_growth_admin_replay(payload: dict[str, Any] = Body(...)):
+        result = release_wrapper_runtime.approve_domain_expert_growth_admin_replay(
+            session_id=str(payload.get("session_id") or "") or None,
+            domain_ao=str(payload.get("domain_ao") or "") or None,
+            handoff_id=str(payload.get("handoff_id") or "") or None,
+            approved_by=str(payload.get("approved_by") or "admin"),
+            approval_ref=str(payload.get("approval_ref") or "") or None,
+            requested_decision=str(payload.get("requested_decision") or "approved"),
+        )
+        if str(result.get("status") or "").startswith("blocked-missing"):
+            raise HTTPException(status_code=404, detail=result)
+        if str(result.get("status") or "").startswith("blocked"):
+            raise HTTPException(status_code=400, detail=result)
+        return result
+
+    @application.get("/ops/wrapper/federated-packets")
+    def ops_wrapper_federated_packets(session_id: str | None = None):
+        return release_wrapper_runtime.federated_packet_outbox(session_id=session_id)
+
+    @application.post("/ops/wrapper/federated-packets/import")
+    def ops_wrapper_import_federated_packet(payload: dict[str, Any] = Body(...)):
+        packet = payload.get("packet") if isinstance(payload.get("packet"), dict) else payload
+        return release_wrapper_runtime.import_federated_packet(
+            packet=packet,
+            session_id=payload.get("session_id") if isinstance(payload, dict) else None,
+            peer_node_id=payload.get("peer_node_id") if isinstance(payload, dict) else None,
+        )
+
+    @application.get("/ops/wrapper/federated-packets/imports")
+    def ops_wrapper_federated_packet_imports(session_id: str | None = None):
+        return release_wrapper_runtime.federated_packet_inbox(session_id=session_id)
+
+    @application.get("/ops/wrapper/session-lifecycle")
+    def ops_wrapper_session_lifecycle(session_id: str | None = None):
+        return release_wrapper_runtime.session_lifecycle(session_id=session_id)
+
+    @application.get("/ops/wrapper/first-run-readiness")
+    def ops_wrapper_first_run_readiness(session_id: str | None = None):
+        return release_wrapper_runtime.first_run_readiness(session_id=session_id)
+
+    @application.post("/ops/wrapper/first-run-readiness/run")
+    def ops_wrapper_first_run_readiness_run(payload: dict[str, Any] | None = Body(default=None)):
+        payload = payload or {}
+        session_id = str(payload.get("session_id") or "") or None
+        overrides = payload.get("request_overrides") if isinstance(payload.get("request_overrides"), dict) else {}
+        return release_wrapper_runtime.record_first_run_readiness_run(
+            session_id=session_id,
+            request_overrides=overrides,
+        )
+
+    @application.get("/ops/wrapper/production-spine-release-lifecycle")
+    def ops_wrapper_production_spine_release_lifecycle(session_id: str | None = None):
+        return release_wrapper_runtime.production_spine_release_lifecycle(session_id=session_id)
+
+    @application.post("/ops/wrapper/production-spine-release-lifecycle/run")
+    def ops_wrapper_production_spine_release_lifecycle_run(payload: dict[str, Any] | None = Body(default=None)):
+        payload = payload or {}
+        session_id = str(payload.get("session_id") or "") or None
+        overrides = payload.get("request_overrides") if isinstance(payload.get("request_overrides"), dict) else {}
+        admin_approval = _production_spine_lifecycle_admin_approval_from_payload(payload)
+        return release_wrapper_runtime.record_production_spine_release_lifecycle_run(
+            session_id=session_id,
+            operator_approved=bool(payload.get("operator_approved")),
+            human_approved=bool(payload.get("human_approved")),
+            admin_approval=admin_approval,
+            request_overrides=overrides,
+        )
+
+    @application.post("/ops/wrapper/production-spine-release-lifecycle/{run_id}/rollback")
+    def ops_wrapper_production_spine_release_lifecycle_rollback(
+        run_id: str,
+        payload: dict[str, Any] | None = Body(default=None),
+    ):
+        payload = payload or {}
+        session_id = str(payload.get("session_id") or "") or None
+        reason = str(payload.get("reason") or "operator-requested-lifecycle-rollback")
+        rollback = release_wrapper_runtime.rollback_production_spine_release_lifecycle_run(
+            run_id=run_id,
+            session_id=session_id,
+            reason=reason,
+        )
+        if rollback.get("status") == "blocked-run-not-found":
+            raise HTTPException(status_code=404, detail="production-spine release lifecycle run was not found")
+        return rollback
+
+    @application.get("/ops/brain/assimilation-target-catalog/{target_id}")
+    def ops_brain_assimilation_target_catalog_detail(target_id: str):
+        target = services.brain_assimilation_catalog.get(target_id)
+        if target is not None:
+            return target
+        raise HTTPException(status_code=404, detail=f"Unknown assimilation target: {target_id}")
+
+    @application.get("/ops/brain/self-improvement/lineage")
+    def ops_brain_self_improvement_lineage():
+        return services.brain_self_improvement_lineage.summary()
+
+    @application.post("/ops/brain/self-improvement/lineage/candidates")
+    def ops_brain_self_improvement_lineage_candidates(payload: dict[str, Any] = Body(...)):
+        return services.brain_self_improvement_lineage.record_candidate(LineageCandidateRequest.model_validate(payload))
+
+    @application.get("/ops/brain/verifier-search")
+    def ops_brain_verifier_search():
+        return services.brain_verifier_search.summary()
+
+    @application.post("/ops/brain/verifier-search/runs")
+    def ops_brain_verifier_search_runs(payload: dict[str, Any] = Body(...)):
+        return services.brain_verifier_search.record_search(VerifierSearchRequest.model_validate(payload))
+
+    @application.get("/ops/brain/policy/rules")
+    def ops_brain_policy_rules():
+        return _policy_kernel().rules_payload()
+
+    @application.post("/ops/brain/policy/scan")
+    def ops_brain_policy_scan(payload: dict[str, Any] = Body(...)):
+        request = PolicyScanRequest.model_validate(payload)
+        return _policy_kernel().scan(request.targets, waivers=request.waivers).model_dump(mode="json")
+
+    @application.get("/ops/brain/canon/policy-kernel")
+    def ops_brain_canon_policy_kernel():
+        return _policy_kernel().scorecard()
+
+    @application.get("/ops/brain/agentic-pipelines")
+    def ops_brain_agentic_pipelines(session_id: str | None = None, limit: int = 20):
+        return services.brain_agentic_pipelines.summary(session_id=session_id, limit=limit)
+
+    @application.post("/ops/brain/agentic-pipelines/runs")
+    def ops_brain_agentic_pipeline_runs(payload: dict[str, Any] = Body(...)):
+        request = AgenticPipelineRequest.model_validate(payload)
+        return services.brain_agentic_pipelines.start(request)
+
+    @application.get("/ops/brain/canon/agentic-pipelines")
+    def ops_brain_canon_agentic_pipelines(session_id: str | None = None):
+        return services.brain_agentic_pipelines.scorecard(session_id=session_id)
+
+    @application.get("/ops/brain/sandbox-agent-factory")
+    def ops_brain_sandbox_agent_factory(session_id: str | None = None, limit: int = 20):
+        return services.brain_sandbox_agent_factory.summary(session_id=session_id, limit=limit)
+
+    @application.post("/ops/brain/sandbox-agent-factory/runs")
+    def ops_brain_sandbox_agent_factory_runs(payload: dict[str, Any] = Body(...)):
+        request = SandboxAgentFactoryRunRequest.model_validate(payload)
+        return services.brain_sandbox_agent_factory.start(request)
+
+    @application.get("/ops/brain/canon/sandbox-agent-factory")
+    def ops_brain_canon_sandbox_agent_factory(session_id: str | None = None):
+        return services.brain_sandbox_agent_factory.scorecard(session_id=session_id)
+
+    @application.get("/ops/brain/assimilation-targets")
+    def ops_brain_assimilation_targets(session_id: str | None = None):
+        return services.brain_assimilation_targets.summary(session_id=session_id)
+
+    @application.get("/ops/brain/assimilation-targets/{target_id}")
+    def ops_brain_assimilation_target(target_id: str):
+        target = services.brain_assimilation_targets.target(target_id)
+        if target is None:
+            raise HTTPException(status_code=404, detail="Assimilation target not found.")
+        return target
+
+    @application.get("/ops/brain/video-assimilation-targets")
+    def ops_brain_video_assimilation_targets(session_id: str | None = None):
+        return services.brain_assimilation_targets.video_scorecard(session_id=session_id)
+
+    @application.get("/ops/brain/video-assimilation-targets/{target_id}")
+    def ops_brain_video_assimilation_target(target_id: str):
+        payload = services.brain_assimilation_targets.video_target(target_id)
+        if payload is None:
+            raise HTTPException(status_code=404, detail="video assimilation target not found")
+        return payload
+
+    @application.post("/ops/brain/skill-systems/compose")
+    def ops_brain_skill_systems_compose(payload: dict[str, Any] = Body(...)):
+        return services.brain_assimilation_targets.compose_skill_system(payload)
+
+    @application.get("/ops/brain/canon/assimilation-targets")
+    def ops_brain_canon_assimilation_targets(session_id: str | None = None):
+        return services.brain_assimilation_targets.scorecard(session_id=session_id)
+
+    @application.get("/ops/brain/canon/video-assimilation-targets")
+    def ops_brain_canon_video_assimilation_targets(session_id: str | None = None):
+        return services.brain_assimilation_targets.video_scorecard(session_id=session_id)
+
+    @application.get("/ops/brain/codegraph-gate")
+    def ops_brain_codegraph_gate():
+        return services.brain_codegraph_gate.summary()
+
+    @application.post("/ops/brain/codegraph-gate/manifests")
+    def ops_brain_codegraph_gate_manifests(payload: dict[str, Any] = Body(...)):
+        return services.brain_codegraph_gate.evaluate(CodegraphRunManifestRequest.model_validate(payload))
+
+    @application.get("/ops/brain/hive-substrate")
+    def ops_brain_hive_substrate(session_id: str | None = None):
+        return services.brain_hive_substrate.summary(session_id=session_id)
+
+    @application.post("/ops/brain/hive-substrate/forward-pass")
+    def ops_brain_hive_substrate_forward_pass(payload: dict[str, Any] = Body(...)):
+        request = HiveForwardPassRequest.model_validate(payload)
+        result = services.brain_hive_substrate.run_forward_pass(request)
+        result["runtime_growth_dream_research"] = release_wrapper_runtime.queue_native_runtime_growth_review(
+            session_id=request.session_id,
+            hive_result=result,
+        )
+        return result
+
+    @application.post("/ops/brain/hive-substrate/assimilate")
+    def ops_brain_hive_substrate_assimilate(payload: dict[str, Any] = Body(...)):
+        request = HiveAssimilationCandidateRequest.model_validate(payload)
+        return services.brain_hive_substrate.assimilate_candidate(request)
+
+    @application.post("/ops/brain/hive-substrate/dream")
+    def ops_brain_hive_substrate_dream(payload: dict[str, Any] = Body(...)):
+        request = HiveRecursiveDreamRequest.model_validate(payload)
+        return services.brain_hive_substrate.run_recursive_dream(request)
+
+    @application.post("/ops/brain/hive-substrate/productionize")
+    def ops_brain_hive_substrate_productionize(payload: dict[str, Any] = Body(...)):
+        request = HiveProductionizationRequest.model_validate(payload)
+        return services.brain_hive_substrate.run_productionization_cycle(request)
+
+    @application.post("/ops/brain/hive-substrate/shadow-release")
+    def ops_brain_hive_substrate_shadow_release(payload: dict[str, Any] = Body(...)):
+        request = HiveShadowReleaseRequest.model_validate(payload)
+        return services.brain_hive_substrate.activate_shadow_release(request)
+
+    @application.post("/ops/brain/hive-substrate/active-release")
+    def ops_brain_hive_substrate_active_release(payload: dict[str, Any] = Body(...)):
+        request = HiveActiveReleaseRequest.model_validate(payload)
+        return services.brain_hive_substrate.promote_active_release(request)
+
+    @application.post("/ops/brain/hive-substrate/rollback")
+    def ops_brain_hive_substrate_rollback(payload: dict[str, Any] = Body(...)):
+        request = HiveRollbackRequest.model_validate(payload)
+        return services.brain_hive_substrate.rollback_shadow_release(request)
+
+    @application.post("/ops/brain/hive-substrate/rewind")
+    def ops_brain_hive_substrate_rewind(payload: dict[str, Any] = Body(...)):
+        request = HiveCheckpointRewindRequest.model_validate(payload)
+        return services.brain_hive_substrate.rewind_checkpoint(request)
+
+    @application.post("/ops/brain/hive-substrate/global-federation/review")
+    def ops_brain_hive_substrate_global_federation_review(payload: dict[str, Any] = Body(...)):
+        request = HiveGlobalFederationReviewRequest.model_validate(payload)
+        return services.brain_hive_substrate.review_global_federation_promotion(request)
+
+    @application.post("/ops/brain/hive-substrate/route-candidates/{evaluation_id}/approve")
+    def ops_brain_hive_substrate_route_candidate_approve(
+        evaluation_id: str,
+        payload: dict[str, Any] = Body(...),
+    ):
+        request = dict(payload or {})
+        request["evaluation_id"] = evaluation_id
+        return services.brain_hive_substrate.approve_governed_route_candidate(
+            request,
+            eval_registry=services.brain_eval_registry,
+        )
+
+    @application.post("/ops/brain/hive-substrate/route-candidates/{approval_id}/rollback")
+    def ops_brain_hive_substrate_route_candidate_rollback(
+        approval_id: str,
+        payload: dict[str, Any] = Body(...),
+    ):
+        request = dict(payload or {})
+        request["approval_id"] = approval_id
+        return services.brain_hive_substrate.rollback_governed_route_candidate(request)
+
+    @application.get("/ops/brain/hive-substrate/health")
+    def ops_brain_hive_substrate_health(session_id: str | None = None):
+        return services.brain_hive_substrate.health(session_id=session_id)
+
+    @application.get("/ops/brain/hive-substrate/replay")
+    def ops_brain_hive_substrate_replay(session_id: str | None = None, run_id: str | None = None):
+        return services.brain_hive_substrate.replay(session_id=session_id, run_id=run_id)
+
+    @application.get("/ops/brain/hive-substrate/curator")
+    def ops_brain_hive_substrate_curator(session_id: str | None = None):
+        return services.brain_hive_substrate.curate(session_id=session_id)
+
+    @application.get("/ops/brain/canon/hive-substrate")
+    def ops_brain_canon_hive_substrate(session_id: str | None = None):
+        return services.brain_hive_substrate.scorecard(session_id=session_id)
+
+    @application.get("/ops/brain/harness-providers")
+    def ops_brain_harness_providers():
+        return services.brain_harness_providers.summary()
+
+    @application.post("/ops/brain/harness-providers/recommend")
+    def ops_brain_harness_providers_recommend(payload: dict[str, Any] = Body(...)):
+        return services.brain_harness_providers.recommend(payload)
+
+    @application.get("/ops/brain/canon/harness-providers")
+    def ops_brain_canon_harness_providers():
+        return services.brain_harness_providers.scorecard()
+
+    @application.get("/ops/brain/harness-routing")
+    def ops_brain_harness_routing():
+        return services.brain_harness_router.summary()
+
+    @application.post("/ops/brain/harness-routing/recommend")
+    def ops_brain_harness_routing_recommend(payload: dict[str, Any] = Body(...)):
+        request = HarnessRouteRequest.model_validate(payload)
+        return services.brain_harness_router.recommend(request)
+
+    @application.get("/ops/brain/canon/harness-routing")
+    def ops_brain_canon_harness_routing():
+        return services.brain_harness_router.scorecard()
+
+    @application.get("/ops/brain/evolution/harness-ledger")
+    def ops_brain_evolution_harness_ledger(limit: int = 50):
+        return services.brain_harness_improvement_ledger.summary(limit=limit)
+
+    @application.post("/ops/brain/evolution/harness-ledger/entries")
+    def ops_brain_evolution_harness_ledger_entries(payload: dict[str, Any] = Body(...)):
+        request = HarnessLedgerEntryRequest.model_validate(payload)
+        return services.brain_harness_improvement_ledger.record(request)
+
+    @application.get("/ops/brain/canon/harness-ledger")
+    def ops_brain_canon_harness_ledger():
+        return services.brain_harness_improvement_ledger.scorecard()
+
+    @application.get("/ops/brain/agent-opportunities")
+    def ops_brain_agent_opportunities():
+        return services.brain_agent_opportunities.summary()
+
+    @application.post("/ops/brain/agent-opportunities/discover")
+    def ops_brain_agent_opportunities_discover(payload: dict[str, Any] = Body(...)):
+        request = AgentOpportunityRequest.model_validate(payload)
+        return services.brain_agent_opportunities.discover(request)
+
+    @application.get("/ops/brain/canon/agent-opportunities")
+    def ops_brain_canon_agent_opportunities():
+        return services.brain_agent_opportunities.scorecard()
+
+    @application.get("/ops/brain/edge-workload-router")
+    def ops_brain_edge_workload_router(limit: int = 20):
+        return services.brain_edge_workload_router.summary(limit=limit)
+
+    @application.post("/ops/brain/edge-workload-router/route")
+    def ops_brain_edge_workload_router_route(payload: dict[str, Any] = Body(...)):
+        request = EdgeWorkloadRequest.model_validate(payload)
+        return services.brain_edge_workload_router.route(request)
+
+    @application.get("/ops/brain/canon/edge-workload-router")
+    def ops_brain_canon_edge_workload_router():
+        return services.brain_edge_workload_router.scorecard()
+
+    @application.get("/ops/brain/inference-economy-router")
+    def ops_brain_inference_economy_router(limit: int = 50):
+        return services.brain_inference_economy_router.summary(limit=limit)
+
+    @application.post("/ops/brain/inference-economy-router/route")
+    def ops_brain_inference_economy_router_route(payload: dict[str, Any] = Body(...)):
+        request = InferenceRouteRequest.model_validate(payload)
+        return services.brain_inference_economy_router.route(request)
+
+    @application.get("/ops/brain/canon/inference-economy-router")
+    def ops_brain_canon_inference_economy_router():
+        return services.brain_inference_economy_router.scorecard()
+
+    @application.get("/ops/brain/inference-architecture")
+    def ops_brain_inference_architecture(limit: int = 50):
+        return services.brain_inference_architecture.summary(limit=limit)
+
+    @application.post("/ops/brain/inference-architecture/plan")
+    def ops_brain_inference_architecture_plan(payload: dict[str, Any] = Body(...)):
+        request = InferenceArchitectureRequest.model_validate(payload)
+        return services.brain_inference_architecture.plan(request)
+
+    @application.get("/ops/brain/canon/inference-architecture")
+    def ops_brain_canon_inference_architecture():
+        return services.brain_inference_architecture.scorecard()
+
+    @application.get("/ops/brain/cache-ledger")
+    def ops_brain_cache_ledger(limit: int = 50):
+        return services.brain_cache_ledger.summary(limit=limit)
+
+    @application.get("/ops/brain/runtime/effective-context")
+    def ops_brain_runtime_effective_context(limit: int = 50):
+        return services.brain_cache_ledger.summary(limit=limit)
+
+    @application.post("/ops/brain/cache-ledger/entries")
+    def ops_brain_cache_ledger_entries(payload: dict[str, Any] = Body(...)):
+        request = CacheLedgerEntryRequest.model_validate(payload)
+        return services.brain_cache_ledger.record(request)
+
+    @application.get("/ops/brain/canon/cache-ledger")
+    def ops_brain_canon_cache_ledger():
+        return services.brain_cache_ledger.scorecard()
+
+    @application.get("/ops/brain/runtime-scorecards")
+    def ops_brain_runtime_scorecards(limit: int = 50):
+        return services.brain_runtime_workload_scorecards.summary(limit=limit)
+
+    @application.post("/ops/brain/runtime-scorecards/records")
+    def ops_brain_runtime_scorecards_records(payload: dict[str, Any] = Body(...)):
+        request = RuntimeWorkloadScorecardRequest.model_validate(payload)
+        return services.brain_runtime_workload_scorecards.record(request)
+
+    @application.get("/ops/brain/canon/runtime-scorecards")
+    def ops_brain_canon_runtime_scorecards():
+        return services.brain_runtime_workload_scorecards.scorecard()
+
+    @application.get("/ops/brain/quantization-catalog")
+    def ops_brain_quantization_catalog(limit: int = 50):
+        return services.brain_quantization_catalog.summary(limit=limit)
+
+    @application.post("/ops/brain/quantization-catalog/recommend")
+    def ops_brain_quantization_catalog_recommend(payload: dict[str, Any] = Body(...)):
+        request = QuantizationRecommendationRequest.model_validate(payload)
+        return services.brain_quantization_catalog.recommend(request)
+
+    @application.get("/ops/brain/canon/quantization-catalog")
+    def ops_brain_canon_quantization_catalog():
+        return services.brain_quantization_catalog.scorecard()
+
+    @application.get("/ops/brain/model-passports")
+    def ops_brain_model_passports():
+        return services.brain_edge_model_certification.summary()
+
+    @application.post("/ops/brain/model-passports")
+    def ops_brain_model_passports_register(payload: dict[str, Any] = Body(...)):
+        return services.brain_edge_model_certification.register_passport(ModelPassportRequest.model_validate(payload))
+
+    @application.post("/ops/brain/model-certifications")
+    def ops_brain_model_certifications(payload: dict[str, Any] = Body(...)):
+        return services.brain_edge_model_certification.certify(CertificationRunRequest.model_validate(payload))
+
+    @application.get("/ops/brain/protocol-trust")
+    def ops_brain_protocol_trust_registry(limit: int = 50):
+        return services.brain_protocol_trust_registry.summary(limit=limit)
+
+    @application.post("/ops/brain/protocol-trust/adapters")
+    def ops_brain_protocol_trust_registry_adapters(payload: dict[str, Any] = Body(...)):
+        request = ProtocolAdapterRequest.model_validate(payload)
+        return services.brain_protocol_trust_registry.register(request)
+
+    @application.get("/ops/brain/canon/protocol-trust-registry")
+    def ops_brain_canon_protocol_trust_registry():
+        return services.brain_protocol_trust_registry.scorecard()
+
+    @application.get("/ops/brain/browser-context")
+    def ops_brain_browser_context(limit: int = 50):
+        return services.brain_browser_context.summary(limit=limit)
+
+    @application.post("/ops/brain/browser-context/ingest")
+    def ops_brain_browser_context_ingest(payload: dict[str, Any] = Body(...)):
+        request = BrowserContextIngestRequest.model_validate(payload)
+        return services.brain_browser_context.ingest(request)
+
+    @application.post("/ops/brain/browser-context/query")
+    def ops_brain_browser_context_query(payload: dict[str, Any] = Body(...)):
+        request = BrowserContextQueryRequest.model_validate(payload)
+        return services.brain_browser_context.query(request)
+
+    @application.get("/ops/brain/canon/browser-context")
+    def ops_brain_canon_browser_context():
+        return services.brain_browser_context.scorecard()
+
+    @application.get("/ops/brain/browser/profile-policy")
+    def ops_brain_browser_profile_policy():
+        return services.brain_browser_profile_policy.summary()
+
+    @application.post("/ops/brain/browser/profile-policy")
+    def ops_brain_browser_profile_policy_evaluate(payload: dict[str, Any] = Body(...)):
+        return services.brain_browser_profile_policy.evaluate(BrowserProfilePolicyRequest.model_validate(payload))
+
+    @application.get("/ops/brain/dataset-radar")
+    def ops_brain_dataset_radar(limit: int = 50):
+        return services.brain_dataset_radar.summary(limit=limit)
+
+    @application.get("/ops/brain/dataset-radar/sources")
+    def ops_brain_dataset_radar_sources(
+        target_node: str | None = None,
+        allowed_use: str | None = None,
+        limit: int = 200,
+    ):
+        return {
+            "status_label": "LOCKED CANON",
+            "surface_id": "living-dataset-radar",
+            "sources": services.brain_dataset_radar.list_sources(
+                target_node=target_node,
+                allowed_use=allowed_use,
+                limit=limit,
+            ),
+        }
+
+    @application.get("/ops/brain/dataset-radar/sources/{source_id:path}")
+    def ops_brain_dataset_radar_source_detail(source_id: str):
+        detail = services.brain_dataset_radar.source_detail(source_id)
+        if detail is None:
+            raise HTTPException(status_code=404, detail=f"Dataset Radar source not found: {source_id}")
+        return detail
+
+    @application.post("/ops/brain/dataset-radar/refresh")
+    def ops_brain_dataset_radar_refresh(payload: dict[str, Any] = Body(default_factory=dict)):
+        return services.brain_dataset_radar.refresh(payload)
+
+    @application.post("/ops/brain/dataset-radar/refresh-batch")
+    def ops_brain_dataset_radar_refresh_batch(payload: dict[str, Any] = Body(default_factory=dict)):
+        return services.brain_dataset_radar.refresh_batch_run(payload)
+
+    @application.post("/ops/brain/dataset-radar/gate-preview")
+    def ops_brain_dataset_radar_gate_preview(payload: dict[str, Any] = Body(default_factory=dict)):
+        return services.brain_dataset_radar.gate_preview(payload)
+
+    @application.post("/ops/brain/dataset-radar/material-request")
+    def ops_brain_dataset_radar_material_request(payload: dict[str, Any] = Body(default_factory=dict)):
+        return services.brain_dataset_radar.material_request(payload)
+
+    @application.post("/ops/brain/dataset-radar/candidate-review")
+    def ops_brain_dataset_radar_candidate_review(payload: dict[str, Any] = Body(default_factory=dict)):
+        return services.brain_dataset_radar.candidate_review(payload)
+
+    @application.get("/ops/brain/dataset-radar/refresh-presets")
+    def ops_brain_dataset_radar_refresh_presets():
+        return {
+            "surface_id": "living-dataset-radar",
+            "presets": services.brain_dataset_radar.refresh_presets(),
+        }
+
+    @application.get("/ops/brain/dataset-radar/refresh-runs")
+    def ops_brain_dataset_radar_refresh_runs(limit: int = 50):
+        return {
+            "surface_id": "living-dataset-radar",
+            "runs": services.brain_dataset_radar.refresh_runs(limit=limit),
+        }
+
+    @application.get("/ops/brain/dataset-radar/refresh-runs/{refresh_run_id}")
+    def ops_brain_dataset_radar_refresh_run(refresh_run_id: str):
+        run = services.brain_dataset_radar.refresh_run(refresh_run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail=f"Dataset Radar refresh run not found: {refresh_run_id}")
+        return run
+
+    @application.get("/ops/brain/dataset-radar/refresh-batches")
+    def ops_brain_dataset_radar_refresh_batches(limit: int = 50):
+        return {
+            "surface_id": "living-dataset-radar",
+            "batches": services.brain_dataset_radar.refresh_batches(limit=limit),
+        }
+
+    @application.get("/ops/brain/dataset-radar/refresh-batches/{batch_id}")
+    def ops_brain_dataset_radar_refresh_batch_replay(batch_id: str):
+        batch = services.brain_dataset_radar.refresh_batch(batch_id)
+        if batch is None:
+            raise HTTPException(status_code=404, detail=f"Dataset Radar refresh batch not found: {batch_id}")
+        return batch
+
+    @application.get("/ops/brain/dataset-radar/material-requests")
+    def ops_brain_dataset_radar_material_requests(limit: int = 50):
+        return {
+            "surface_id": "living-dataset-radar",
+            "requests": services.brain_dataset_radar.material_requests(limit=limit),
+        }
+
+    @application.get("/ops/brain/dataset-radar/material-requests/{material_request_id}")
+    def ops_brain_dataset_radar_material_request_replay(material_request_id: str):
+        request = services.brain_dataset_radar.material_request_record(material_request_id)
+        if request is None:
+            raise HTTPException(status_code=404, detail=f"Dataset Radar material request not found: {material_request_id}")
+        return request
+
+    @application.get("/ops/brain/dataset-radar/candidate-reviews")
+    def ops_brain_dataset_radar_candidate_reviews(limit: int = 50):
+        return {
+            "surface_id": "living-dataset-radar",
+            "reviews": services.brain_dataset_radar.candidate_reviews(limit=limit),
+        }
+
+    @application.get("/ops/brain/dataset-radar/candidate-reviews/{candidate_review_id}")
+    def ops_brain_dataset_radar_candidate_review_replay(candidate_review_id: str):
+        review = services.brain_dataset_radar.candidate_review_record(candidate_review_id)
+        if review is None:
+            raise HTTPException(status_code=404, detail=f"Dataset Radar candidate review not found: {candidate_review_id}")
+        return review
+
+    @application.get("/ops/brain/canon/dataset-radar")
+    def ops_brain_canon_dataset_radar():
+        return services.brain_dataset_radar.scorecard()
+
+    @application.get("/ops/brain/dataset-forge")
+    def ops_brain_dataset_forge(limit: int = 50):
+        return services.brain_dataset_forge.summary(limit=limit)
+
+    @application.post("/ops/brain/dataset-forge/manifests")
+    def ops_brain_dataset_forge_manifests(payload: dict[str, Any] = Body(...)):
+        request = DatasetForgeRequest.model_validate(payload)
+        return services.brain_dataset_forge.build(request)
+
+    @application.get("/ops/brain/canon/dataset-forge")
+    def ops_brain_canon_dataset_forge():
+        return services.brain_dataset_forge.scorecard()
+
+    @application.get("/ops/brain/knowledge-artifacts")
+    def ops_brain_knowledge_artifacts(limit: int = 50, task_family: str | None = None):
+        artifacts = services.brain_knowledge_artifacts.artifacts(limit=limit, task_family=task_family)
+        summary = services.brain_knowledge_artifacts.summary(limit=limit)
+        return {
+            **summary,
+            "artifact_count": len(artifacts),
+            "artifacts": artifacts,
+            "latest_artifact": artifacts[0] if artifacts else None,
+        }
+
+    @application.post("/ops/brain/knowledge-artifacts/compile")
+    def ops_brain_knowledge_artifacts_compile(payload: dict[str, Any] = Body(...)):
+        request = KnowledgeCompileRequest.model_validate(payload)
+        return services.brain_knowledge_artifacts.compile(request)
+
+    @application.post("/ops/brain/knowledge-artifacts/query")
+    def ops_brain_knowledge_artifacts_query(payload: dict[str, Any] = Body(...)):
+        request = KnowledgeRequestContract.model_validate(payload)
+        return services.brain_knowledge_artifacts.query(request)
+
+    @application.get("/ops/brain/knowledge-artifacts/query-events")
+    def ops_brain_knowledge_artifacts_query_events(limit: int = 50):
+        return services.brain_knowledge_artifacts.query_events(limit=limit)
+
+    @application.post("/ops/brain/knowledge-artifacts/freshness")
+    def ops_brain_knowledge_artifacts_freshness(payload: dict[str, Any] = Body(...)):
+        artifact_id = str(payload.get("artifact_id") or "")
+        if not artifact_id:
+            raise HTTPException(status_code=400, detail="artifact_id is required")
+        sources = payload.get("sources") or []
+        return services.brain_knowledge_artifacts.refresh_freshness(artifact_id, sources)
+
+    @application.get("/ops/brain/canon/knowledge-artifacts")
+    def ops_brain_canon_knowledge_artifacts():
+        return services.brain_knowledge_artifacts.scorecard()
+
+    @application.get("/ops/brain/knowledge-artifacts/{artifact_id:path}")
+    def ops_brain_knowledge_artifact_detail(artifact_id: str):
+        artifact = services.brain_knowledge_artifacts.artifact(artifact_id)
+        if artifact is None:
+            raise HTTPException(status_code=404, detail=f"Knowledge artifact not found: {artifact_id}")
+        return artifact
+
+    @application.get("/ops/brain/adapter-registry")
+    def ops_brain_adapter_registry(limit: int = 50):
+        return services.brain_adapter_registry.summary(limit=limit)
+
+    @application.post("/ops/brain/adapter-registry/candidates")
+    def ops_brain_adapter_registry_candidates(payload: dict[str, Any] = Body(...)):
+        request = AdapterRecordRequest.model_validate(payload)
+        return services.brain_adapter_registry.register(request)
+
+    @application.get("/ops/brain/canon/adapter-registry")
+    def ops_brain_canon_adapter_registry():
+        return services.brain_adapter_registry.scorecard()
+
+    @application.get("/ops/brain/fine-tune-decision-gate")
+    def ops_brain_fine_tune_decision_gate(limit: int = 50):
+        return services.brain_fine_tune_decision_gate.summary(limit=limit)
+
+    @application.post("/ops/brain/fine-tune-decision-gate/decisions")
+    def ops_brain_fine_tune_decision_gate_decisions(payload: dict[str, Any] = Body(...)):
+        request = FineTuneDecisionRequest.model_validate(payload)
+        return services.brain_fine_tune_decision_gate.decide(request)
+
+    @application.get("/ops/brain/canon/fine-tune-decision-gate")
+    def ops_brain_canon_fine_tune_decision_gate():
+        return services.brain_fine_tune_decision_gate.scorecard()
+
+    @application.get("/ops/brain/adapter-training")
+    def ops_brain_adapter_training(limit: int = 50):
+        return services.brain_adapter_training.summary(limit=limit)
+
+    @application.post("/ops/brain/adapter-training/plans")
+    def ops_brain_adapter_training_plans(payload: dict[str, Any] = Body(...)):
+        request = AdapterTrainingPlanRequest.model_validate(payload)
+        return services.brain_adapter_training.plan(request)
+
+    @application.get("/ops/brain/canon/adapter-training")
+    def ops_brain_canon_adapter_training():
+        return services.brain_adapter_training.scorecard()
+
+    @application.get("/ops/brain/growth-engine")
+    def ops_brain_growth_engine(limit: int = 50):
+        return services.brain_growth_engine.summary(limit=limit)
+
+    @application.post("/ops/brain/growth-engine/cycles")
+    def ops_brain_growth_engine_cycles(payload: dict[str, Any] = Body(...)):
+        request = GrowthCycleRequest.model_validate(payload)
+        return services.brain_growth_engine.start_dry_run(request)
+
+    @application.get("/ops/brain/growth-engine/cycles/{cycle_id}")
+    def ops_brain_growth_engine_cycle(cycle_id: str):
+        replay = services.brain_growth_engine.replay_cycle(cycle_id)
+        if replay is not None:
+            return replay
+        raise HTTPException(status_code=404, detail=f"Unknown growth cycle: {cycle_id}")
+
+    @application.get("/ops/brain/canon/growth-engine")
+    def ops_brain_canon_growth_engine():
+        return services.brain_growth_engine.scorecard()
+
+    @application.get("/ops/brain/production-spine")
+    def ops_brain_production_spine(limit: int = 50):
+        return services.brain_production_spine.summary(limit=limit)
+
+    @application.post("/ops/brain/production-spine/cycles")
+    def ops_brain_production_spine_cycles(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.run_completion_cycle(payload)
+
+    @application.post("/ops/brain/production-spine/growth-lifecycles")
+    def ops_brain_production_spine_growth_lifecycles(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.run_growth_lifecycle(payload)
+
+    @application.post("/ops/brain/production-spine/reviewer-windows")
+    def ops_brain_production_spine_reviewer_windows(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.record_reviewer_window_advancement(payload)
+
+    @application.post("/ops/brain/production-spine/training-runs")
+    def ops_brain_production_spine_training_runs(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.run_sandbox_training_proof(payload)
+
+    @application.post("/ops/brain/production-spine/real-training-gates")
+    def ops_brain_production_spine_real_training_gates(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.assess_real_training_execution_gate(payload)
+
+    @application.post("/ops/brain/production-spine/training-backend-plans")
+    def ops_brain_production_spine_training_backend_plans(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.plan_training_backend(payload)
+
+    @application.post("/ops/brain/production-spine/child-executions")
+    def ops_brain_production_spine_child_executions(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.execute_child_node(payload)
+
+    @application.post("/ops/brain/production-spine/hive-moe-routes")
+    def ops_brain_production_spine_hive_moe_routes(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.run_hive_moe_shadow_route(payload)
+
+    @application.post("/ops/brain/production-spine/tensor-programs")
+    def ops_brain_production_spine_tensor_programs(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.execute_tensor_program(payload)
+
+    @application.post("/ops/brain/production-spine/teacher-council-reviews")
+    def ops_brain_production_spine_teacher_council_reviews(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.run_teacher_council_review(payload)
+
+    @application.post("/ops/brain/production-spine/eval-gauntlets")
+    def ops_brain_production_spine_eval_gauntlets(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.run_sealed_eval_review(payload)
+
+    @application.post("/ops/brain/production-spine/node-registry-decisions")
+    def ops_brain_production_spine_node_registry_decisions(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.apply_node_registry_decision(payload)
+
+    @application.post("/ops/brain/production-spine/node-registry-snapshot")
+    def ops_brain_production_spine_node_registry_snapshot(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.node_registry_snapshot(payload)
+
+    @application.post("/ops/brain/production-spine/federated-packets")
+    def ops_brain_production_spine_federated_packets(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.submit_federated_influence_packet(payload)
+
+    @application.post("/ops/brain/production-spine/dream-cycles")
+    def ops_brain_production_spine_dream_cycles(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.run_recursive_dream_cycle(payload)
+
+    @application.post("/ops/brain/production-spine/runtime-benchmarks")
+    def ops_brain_production_spine_runtime_benchmarks(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.run_runtime_quantization_benchmark(payload)
+
+    @application.post("/ops/brain/production-spine/deep-replay")
+    def ops_brain_production_spine_deep_replay(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.build_deep_replay_bundle(payload)
+
+    @application.post("/ops/brain/production-spine/signed-replay-artifact-trust-rescans")
+    def ops_brain_production_spine_signed_replay_artifact_trust_rescans(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.run_signed_replay_artifact_trust_rescan(payload)
+
+    @application.post("/ops/brain/production-spine/signing-keys/project-local")
+    def ops_brain_production_spine_project_local_signing_key(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.create_project_local_signing_key(payload)
+
+    @application.post("/ops/brain/production-spine/productization-readiness")
+    def ops_brain_production_spine_productization_readiness(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.assess_productization_readiness(payload)
+
+    @application.post("/ops/brain/production-spine/support-bundles")
+    def ops_brain_production_spine_support_bundles(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.build_support_bundle_manifest(payload)
+
+    @application.post("/ops/brain/production-spine/first-run-readiness")
+    def ops_brain_production_spine_first_run_readiness(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.build_first_run_readiness_manifest(payload)
+
+    @application.post("/ops/brain/production-spine/crash-diagnostics")
+    def ops_brain_production_spine_crash_diagnostics(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.build_crash_diagnostics_manifest(payload)
+
+    @application.post("/ops/brain/production-spine/release-packages")
+    def ops_brain_production_spine_release_packages(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.build_release_package_manifest(payload)
+
+    @application.post("/ops/brain/production-spine/release-go-no-go")
+    def ops_brain_production_spine_release_go_no_go(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.build_release_go_no_go_manifest(payload)
+
+    @application.post("/ops/brain/production-spine/runtime-health-monitors")
+    def ops_brain_production_spine_runtime_health_monitors(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.build_runtime_health_monitor_manifest(payload)
+
+    @application.post("/ops/brain/production-spine/teacher-ejection-reviews")
+    def ops_brain_production_spine_teacher_ejection_reviews(payload: dict[str, Any] = Body(...)):
+        return services.brain_production_spine.build_teacher_ejection_review_manifest(payload)
+
+    @application.get("/ops/brain/production-spine/manifest-previews")
+    def ops_brain_production_spine_manifest_previews(cycle_id: str | None = None):
+        return services.brain_production_spine.list_manifest_previews(cycle_id)
+
+    @application.get("/ops/brain/canon/production-spine")
+    def ops_brain_canon_production_spine():
+        return services.brain_production_spine.scorecard()
+
+    @application.get("/ops/brain/eval-registry")
+    def ops_brain_eval_registry(limit: int = 50):
+        return services.brain_eval_registry.summary(limit=limit)
+
+    @application.get("/ops/brain/eval-suites")
+    def ops_brain_eval_suites(limit: int = 50):
+        return services.brain_eval_registry.summary(limit=limit)
+
+    @application.post("/ops/brain/eval-registry/suites")
+    def ops_brain_eval_registry_suites(payload: dict[str, Any] = Body(...)):
+        request = EvalSuiteRequest.model_validate(payload)
+        return services.brain_eval_registry.register(request)
+
+    @application.post("/ops/brain/eval-suites/{suite_id}/run-shadow")
+    def ops_brain_eval_suites_run_shadow(suite_id: str, payload: dict[str, Any] = Body(...)):
+        request = ShadowEvalRunRequest.model_validate(payload)
+        return services.brain_eval_registry.run_shadow(suite_id, request)
+
+    @application.get("/ops/brain/canon/eval-registry")
+    def ops_brain_canon_eval_registry():
+        return services.brain_eval_registry.scorecard()
+
+    @application.get("/ops/brain/artifact-trust")
+    def ops_brain_artifact_trust_registry(limit: int = 50):
+        return services.brain_artifact_trust_registry.summary(limit=limit)
+
+    @application.post("/ops/brain/artifact-trust/scans")
+    def ops_brain_artifact_trust_registry_scans(payload: dict[str, Any] = Body(...)):
+        request = ArtifactScanRequest.model_validate(payload)
+        return services.brain_artifact_trust_registry.scan(request)
+
+    @application.post("/ops/brain/artifact-trust/knowledge-artifacts/scan")
+    def ops_brain_artifact_trust_knowledge_artifact_scan(payload: dict[str, Any] = Body(...)):
+        artifact_id = str(payload.get("artifact_id") or "")
+        if not artifact_id:
+            raise HTTPException(status_code=400, detail="artifact_id is required")
+        artifact = services.brain_knowledge_artifacts.artifact(artifact_id)
+        if artifact is None:
+            raise HTTPException(status_code=404, detail=f"Knowledge artifact not found: {artifact_id}")
+        return services.brain_artifact_trust_registry.scan_knowledge_artifact(artifact)
+
+    @application.get("/ops/brain/canon/artifact-trust-registry")
+    def ops_brain_canon_artifact_trust_registry():
+        return services.brain_artifact_trust_registry.scorecard()
+
+    @application.get("/ops/brain/autonomous-updates")
+    def ops_brain_autonomous_updates(limit: int = 50):
+        return services.brain_autonomous_updates.summary(limit=limit)
+
+    @application.post("/ops/brain/autonomous-updates/proposals")
+    def ops_brain_autonomous_updates_proposals(payload: dict[str, Any] = Body(...)):
+        request = AutonomousUpdateRequest.model_validate(payload)
+        return services.brain_autonomous_updates.propose(request)
+
+    def _release_wrapper_ao_guard_or_400(update_id: str, action: str, endpoint_ref: str) -> dict[str, Any]:
+        guard = release_wrapper_runtime.guard_self_repair_action(
+            update_id=update_id,
+            action=action,
+            endpoint_ref=endpoint_ref,
+        )
+        if guard.get("passed") is True:
+            return guard
+        missing = ", ".join(str(item) for item in guard.get("missing_aos") or []) or "unknown"
+        if action == "apply":
+            detail = f"AO guard receipts required before safe apply; missing AOs: {missing}"
+        else:
+            detail = f"AO guard receipts required before admin self-repair action; missing AOs: {missing}"
+        raise HTTPException(status_code=400, detail=detail)
+
+    def _release_wrapper_privacy_consent_gate_or_400(
+        update_id: str,
+        action: str,
+        endpoint_ref: str,
+    ) -> dict[str, Any]:
+        gate = release_wrapper_runtime.guard_privacy_consent_for_autonomous_update(
+            update_id=update_id,
+            action=action,
+            endpoint_ref=endpoint_ref,
+        )
+        if gate.get("passed") is True:
+            return gate
+        raise HTTPException(status_code=400, detail=gate)
+
+    @application.post("/ops/brain/autonomous-updates/{update_id}/admin-approval")
+    def ops_brain_autonomous_updates_admin_approval(update_id: str, payload: dict[str, Any] = Body(...)):
+        try:
+            endpoint_ref = f"/ops/brain/autonomous-updates/{update_id}/admin-approval"
+            privacy_gate = _release_wrapper_privacy_consent_gate_or_400(
+                update_id,
+                "admin_approval",
+                endpoint_ref,
+            )
+            guard = _release_wrapper_ao_guard_or_400(update_id, "admin_approval", endpoint_ref)
+            approval = services.brain_autonomous_updates.approve(
+                update_id,
+                approved_by=str(payload.get("approved_by") or "admin"),
+                approval_ref=str(payload.get("approval_ref") or ""),
+            )
+            approval["linked_improvement_queue"] = _sync_linked_improvement_queue(
+                update_id,
+                target_status="validated",
+                actor="AutonomousUpdateController",
+                reason="linked autonomous update received admin approval",
+            )
+            approval["linked_eval_replay"] = _run_linked_eval_replay(update_id)
+            approval["release_wrapper_privacy_consent_gate"] = privacy_gate
+            approval["release_wrapper_ao_guard"] = guard
+            approval["release_wrapper_self_repair"] = release_wrapper_runtime.record_self_repair_action(
+                update_id=update_id,
+                action="admin_approval",
+                result=approval,
+                endpoint_ref=endpoint_ref,
+            )
+            return approval
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/autonomous-updates/{update_id}/apply")
+    def ops_brain_autonomous_updates_apply(update_id: str, payload: dict[str, Any] = Body(...)):
+        try:
+            endpoint_ref = f"/ops/brain/autonomous-updates/{update_id}/apply"
+            privacy_gate = _release_wrapper_privacy_consent_gate_or_400(update_id, "apply", endpoint_ref)
+            guard = _release_wrapper_ao_guard_or_400(update_id, "apply", endpoint_ref)
+            applied = services.brain_autonomous_updates.apply_safe(
+                update_id,
+                test_refs=[str(item) for item in (payload.get("test_refs") or [])],
+                test_results=[dict(item) for item in (payload.get("test_results") or []) if isinstance(item, dict)],
+                test_evidence_refs=[str(item) for item in (payload.get("test_evidence_refs") or [])],
+                ao_guard=guard,
+            )
+            applied["linked_improvement_queue"] = _sync_linked_improvement_queue(
+                update_id,
+                target_status="deployed",
+                actor="AutonomousUpdateController",
+                reason="linked autonomous update applied as shadow safe file",
+            )
+            applied["release_wrapper_privacy_consent_gate"] = privacy_gate
+            applied["release_wrapper_ao_guard"] = guard
+            applied["release_wrapper_self_repair"] = release_wrapper_runtime.record_self_repair_action(
+                update_id=update_id,
+                action="apply",
+                result=applied,
+                endpoint_ref=endpoint_ref,
+            )
+            return applied
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/autonomous-updates/{update_id}/sandbox-tests")
+    def ops_brain_autonomous_updates_sandbox_tests(update_id: str, payload: dict[str, Any] = Body(...)):
+        try:
+            endpoint_ref = f"/ops/brain/autonomous-updates/{update_id}/sandbox-tests"
+            privacy_gate = _release_wrapper_privacy_consent_gate_or_400(
+                update_id,
+                "sandbox_tests",
+                endpoint_ref,
+            )
+            guard = _release_wrapper_ao_guard_or_400(update_id, "sandbox_tests", endpoint_ref)
+            evidence = services.brain_autonomous_updates.run_sandbox_tests(
+                update_id,
+                command=str(payload.get("command") or ""),
+                project_root=services.paths.project_root,
+                timeout_seconds=int(payload.get("timeout_seconds") or 60),
+            )
+            if evidence.get("passed") is True:
+                evidence["linked_improvement_queue"] = _sync_linked_improvement_queue(
+                    update_id,
+                    target_status="approved",
+                    actor="AutonomousUpdateController",
+                    reason="linked autonomous update passed isolated sandbox tests",
+                )
+            else:
+                evidence["linked_improvement_queue"] = {
+                    "status": "unchanged",
+                    "update_id": update_id,
+                    "target_status": "approved",
+                    "reason": "sandbox evidence did not pass",
+                }
+            evidence["release_wrapper_privacy_consent_gate"] = privacy_gate
+            evidence["release_wrapper_ao_guard"] = guard
+            evidence["release_wrapper_self_repair"] = release_wrapper_runtime.record_self_repair_action(
+                update_id=update_id,
+                action="sandbox_tests",
+                result=evidence,
+                endpoint_ref=endpoint_ref,
+            )
+            return evidence
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/autonomous-updates/{update_id}/rollback")
+    def ops_brain_autonomous_updates_rollback(update_id: str, payload: dict[str, Any] = Body(...)):
+        try:
+            endpoint_ref = f"/ops/brain/autonomous-updates/{update_id}/rollback"
+            guard = _release_wrapper_ao_guard_or_400(update_id, "rollback", endpoint_ref)
+            rollback = services.brain_autonomous_updates.rollback(
+                update_id,
+                reason=str(payload.get("reason") or "operator-requested-rollback"),
+            )
+            rollback["linked_improvement_queue"] = _sync_linked_improvement_queue(
+                update_id,
+                target_status="reverted",
+                actor="AutonomousUpdateController",
+                reason="linked autonomous update rollback restored previous safe file",
+            )
+            rollback["release_wrapper_ao_guard"] = guard
+            rollback["release_wrapper_self_repair"] = release_wrapper_runtime.record_self_repair_action(
+                update_id=update_id,
+                action="rollback",
+                result=rollback,
+                endpoint_ref=endpoint_ref,
+            )
+            return rollback
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @application.post("/ops/wrapper/release-readiness/run")
+    def ops_wrapper_release_readiness_run(payload: dict[str, Any] = Body(...)):
+        session_id = str(payload.get("session_id") or "")
+        status_card = release_wrapper_runtime.status_card(session_id=session_id or None)
+        lane = (
+            status_card.get("operator_action_lane")
+            if isinstance(status_card.get("operator_action_lane"), dict)
+            else {}
+        )
+        update_id = str(lane.get("proposal_update_id") or payload.get("update_id") or "")
+        if not update_id:
+            raise HTTPException(status_code=400, detail="release wrapper proposal is required before readiness runner")
+        command = str(payload.get("command") or payload.get("sandbox_command") or lane.get("default_sandbox_command") or "")
+        timeout_seconds = int(payload.get("timeout_seconds") or 60)
+        approved_by = str(payload.get("approved_by") or "admin")
+        approval_ref = str(payload.get("approval_ref") or "operator-review::release-readiness-runner")
+        actions: dict[str, dict[str, Any]] = {}
+        actions["admin_approval"] = ops_brain_autonomous_updates_admin_approval(
+            update_id,
+            {
+                "approved_by": approved_by,
+                "approval_ref": approval_ref,
+            },
+        )
+        actions["sandbox_tests"] = ops_brain_autonomous_updates_sandbox_tests(
+            update_id,
+            {
+                "command": command,
+                "timeout_seconds": timeout_seconds,
+            },
+        )
+        if actions["sandbox_tests"].get("passed") is not True:
+            return release_wrapper_runtime.record_release_readiness_evidence_run(
+                session_id=session_id,
+                update_id=update_id,
+                command=command,
+                actions=actions,
+                status="blocked-sandbox-failed",
+            )
+        evidence_ref = str(actions["sandbox_tests"].get("evidence_ref") or "")
+        actions["apply"] = ops_brain_autonomous_updates_apply(
+            update_id,
+            {
+                "test_refs": [command],
+                "test_evidence_refs": [evidence_ref] if evidence_ref else [],
+            },
+        )
+        actions["rollback"] = ops_brain_autonomous_updates_rollback(
+            update_id,
+            {"reason": "release-readiness-runner-rollback-verification"},
+        )
+        return release_wrapper_runtime.record_release_readiness_evidence_run(
+            session_id=session_id,
+            update_id=update_id,
+            command=command,
+            actions=actions,
+            status="completed",
+        )
+
+    @application.post("/ops/wrapper/initial-release-supervisor/run")
+    def ops_wrapper_initial_release_supervisor_run(payload: dict[str, Any] = Body(...)):
+        session_id = str(payload.get("session_id") or "initial-release-supervisor")
+        approved_by = str(payload.get("approved_by") or "admin")
+        approval_ref = str(payload.get("approval_ref") or "operator-review::initial-release-supervisor")
+        readiness_command = str(
+            payload.get("command")
+            or payload.get("sandbox_command")
+            or payload.get("readiness_command")
+            or "pytest tests/test_release_wrapper_runtime.py::test_root_boots_to_release_wrapper_entrypoint -q"
+        )
+        timeout_seconds = int(payload.get("timeout_seconds") or 60)
+        prompts = payload.get("prompts") if isinstance(payload.get("prompts"), list) else []
+        if not prompts:
+            prompts = [
+                "Implement a safe code repair through the NexusNet wrapper release path.",
+                "Research assimilation targets and route the learning into the expert system.",
+                "Exercise federated packet handling and peer-shadow growth evidence.",
+            ]
+
+        heartbeat_supervisor_config = ops_wrapper_release_health_heartbeat_supervisor_configure(
+            {
+                "session_id": session_id,
+                "enabled": True,
+                "interval_seconds": 1,
+                "max_pulses_per_tick": 1,
+                "schedule_immediately": True,
+                "configured_by": "initial-release-supervisor",
+            }
+        )
+        chat_refs: list[str] = []
+        chat_attempt_count = len(prompts[:3])
+        for index, prompt in enumerate(prompts[:3]):
+            chat_payload = {
+                "session_id": session_id,
+                "model": str(payload.get("model") or "nexusnet-offline"),
+                "messages": [{"role": "user", "content": str(prompt)}],
+                "metadata": {"initial_release_supervisor_step": index + 1},
+            }
+            chat_result = openai_compatible_chat_completions(chat_payload)
+            nexusnet_payload = chat_result.get("nexusnet") if isinstance(chat_result, dict) else {}
+            trace_id = nexusnet_payload.get("trace_id") if isinstance(nexusnet_payload, dict) else None
+            if trace_id:
+                chat_refs.append(f"trace::{trace_id}")
+
+        runtime_after_chats = ops_wrapper_release_runtime(session_id=session_id)
+        status_after_chats = ops_wrapper_status_card(session_id=session_id)
+        lane = (
+            status_after_chats.get("operator_action_lane")
+            if isinstance(status_after_chats.get("operator_action_lane"), dict)
+            else {}
+        )
+        update_id = str(lane.get("proposal_update_id") or payload.get("update_id") or "")
+        fallback_proposal: dict[str, Any] | None = None
+        if not update_id:
+            update_id = f"update::initial-release-supervisor::{_privacy_compat_digest(session_id)}"
+            fallback_proposal = ops_brain_autonomous_updates_proposals(
+                {
+                    "update_id": update_id,
+                    "update_type": "prompt_policy",
+                    "target_ref": "safe-artifact::initial-release-supervisor",
+                    "requested_state": "proposal",
+                    "eval_refs": [*chat_refs, "initial-release-supervisor::live-wrapper-path"],
+                    "artifact_trust_refs": [
+                        str((runtime_after_chats.get("latest_federated_packet") or {}).get("packet_signature") or "wrapper-packet")
+                    ],
+                    "rollback_plan": "restore-previous-initial-release-supervisor-safe-file",
+                    "monitoring_plan": readiness_command,
+                    "operator_approved": False,
+                    "sandbox_ref": "initial-release-supervisor",
+                    "metadata": {
+                        "source": "release-wrapper-initial-release-supervisor",
+                        "session_ref_digest": f"sha256:{_privacy_compat_digest(session_id)}",
+                        "safe_payload": {
+                            "surface_id": "release-wrapper-initial-release-supervisor",
+                            "chat_ref_count": len(chat_refs),
+                        },
+                        "safe_file_scope": ["artifacts/autonomous-updates/safe-files"],
+                        "active_production_mutation_allowed": False,
+                    },
+                }
+            )
+
+        try:
+            heartbeat_repair_run = ops_wrapper_release_health_heartbeat_supervisor_repair_run(
+                {
+                    "session_id": session_id,
+                    "command": readiness_command,
+                    "timeout_seconds": timeout_seconds,
+                    "approved_by": approved_by,
+                    "approval_ref": f"{approval_ref}::heartbeat-supervisor-repair",
+                }
+            )
+        except HTTPException as exc:
+            if (
+                int(exc.status_code) != 400
+                or str(exc.detail) != "heartbeat supervisor repair requires a pulse repair proposal update_id"
+            ):
+                raise
+            heartbeat_repair_run = {
+                "surface_id": "release-health-heartbeat-supervisor-repair-run",
+                "status": "not-required",
+                "detail": "heartbeat supervisor had no pulse repair proposal for this product-smoke pass",
+                "session_ref_digest": f"sha256:{_privacy_compat_digest(session_id)}",
+                "actions": {},
+                "readiness_evidence_run": {
+                    "surface_id": "release-wrapper-readiness-evidence-run",
+                    "status": "not-required",
+                    "raw_content_included": False,
+                    "active_production_mutation_allowed": False,
+                    "active_production_mutated": False,
+                },
+                "subsystem_repair_envelopes": [],
+                "subsystem_repair_envelope_count": 0,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        packet = runtime_after_chats.get("latest_federated_packet")
+        if not isinstance(packet, dict) or not packet:
+            raise HTTPException(status_code=400, detail="initial release supervisor requires a real wrapper federated packet")
+        imported_packet = ops_wrapper_import_federated_packet(
+            {
+                "session_id": session_id,
+                "peer_node_id": str(payload.get("peer_node_id") or "initial-release-supervisor-peer"),
+                "packet": packet,
+            }
+        )
+        domain_replay = ops_wrapper_domain_expert_growth_admin_replay(
+            {
+                "session_id": session_id,
+                "domain_ao": str(payload.get("domain_ao") or "FederationAO"),
+                "approved_by": approved_by,
+                "approval_ref": f"{approval_ref}::domain-expert-growth",
+                "requested_decision": "approved",
+            }
+        )
+        readiness_run = ops_wrapper_release_readiness_run(
+            {
+                "session_id": session_id,
+                "update_id": update_id,
+                "command": readiness_command,
+                "timeout_seconds": timeout_seconds,
+                "approved_by": approved_by,
+                "approval_ref": approval_ref,
+            }
+        )
+        lifecycle_approval = ops_approvals(
+            ApprovalRequest.model_validate(
+                {
+                    "subject": production_spine_lifecycle_approval_subject,
+                    "decision": "approved",
+                    "approver": approved_by,
+                    "rationale": "Initial release supervisor whole-system shadow lifecycle approval.",
+                    "metadata": {
+                        "session_ref_digest": f"sha256:{_privacy_compat_digest(session_id)}",
+                        "surface_id": "release-wrapper-initial-release-supervisor",
+                    },
+                }
+            )
+        )
+        production_lifecycle = ops_wrapper_production_spine_release_lifecycle_run(
+            {
+                "session_id": session_id,
+                "approval_decision_id": lifecycle_approval["decision_id"],
+                "operator_approved": True,
+                "human_approved": True,
+            }
+        )
+        production_rollback = ops_wrapper_production_spine_release_lifecycle_rollback(
+            str(production_lifecycle.get("run_id") or ""),
+            {"session_id": session_id, "reason": "initial-release-supervisor-rollback-verification"},
+        )
+        boot_supervisor = ops_wrapper_boot_supervisor_run(
+            {
+                "session_id": session_id,
+                "base_url": str(payload.get("base_url") or "http://127.0.0.1:0"),
+                "host": str(payload.get("host") or "127.0.0.1"),
+                "port": int(payload.get("port") or 0),
+                "pid": int(payload.get("pid") or 0),
+                "readiness_command": readiness_command,
+            }
+        )
+        release_readiness = ops_wrapper_release_readiness(session_id=session_id)
+        runtime_after_release = ops_wrapper_release_runtime(session_id=session_id)
+        release_health_heartbeat_supervisor = (
+            runtime_after_release.get("release_health_heartbeat_supervisor")
+            if isinstance(runtime_after_release.get("release_health_heartbeat_supervisor"), dict)
+            else {}
+        )
+        native_hive_heartbeat_history = release_native_hive_heartbeat_history_evidence(
+            runtime_after_release.get("native_hive_heartbeat")
+            if isinstance(runtime_after_release.get("native_hive_heartbeat"), dict)
+            else {}
+        )
+        heartbeat_repair_actions = (
+            heartbeat_repair_run.get("actions") if isinstance(heartbeat_repair_run.get("actions"), dict) else {}
+        )
+        heartbeat_repair_action_statuses = {
+            "admin_approval": str(
+                (heartbeat_repair_actions.get("admin_approval") or {}).get("status") or "not-approved"
+            ),
+            "shadow_eval_replay": str(
+                (heartbeat_repair_actions.get("shadow_eval_replay") or {}).get("status") or "not-run"
+            ),
+            "sandbox_tests": str(
+                (heartbeat_repair_actions.get("sandbox_tests") or {}).get("status") or "not-run"
+            ),
+            "apply": str((heartbeat_repair_actions.get("apply") or {}).get("status") or "not-applied"),
+            "rollback": str((heartbeat_repair_actions.get("rollback") or {}).get("status") or "not-rolled-back"),
+        }
+        heartbeat_repair_evidence_run = (
+            heartbeat_repair_run.get("readiness_evidence_run")
+            if isinstance(heartbeat_repair_run.get("readiness_evidence_run"), dict)
+            else {}
+        )
+        generated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        action_statuses = {
+            "wrapper_interactions": "recorded" if chat_attempt_count else "not-recorded",
+            "native_hive_heartbeat_history": str(native_hive_heartbeat_history.get("status") or "stale-or-missing"),
+            "release_health_heartbeat_supervisor": str(
+                release_health_heartbeat_supervisor.get("status")
+                or heartbeat_supervisor_config.get("status")
+                or "disabled"
+            ),
+            "release_health_heartbeat_supervisor_repair": str(heartbeat_repair_run.get("status") or "not-run"),
+            "federated_packet_import": str(imported_packet.get("status") or "not-recorded"),
+            "domain_expert_growth_admin_replay": str(domain_replay.get("status") or "not-recorded"),
+            "release_readiness_runner": str(readiness_run.get("status") or "not-run"),
+            "production_spine_release_lifecycle": str(production_lifecycle.get("status") or "not-run"),
+            "production_spine_release_lifecycle_rollback": str(production_rollback.get("status") or "not-rolled-back"),
+            "boot_supervisor": str(boot_supervisor.get("status") or "not-run"),
+        }
+        heartbeat_repair_status = str(heartbeat_repair_run.get("status") or "not-run")
+        heartbeat_repair_ok = heartbeat_repair_status in {"completed", "not-required"}
+        status = (
+            "initial-release-go"
+            if release_readiness.get("go_no_go") == "go"
+            and boot_supervisor.get("status") == "boot-smoke-passed"
+            and native_hive_heartbeat_history.get("status") == "fresh"
+            and native_hive_heartbeat_history.get("latest_fresh") is True
+            and release_health_heartbeat_supervisor.get("status") == "enabled"
+            and int(release_health_heartbeat_supervisor.get("pulse_count") or 0) > 0
+            and heartbeat_repair_ok
+            and production_lifecycle.get("status") == "approved-shadow-release-lifecycle"
+            and production_rollback.get("status") == "rolled-back"
+            else "initial-release-blocked"
+        )
+        artifact_path = release_wrapper_runtime.runtime_dir / "initial-release-supervisor.json"
+        manifest = {
+            "schema_version": "nexusnet-release-wrapper-initial-release-supervisor-v1",
+            "surface_id": "release-wrapper-initial-release-supervisor",
+            "manifest_id": f"initial-release-supervisor::{_privacy_compat_digest(generated_at + session_id)}",
+            "generated_at": generated_at,
+            "authority": "NexusBrain",
+            "status_label": "LOCKED CANON",
+            "status": status,
+            "honest_status_label": status,
+            "product_surface": "wrapper",
+            "product_scope": "whole-system",
+            "session_ref_digest": f"sha256:{_privacy_compat_digest(session_id)}",
+            "actions": {
+                "wrapper_interactions": {
+                    "status": action_statuses["wrapper_interactions"],
+                    "interaction_count": chat_attempt_count,
+                    "trace_refs": chat_refs,
+                    "raw_content_included": False,
+                },
+                "native_hive_heartbeat_history": native_hive_heartbeat_history,
+                "release_health_heartbeat_supervisor": {
+                    "status": action_statuses["release_health_heartbeat_supervisor"],
+                    "pulse_count": int(release_health_heartbeat_supervisor.get("pulse_count") or 0),
+                    "latest_pulse_id": release_health_heartbeat_supervisor.get("latest_pulse_id"),
+                    "latest_loop_id": release_health_heartbeat_supervisor.get("latest_loop_id"),
+                    "next_due_status": release_health_heartbeat_supervisor.get("next_due_status"),
+                    "raw_content_included": False,
+                    "active_production_mutation_allowed": False,
+                },
+                "release_health_heartbeat_supervisor_repair": {
+                    "status": action_statuses["release_health_heartbeat_supervisor_repair"],
+                    "update_id": heartbeat_repair_run.get("update_id"),
+                    "source_pulse_id": heartbeat_repair_run.get("source_pulse_id"),
+                    "source_loop_id": heartbeat_repair_run.get("source_loop_id"),
+                    "source_heartbeat_id": heartbeat_repair_run.get("source_heartbeat_id"),
+                    "readiness_run_id": heartbeat_repair_evidence_run.get("run_id"),
+                    "readiness_evidence_status": heartbeat_repair_evidence_run.get("status"),
+                    "action_statuses": heartbeat_repair_action_statuses,
+                    "active_production_mutated": bool(heartbeat_repair_run.get("active_production_mutated")),
+                    "raw_content_included": False,
+                    "active_production_mutation_allowed": False,
+                },
+                "autonomous_update_proposal": {
+                    "status": str((fallback_proposal or {}).get("status") or "existing-proposal-used"),
+                    "update_id": update_id,
+                    "raw_content_included": False,
+                    "active_production_mutation_allowed": False,
+                },
+                "federated_packet_import": {
+                    "status": action_statuses["federated_packet_import"],
+                    "import_id": imported_packet.get("import_id"),
+                    "raw_content_included": False,
+                    "active_production_mutation_allowed": False,
+                },
+                "domain_expert_growth_admin_replay": {
+                    "status": action_statuses["domain_expert_growth_admin_replay"],
+                    "run_id": domain_replay.get("run_id"),
+                    "promotion_decision": domain_replay.get("promotion_decision"),
+                    "raw_content_included": False,
+                    "active_production_mutation_allowed": False,
+                },
+                "release_readiness_runner": {
+                    "status": action_statuses["release_readiness_runner"],
+                    "run_id": readiness_run.get("run_id"),
+                    "readiness_after": readiness_run.get("readiness_after"),
+                    "active_production_mutated": bool(readiness_run.get("active_production_mutated")),
+                    "raw_content_included": False,
+                },
+                "production_spine_release_lifecycle": {
+                    "status": action_statuses["production_spine_release_lifecycle"],
+                    "run_id": production_lifecycle.get("run_id"),
+                    "step_counts": production_lifecycle.get("step_counts") or {},
+                    "governance_status": (
+                        (production_lifecycle.get("authority_evidence_tool_governance") or {}).get("status")
+                        if isinstance(production_lifecycle.get("authority_evidence_tool_governance"), dict)
+                        else None
+                    ),
+                    "release_manifest_status": (
+                        (production_lifecycle.get("release_manifest_status_rollup") or {}).get("status")
+                        if isinstance(production_lifecycle.get("release_manifest_status_rollup"), dict)
+                        else None
+                    ),
+                    "raw_content_included": False,
+                    "active_production_mutation_allowed": False,
+                },
+                "production_spine_release_lifecycle_rollback": {
+                    "status": action_statuses["production_spine_release_lifecycle_rollback"],
+                    "rollback_id": production_rollback.get("rollback_id"),
+                    "rollback_restored": bool(production_rollback.get("rollback_restored")),
+                    "raw_content_included": False,
+                    "active_production_mutation_allowed": False,
+                },
+                "boot_supervisor": {
+                    "status": action_statuses["boot_supervisor"],
+                    "manifest_id": boot_supervisor.get("manifest_id"),
+                    "pass_count": boot_supervisor.get("pass_count"),
+                    "failed_count": boot_supervisor.get("failed_count"),
+                    "raw_content_included": False,
+                    "active_production_mutation_allowed": False,
+                },
+            },
+            "action_statuses": action_statuses,
+            "release_readiness": {
+                "surface_id": release_readiness.get("surface_id"),
+                "go_no_go": release_readiness.get("go_no_go"),
+                "passed_check_count": release_readiness.get("passed_check_count"),
+                "blocked_check_count": release_readiness.get("blocked_check_count"),
+                "blockers": release_readiness.get("blockers") or [],
+            },
+            "boot_supervisor": {
+                "surface_id": boot_supervisor.get("surface_id"),
+                "status": boot_supervisor.get("status"),
+                "manifest_id": boot_supervisor.get("manifest_id"),
+                "pass_count": boot_supervisor.get("pass_count"),
+                "failed_count": boot_supervisor.get("failed_count"),
+            },
+            "endpoint_refs": {
+                "initial_release_supervisor_run": "/ops/wrapper/initial-release-supervisor/run",
+                "release_runtime": "/ops/wrapper/release-runtime",
+                "release_readiness": "/ops/wrapper/release-readiness",
+                "release_readiness_runner": "/ops/wrapper/release-readiness/run",
+                "release_health_heartbeat_supervisor_configure": (
+                    "/ops/wrapper/release-health-heartbeat/supervisor/configure"
+                ),
+                "release_health_heartbeat_supervisor_repair_run": (
+                    "/ops/wrapper/release-health-heartbeat/supervisor/repair-run"
+                ),
+                "production_spine_release_lifecycle_run": "/ops/wrapper/production-spine-release-lifecycle/run",
+                "boot_supervisor_run": "/ops/wrapper/boot-supervisor/run",
+            },
+            "artifact_path": str(artifact_path),
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "active_production_mutated": bool(readiness_run.get("active_production_mutated")),
+            "privacy_boundary": "sanitized-status-ids-counts-digests-only-no-raw-prompts-outputs-session-ids",
+            "mutation_boundary": "admin-approved-shadow-safe-file-production-spine-and-boot-evidence-only",
+        }
+        artifact_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+        return manifest
+
+    @application.post("/ops/wrapper/release-product-smoke/run")
+    def ops_wrapper_release_product_smoke_run(payload: dict[str, Any] | None = Body(default=None)):
+        payload = payload or {}
+        session_id = str(payload.get("session_id") or "release-product-smoke")
+        readiness_command = str(
+            payload.get("command")
+            or payload.get("sandbox_command")
+            or payload.get("readiness_command")
+            or "pytest tests/test_release_wrapper_runtime.py::test_root_boots_to_release_wrapper_entrypoint -q"
+        )
+        base_url = str(payload.get("base_url") or "http://127.0.0.1:0")
+        host = str(payload.get("host") or "127.0.0.1")
+        port = int(payload.get("port") or 0)
+        pid = int(payload.get("pid") or 0)
+        payload_prompts = [str(prompt) for prompt in payload.get("prompts", [])] if isinstance(payload.get("prompts"), list) else []
+        smoke_prompts = [
+            *(payload_prompts[:1] or ["Exercise the NexusNet release product smoke path."]),
+            "Research assimilation targets and route the learning into the expert system.",
+            "Exercise federated packet handling and peer-shadow growth evidence.",
+        ]
+        initial_release = ops_wrapper_initial_release_supervisor_run(
+            {
+                "session_id": session_id,
+                "base_url": base_url,
+                "host": host,
+                "port": port,
+                "pid": pid,
+                "readiness_command": readiness_command,
+                "timeout_seconds": int(payload.get("timeout_seconds") or 60),
+                "approved_by": str(payload.get("approved_by") or "admin"),
+                "approval_ref": str(payload.get("approval_ref") or "operator-review::release-product-smoke"),
+                "prompts": smoke_prompts,
+                "model": str(payload.get("model") or "nexusnet-offline"),
+                "peer_node_id": str(payload.get("peer_node_id") or "release-product-smoke-peer"),
+                "domain_ao": str(payload.get("domain_ao") or "FederationAO"),
+                "update_id": str(payload.get("update_id") or ""),
+            }
+        )
+        runtime = ops_wrapper_release_runtime(session_id=session_id)
+        readiness = ops_wrapper_release_readiness(session_id=session_id)
+        status_card = ops_wrapper_status_card(session_id=session_id)
+        session_lifecycle = ops_wrapper_session_lifecycle(session_id=session_id)
+        visualizer = ops_brain_visualizer_state(session_id=session_id)
+        overlay = visualizer.get("overlay_state") if isinstance(visualizer, dict) else {}
+        control_panel = overlay.get("control_panel") if isinstance(overlay, dict) else {}
+        if not isinstance(control_panel, dict):
+            control_panel = {}
+        return release_wrapper_runtime.record_release_product_smoke_run(
+            session_id=session_id,
+            base_url=base_url,
+            host=host,
+            port=port,
+            pid=pid,
+            readiness_command=readiness_command,
+            initial_release_supervisor=initial_release,
+            runtime=runtime,
+            readiness=readiness,
+            status_card=status_card,
+            session_lifecycle=session_lifecycle,
+            control_panel=control_panel,
+        )
+
+    @application.get("/ops/brain/canon/autonomous-updates")
+    def ops_brain_canon_autonomous_updates():
+        return services.brain_autonomous_updates.scorecard()
+
+    @application.get("/ops/brain/genai-observability")
+    def ops_brain_genai_observability(limit: int = 50):
+        return services.brain_genai_observability.summary(limit=limit)
+
+    @application.post("/ops/brain/genai-observability/traces")
+    def ops_brain_genai_observability_traces(payload: dict[str, Any] = Body(...)):
+        request = GenAITraceEventRequest.model_validate(payload)
+        return services.brain_genai_observability.record(request)
+
+    @application.get("/ops/brain/trace-schema")
+    def ops_brain_trace_schema():
+        return services.brain_genai_observability.trace_schema()
+
+    @application.get("/ops/brain/trace-schema/otel-projection/{trace_id}")
+    def ops_brain_trace_schema_otel_projection(trace_id: str):
+        projection = services.brain_genai_observability.otel_projection(trace_id)
+        if projection is None:
+            raise HTTPException(status_code=404, detail=f"Trace not found: {trace_id}")
+        return projection
+
+    @application.get("/ops/brain/canon/genai-observability")
+    def ops_brain_canon_genai_observability():
+        return services.brain_genai_observability.scorecard()
+
+    @application.get("/ops/brain/concept-telemetry")
+    def ops_brain_concept_telemetry():
+        return services.brain_concept_telemetry.summary()
+
+    @application.post("/ops/brain/concept-telemetry/concepts")
+    def ops_brain_concept_telemetry_concepts(payload: dict[str, Any] = Body(...)):
+        return services.brain_concept_telemetry.record_concept(ConceptTelemetryRequest.model_validate(payload))
+
+    @application.post("/ops/brain/concept-telemetry/sae-experiments")
+    def ops_brain_concept_telemetry_sae(payload: dict[str, Any] = Body(...)):
+        return services.brain_concept_telemetry.record_sae_experiment(SAEExperimentRequest.model_validate(payload))
+
+    @application.get("/ops/brain/forward-radar")
+    def ops_brain_forward_radar(limit: int = 50):
+        return services.brain_forward_radar.summary(limit=limit)
+
+    @application.get("/ops/brain/forward-radar/{radar_id}")
+    def ops_brain_forward_radar_candidate(radar_id: str):
+        candidate = services.brain_forward_radar.get(radar_id)
+        if candidate is None:
+            raise HTTPException(status_code=404, detail=f"Forward Radar candidate not found: {radar_id}")
+        return candidate
+
+    @application.post("/ops/brain/forward-radar/{radar_id}/review")
+    def ops_brain_forward_radar_review(radar_id: str, payload: dict[str, Any] = Body(...)):
+        request = ForwardRadarCandidateRequest.model_validate(payload)
+        return services.brain_forward_radar.review(radar_id, request)
+
+    @application.get("/ops/brain/canon/forward-radar")
+    def ops_brain_canon_forward_radar():
+        return services.brain_forward_radar.scorecard()
+
+    @application.get("/ops/brain/self-review")
+    def ops_brain_self_review(limit: int = 50):
+        return services.brain_self_review.summary(limit=limit)
+
+    @application.post("/ops/brain/self-review/reviews")
+    def ops_brain_self_review_reviews(payload: dict[str, Any] = Body(...)):
+        request = SelfReviewRequest.model_validate(payload)
+        return services.brain_self_review.review(request)
+
+    @application.get("/ops/brain/canon/self-review")
+    def ops_brain_canon_self_review():
+        return services.brain_self_review.scorecard()
+
+    @application.get("/ops/brain/memory-quality")
+    def ops_brain_memory_quality(limit: int = 50):
+        return services.brain_memory_quality.summary(limit=limit)
+
+    @application.post("/ops/brain/memory-quality/claims")
+    def ops_brain_memory_quality_claims(payload: dict[str, Any] = Body(...)):
+        request = SourceClaimRequest.model_validate(payload)
+        return services.brain_memory_quality.record_claim(request)
+
+    @application.get("/ops/brain/canon/memory-quality")
+    def ops_brain_canon_memory_quality():
+        return services.brain_memory_quality.scorecard()
+
+    @application.get("/ops/brain/memory/engram")
+    def ops_brain_memory_engram():
+        return services.brain_engram_memory.summary()
+
+    @application.post("/ops/brain/memory/engram/records")
+    def ops_brain_memory_engram_records(payload: dict[str, Any] = Body(...)):
+        request = EngramRecordRequest.model_validate(payload)
+        return services.brain_engram_memory.store(request)
+
+    @application.post("/ops/brain/memory/engram/lookup")
+    def ops_brain_memory_engram_lookup(payload: dict[str, Any] = Body(...)):
+        request = EngramLookupRequest.model_validate(payload)
+        return services.brain_engram_memory.lookup(request)
+
+    @application.get("/ops/brain/canon/engram-memory")
+    def ops_brain_canon_engram_memory():
+        return services.brain_engram_memory.scorecard()
+
+    @application.get("/ops/brain/canon/protocol-trust")
+    def ops_brain_canon_protocol_trust(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        return protocol_trust_scorecard(realization)
+
+    @application.get("/ops/brain/canon/communication-integration")
+    def ops_brain_canon_communication_integration(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        return communication_integration_scorecard(realization)
+
+    @application.get("/ops/brain/canon/eval-suite")
+    def ops_brain_canon_eval_suite(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        return eval_suite_scorecard(realization)
+
+    @application.get("/ops/brain/canon/memory-provenance")
+    def ops_brain_canon_memory_provenance(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        return memory_provenance_scorecard(realization)
+
+    @application.get("/ops/brain/canon/artifact-trust")
+    def ops_brain_canon_artifact_trust(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        return artifact_trust_scorecard(realization)
+
+    @application.get("/ops/brain/canon/hardware-matrix")
+    def ops_brain_canon_hardware_matrix(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        return hardware_matrix_scorecard(realization)
+
+    @application.get("/ops/brain/hardware-matrix")
+    def ops_brain_hardware_matrix(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        return hardware_matrix_scorecard(realization)
+
+    @application.get("/ops/brain/canon/visualops")
+    def ops_brain_canon_visualops(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        return visualops_scorecard(realization)
+
+    @application.get("/ops/brain/canon/input-ingestion")
+    def ops_brain_canon_input_ingestion(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        operations_summary = services.brain_operations.summary(session_id=session_id)
+        return input_ingestion_scorecard(realization, operations_summary=operations_summary)
+
+    @application.get("/ops/brain/canon/live-flow")
+    def ops_brain_canon_live_flow(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        operations_summary = services.brain_operations.summary(session_id=session_id)
+        return live_flow_scorecard(realization, operations_summary=operations_summary)
+
+    @application.get("/ops/brain/canon/neural-core")
+    def ops_brain_canon_neural_core(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        operations_summary = services.brain_operations.summary(session_id=session_id)
+        return neural_core_scorecard(realization, operations_summary=operations_summary)
+
+    @application.get("/ops/brain/canon/tool-execution")
+    def ops_brain_canon_tool_execution(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        return tool_execution_scorecard(realization)
+
+    @application.get("/ops/brain/canon/output-delivery")
+    def ops_brain_canon_output_delivery(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        return output_delivery_scorecard(realization)
+
+    @application.get("/ops/brain/canon/ao-hive")
+    def ops_brain_canon_ao_hive(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        operations_summary = services.brain_operations.summary(session_id=session_id)
+        return ao_hive_scorecard(
+            realization,
+            ao_snapshot=services.brain_aos.snapshot().model_dump(mode="json"),
+            operations_summary=operations_summary,
+        )
+
+    @application.get("/ops/brain/canon/experts-hive")
+    def ops_brain_canon_experts_hive(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        operations_summary = services.brain_operations.summary(session_id=session_id)
+        return experts_hive_scorecard(
+            realization,
+            operations_summary=operations_summary,
+        )
+
+    @application.get("/ops/brain/canon/observability")
+    def ops_brain_canon_observability(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        return observability_scorecard(realization)
+
+    @application.get("/ops/brain/canon/security-governance")
+    def ops_brain_canon_security_governance(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        return security_governance_scorecard(realization)
+
+    @application.get("/ops/brain/canon/blackbox")
+    def ops_brain_canon_blackbox(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        payload = blackbox_recorder(realization)
+        payload.setdefault("scorecard_refs", {})["growth_engine"] = "/ops/brain/canon/growth-engine"
+        payload.setdefault("scorecard_refs", {})["knowledge_artifacts"] = "/ops/brain/canon/knowledge-artifacts"
+        return payload
+
+    @application.get("/ops/brain/canon/hive-consensus")
+    def ops_brain_canon_hive_consensus(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        operations_summary = services.brain_operations.summary(session_id=session_id)
+        control_panel = services.brain_visualizer.state(session_id=session_id)["overlay_state"]["control_panel"]
+        return hive_consensus_scorecard(
+            realization,
+            operations_summary=operations_summary,
+            hive_mind=control_panel.get("hive_mind") or {},
+        )
+
+    @application.get("/ops/brain/canon/researcher-swarm")
+    def ops_brain_canon_researcher_swarm(session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        return researcher_swarm_scorecard(realization)
+
+    @application.get("/ops/brain/canon/answers/{question_id}")
+    def ops_brain_canon_answers(question_id: str, session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        answer = answer_operator_question(realization, question_id)
+        if answer is None:
+            raise HTTPException(status_code=404, detail=f"Unknown canon operator question: {question_id}")
+        return answer
+
+    @application.post("/ops/brain/canon/answers/{question_id}/events")
+    def ops_brain_canon_answer_events(
+        question_id: str,
+        actor: str = Body(...),
+        detail: str = Body(...),
+        session_id: str | None = Body(default=None),
+        command_id: str | None = Body(default=None),
+        metadata: dict[str, Any] | None = Body(default=None),
+    ):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        answer = answer_operator_question(realization, question_id)
+        if answer is None:
+            raise HTTPException(status_code=404, detail=f"Unknown canon operator question: {question_id}")
+        selected_command_id = command_id or answer.get("active_command_id") or (
+            (realization.get("live_bindings") or {}).get("active_command_id")
+        )
+        if not selected_command_id:
+            raise HTTPException(status_code=409, detail="No active NexusBrain command is available for this answer event.")
+        event_payload = services.brain_operations.record_event(
+            command_id=selected_command_id,
+            session_id=session_id,
+            event_type=question_id,
+            actor=actor,
+            detail=detail,
+            metadata={
+                **(metadata or {}),
+                "canon_question_id": question_id,
+                "surface_id": answer.get("surface_id"),
+            },
+        )
+        updated_realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        updated_answer = answer_operator_question(updated_realization, question_id)
+        return {
+            "status_label": "LOCKED CANON",
+            "event": event_payload["event"],
+            "command": event_payload["command"],
+            "answer": updated_answer,
+        }
+
+    @application.get("/ops/brain/canon/surfaces/{surface_id}")
+    def ops_brain_canon_surfaces(surface_id: str, session_id: str | None = None):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        drilldown = surface_drilldown(realization, surface_id)
+        if drilldown is None:
+            raise HTTPException(status_code=404, detail=f"Unknown canon surface: {surface_id}")
+        return drilldown
+
+    @application.post("/ops/brain/canon/realize-next")
+    def ops_brain_canon_realize_next(
+        session_id: str | None = Body(default=None),
+        surface_id: str | None = Body(default=None),
+    ):
+        realization = services.brain_visualizer.canon_realization(session_id=session_id)
+        surfaces = realization.get("surfaces") or {}
+        target = None
+        if surface_id:
+            target = surfaces.get(surface_id)
+            if not target:
+                raise HTTPException(status_code=404, detail=f"Unknown canon surface: {surface_id}")
+        else:
+            for item in realization.get("blocking_items") or []:
+                target = surfaces.get(item.get("surface_id"))
+                if target:
+                    break
+        if not target:
+            raise HTTPException(status_code=409, detail="No canon realization gap is available to command.")
+        command_text = (
+            f"Realize Canon surface {target.get('label')}: {target.get('next_action')} "
+            f"Requirement: {target.get('canon_requirement')} "
+            f"Promotion gate: {target.get('promotion_gate')}"
+        )
+        issued = services.brain_operations.issue_command(
+            session_id=session_id,
+            command_text=command_text,
+            priority="high",
+            target_surface="mission-control-cockpit",
+            context={
+                "source": "canon-realization",
+                "surface_id": target.get("surface_id"),
+                "surface_state": target.get("state"),
+                "canon_requirement": target.get("canon_requirement"),
+            },
+        )
+        return {
+            "status_label": "LOCKED CANON",
+            "target_surface": target,
+            "command": issued["command"],
+            "signal_contract": issued["signal_contract"],
+            "canon_binding": issued["canon_binding"],
+        }
 
     @application.get("/ops/brain/visualizer/replay")
     def ops_brain_visualizer_replay(session_id: str | None = None, limit: int = 12):
@@ -605,6 +3434,31 @@ def create_app(project_root: str | None = None) -> FastAPI:
     @application.get("/ops/brain/vision/edge-benchmark")
     def ops_brain_vision_edge_benchmark(provider_id: str | None = None):
         return services.brain_edge_vision.benchmark(provider_id=provider_id)
+
+    @application.get("/ops/brain/multimodal-computer-use")
+    def ops_brain_multimodal_computer_use(limit: int = 50):
+        return services.brain_multimodal_computer_use.summary(limit=limit)
+
+    @application.get("/ops/brain/operator-events")
+    def ops_brain_operator_events():
+        return services.brain_operator_events.summary()
+
+    @application.post("/ops/brain/operator-events")
+    def ops_brain_operator_events_record(payload: dict[str, Any] = Body(...)):
+        return services.brain_operator_events.record(OperatorEventRequest.model_validate(payload))
+
+    @application.post("/ops/brain/multimodal-computer-use/plans")
+    def ops_brain_multimodal_computer_use_plans(payload: dict[str, Any] = Body(...)):
+        request = ComputerUsePlanRequest.model_validate(payload)
+        return services.brain_multimodal_computer_use.plan(request)
+
+    @application.get("/ops/brain/computer-use/safety-cases")
+    def ops_brain_computer_use_safety_cases():
+        return services.brain_multimodal_computer_use.safety_cases()
+
+    @application.get("/ops/brain/canon/multimodal-computer-use")
+    def ops_brain_canon_multimodal_computer_use():
+        return services.brain_multimodal_computer_use.scorecard()
 
     @application.get("/ops/brain/recipes")
     def ops_brain_recipes():
@@ -1311,6 +4165,18 @@ def create_app(project_root: str | None = None) -> FastAPI:
             },
         }
 
+    @application.get("/ops/brain/retrieval/planner")
+    def ops_brain_retrieval_planner():
+        return services.brain_retrieval_planner.summary()
+
+    @application.post("/ops/brain/retrieval/plans")
+    def ops_brain_retrieval_plans(payload: dict[str, Any] = Body(...)):
+        return services.brain_retrieval_planner.plan(RetrievalPlanRequest.model_validate(payload))
+
+    @application.get("/ops/brain/canon/retrieval-planner")
+    def ops_brain_canon_retrieval_planner():
+        return services.brain_retrieval_planner.summary()
+
     @application.get("/ops/brain/retrieval/rerank-benchmark")
     def ops_brain_retrieval_rerank_benchmark(
         query: str,
@@ -1769,6 +4635,12 @@ def create_app(project_root: str | None = None) -> FastAPI:
     @application.post("/chat")
     def chat(request: ChatRequest):
         result = services.operator.execute_chat(request)
+        # Feed the release wrapper runtime: real use updates assimilation, global growth,
+        # sanitized federation packets, and shadow-only autonomous update proposals.
+        try:
+            release_wrapper_runtime.record_chat_turn(request=request, result=result)
+        except Exception:
+            pass
         return {
             "ok": result.status != "error",
             "status": result.status,
@@ -1792,9 +4664,213 @@ def create_app(project_root: str | None = None) -> FastAPI:
             "critique": result.critique.model_dump(mode="json") if result.critique else None,
         }
 
+    @application.post("/v1/chat/completions")
+    def openai_compatible_chat_completions(payload: dict[str, Any] = Body(...)):
+        stream = bool(payload.get("stream"))
+        messages = payload.get("messages") or []
+        if not isinstance(messages, list) or not messages:
+            raise HTTPException(status_code=400, detail="messages must be a non-empty list")
+        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        session_id = str(payload.get("user") or metadata.get("session_id") or payload.get("session_id") or "")
+        requested_model = str(payload.get("model") or "")
+        provider = provider_registry.get(requested_model) if requested_model else None
+        if provider is not None:
+            if not session_id:
+                session_id = f"openai-compatible-{_privacy_compat_digest(str(messages))}"
+            provider_result = provider_registry.complete(requested_model, messages)
+            if not provider_result.get("ok"):
+                release_wrapper_runtime.record_provider_turn(
+                    session_id=session_id,
+                    provider_id=requested_model,
+                    model_id=str(provider_result.get("model") or requested_model),
+                    messages=messages,
+                    output=str(provider_result.get("text") or provider_result.get("error") or ""),
+                    ok=False,
+                    wrapper_mode="openai-compatible",
+                )
+                raise HTTPException(status_code=502, detail=str(provider_result.get("error") or "provider unavailable"))
+            release_wrapper_runtime.record_provider_turn(
+                session_id=session_id,
+                provider_id=requested_model,
+                model_id=str(provider_result.get("model") or requested_model),
+                messages=messages,
+                output=str(provider_result.get("text") or ""),
+                ok=True,
+                wrapper_mode="openai-compatible",
+            )
+            prompt_tokens = _rough_message_tokens(messages)
+            completion_tokens = int(provider_result.get("tokens") or len(str(provider_result.get("text") or "").split()))
+            response_payload = {
+                "id": f"chatcmpl-provider-{_privacy_compat_digest(session_id + requested_model)}",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": str(provider_result.get("model") or requested_model),
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": str(provider_result.get("text") or "")},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": prompt_tokens + completion_tokens,
+                },
+                "nexusnet": {
+                    "session_id": session_id,
+                    "status": "ok",
+                    "provider_id": requested_model,
+                    "provider_local": bool(provider.is_local),
+                    "runtime": f"provider:{requested_model}",
+                    "wrapper_mode": "openai-compatible",
+                    "release_runtime_ref": "/ops/wrapper/release-runtime",
+                },
+            }
+            return _stream_chat_completion_response(response_payload) if stream else response_payload
+        request_payload: dict[str, Any] = {
+            "messages": messages,
+            "model_hint": requested_model or None,
+            "wrapper_mode": "openai-compatible",
+            "rag": bool(payload.get("rag")) if "rag" in payload else False,
+            "metadata": {
+                **metadata,
+                "openai_compatible_surface": True,
+                "temperature": payload.get("temperature"),
+                "top_p": payload.get("top_p"),
+                "max_tokens": payload.get("max_tokens"),
+            },
+        }
+        if session_id:
+            request_payload["session_id"] = session_id
+        request = ChatRequest.model_validate(request_payload)
+        result = services.operator.execute_chat(request)
+        try:
+            release_wrapper_runtime.record_chat_turn(request=request, result=result)
+        except Exception:
+            pass
+        prompt_tokens = _rough_message_tokens(messages)
+        completion_tokens = len(str(result.output or "").split())
+        response_payload = {
+            "id": f"chatcmpl-{result.trace_id}",
+            "object": "chat.completion",
+            "created": int(result.trace.started_at.timestamp()),
+            "model": result.model_id,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": result.output},
+                    "finish_reason": "stop" if result.status != "error" else "error",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
+            "nexusnet": {
+                "trace_id": result.trace_id,
+                "session_id": result.session_id,
+                "status": result.status,
+                "ao": result.selected_ao,
+                "expert": result.selected_expert,
+                "runtime": result.runtime_name,
+                "wrapper_mode": result.wrapper_mode,
+                "release_runtime_ref": "/ops/wrapper/release-runtime",
+            },
+        }
+        return _stream_chat_completion_response(response_payload) if stream else response_payload
+
+    def _stream_chat_completion_response(completion: dict[str, Any]) -> StreamingResponse:
+        choice = (completion.get("choices") or [{}])[0]
+        message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
+        content = str(message.get("content") or "")
+        finish_reason = str(choice.get("finish_reason") or "stop")
+
+        def event(payload: dict[str, Any]) -> str:
+            return f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
+
+        def events():
+            base = {
+                "id": completion.get("id"),
+                "object": "chat.completion.chunk",
+                "created": completion.get("created"),
+                "model": completion.get("model"),
+            }
+            yield event({**base, "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}]})
+            if content:
+                yield event({**base, "choices": [{"index": 0, "delta": {"content": content}, "finish_reason": None}]})
+            yield event({**base, "choices": [{"index": 0, "delta": {}, "finish_reason": finish_reason}]})
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(events(), media_type="text/event-stream")
+
+    @application.get("/v1/models")
+    def v1_models():
+        data: list[dict[str, Any]] = []
+        for model in services.model_registry.list_models():
+            data.append(
+                {
+                    "id": model.model_id,
+                    "object": "model",
+                    "created": 0,
+                    "owned_by": "NexusBrain",
+                    "nexusnet": {
+                        "source": "model-registry",
+                        "runtime": model.runtime_name,
+                        "available": model.available,
+                    },
+                }
+            )
+        for provider in provider_registry.list():
+            data.append(
+                {
+                    "id": provider["provider_id"],
+                    "object": "model",
+                    "created": 0,
+                    "owned_by": "NexusBrain",
+                    "nexusnet": {
+                        "source": "wrapper-provider",
+                        "runtime": f"provider:{provider['provider_id']}",
+                        "local": bool(provider.get("local")),
+                    },
+                }
+            )
+        return {"object": "list", "data": data}
+
+    @application.post("/v1/chat")
+    def native_v1_chat(payload: dict[str, Any] = Body(...)):
+        compat = openai_compatible_chat_completions({**payload, "stream": False})
+        choice = (compat.get("choices") or [{}])[0]
+        message = choice.get("message") or {}
+        nexusnet_payload = compat.get("nexusnet") or {}
+        return {
+            "ok": nexusnet_payload.get("status") == "ok",
+            "reply": message.get("content") or "",
+            "model": compat.get("model"),
+            "choices": compat.get("choices") or [],
+            "usage": compat.get("usage") or {},
+            "nexusnet": nexusnet_payload,
+        }
+
+    @application.get("/ui", include_in_schema=False)
+    @application.get("/ui/", include_in_schema=False)
+    def ui_root():
+        return RedirectResponse(url="/ui/control-panel/")
+
+    @application.get("/ui/wrapper", include_in_schema=False)
+    @application.get("/ui/wrapper/", include_in_schema=False)
+    def ui_wrapper():
+        wrapper_index = services.paths.ui_dir / "wrapper" / "index.html"
+        if not wrapper_index.exists():
+            wrapper_index = services.paths.ui_dir / "index.html"
+        if not wrapper_index.exists():
+            raise HTTPException(status_code=404, detail="Wrapper surface is not available.")
+        return FileResponse(wrapper_index)
+
     if services.paths.ui_dir.exists():
         application.mount("/ui", StaticFiles(directory=str(services.paths.ui_dir), html=True), name="ui")
     return application
 
 
-app = create_app()
+app = create_app(os.environ.get("NEXUSNET_PROJECT_ROOT") or None)

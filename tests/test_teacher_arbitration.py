@@ -20,8 +20,8 @@ def test_critique_arbitration_path_is_exercised_for_security_teacher_disagreemen
         },
     )
 
-    assert record.selected_teacher_id == "code-llama-secure"
-    assert record.selected_roles["critique"] == "deepseek-r1-distill-qwen-32b"
+    assert record.selected_teacher_id == "devstral-2"
+    assert record.selected_roles["critique"] == "deepseek-v4-pro"
     assert record.selected_roles["efficiency"] == "lfm2"
     assert record.local_vs_remote == "local"
     assert record.arbitration_result == "PATCH_DOMAIN_WITH_LFM2_EDITS_THEN_VERIFY"

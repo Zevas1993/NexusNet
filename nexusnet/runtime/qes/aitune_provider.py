@@ -32,7 +32,12 @@ class AITuneQESProvider:
     def capability_card(self) -> dict[str, Any]:
         return aitune_capability_card(capability=self.capability_summary()).model_dump(mode="json")
 
-    def summary(self, model: ModelRegistration | None = None) -> dict[str, Any]:
+    def summary(
+        self,
+        model: ModelRegistration | None = None,
+        *,
+        upstream_inference_gate: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         capability = self.capability_summary()
         applicability = self.applicability(model) if model is not None else None
         target_registry = list((self.config.get("applicability") or {}).get("target_registry", []))
@@ -52,6 +57,7 @@ class AITuneQESProvider:
                 capability=capability,
                 applicability=applicability,
                 model_id=model.model_id if model is not None else "unbound",
+                upstream_inference_gate=upstream_inference_gate,
             ),
             "target_registry": target_registry,
             "target_registry_ids": [item.get("target_id") for item in target_registry],
@@ -186,7 +192,13 @@ class AITuneQESProvider:
             tuned_artifact_path=tuned_artifact_path,
         )
 
-    def validate(self, model: ModelRegistration | None = None, *, simulate: bool = False) -> dict[str, Any]:
+    def validate(
+        self,
+        model: ModelRegistration | None = None,
+        *,
+        simulate: bool = False,
+        upstream_inference_gate: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         capability = self.capability_summary()
         applicability = self.applicability(model) if model is not None else None
         return self.validation.run(
@@ -194,6 +206,7 @@ class AITuneQESProvider:
             applicability=applicability,
             model_id=model.model_id if model is not None else "unbound",
             simulate=simulate,
+            upstream_inference_gate=upstream_inference_gate,
         )
 
     def repo_audit(self) -> dict[str, Any]:

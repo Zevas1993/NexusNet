@@ -71,6 +71,17 @@ class NativeExecutionPlanner:
         governed_action = execution_policy.get("governed_action")
         selected_internal_experts = list(execution_policy.get("selected_internal_experts") or [])
         fallback_triggers = list(execution_policy.get("fallback_triggers") or [])
+        alignment_summary = dict(execution_policy.get("alignment_summary") or {})
+        upstream_aitune_gate = _upstream_aitune_gate(alignment_summary.get("upstream_aitune_gate") or {})
+        alignment_hold_required = bool(alignment_summary.get("alignment_hold_required", False))
+        alignment_blockers = list(alignment_summary.get("alignment_blockers") or [])
+        alignment_max_safe_mode = alignment_summary.get("max_safe_native_mode")
+        if _upstream_aitune_gate_blocked(upstream_aitune_gate):
+            execution_mode = "teacher_fallback"
+            fallback_triggers = list(dict.fromkeys(fallback_triggers + ["upstream_aitune_gate_blocked"]))
+            alignment_hold_required = True
+            alignment_blockers = list(dict.fromkeys(alignment_blockers + ["router_alignment_blocks_upstream_aitune_gate"]))
+            alignment_max_safe_mode = "teacher_fallback"
         guarded_live_enabled = execution_mode == "native_live_guarded"
         challenger_shadow_enabled = execution_mode == "native_challenger_shadow"
         shadow_enabled = execution_mode in {"native_shadow", "native_challenger_shadow"}
@@ -113,9 +124,10 @@ class NativeExecutionPlanner:
             "evidence_refs": execution_policy.get("evidence_refs", {}),
             "prompt_guidance_mode": prompt_guidance_mode,
             "governed_action": governed_action,
-            "alignment_hold_required": ((execution_policy.get("alignment_summary") or {}).get("alignment_hold_required", False)),
-            "alignment_blockers": ((execution_policy.get("alignment_summary") or {}).get("alignment_blockers", [])),
-            "alignment_max_safe_mode": ((execution_policy.get("alignment_summary") or {}).get("max_safe_native_mode")),
+            "alignment_hold_required": alignment_hold_required,
+            "alignment_blockers": alignment_blockers,
+            "alignment_max_safe_mode": alignment_max_safe_mode,
+            "upstream_aitune_gate": upstream_aitune_gate,
             "fallback_reference": foundry.get("latest_native_candidate_rollback_reference"),
             "promotion_candidate_state": {
                 "candidate_id": foundry.get("latest_native_takeover_candidate_id"),
@@ -314,3 +326,27 @@ class NativeExecutionPlanner:
                 return "teacher_verify_native_candidate"
             return "strengthen_guarded_live_readiness"
         return "collect_more_evidence"
+
+
+def _upstream_aitune_gate(gate: dict[str, Any]) -> dict[str, Any]:
+    blockers = list(gate.get("blockers") or gate.get("readiness_blockers") or [])
+    status = str(gate.get("status") or "not_provided")
+    can_execute_here = gate.get("can_execute_here")
+    if can_execute_here is False and not blockers:
+        blockers.append("upstream_aitune_execution_not_ready")
+    if status in {"blocked", "blocked-upstream-gate"} and not blockers:
+        blockers.append("upstream_aitune_gate_blocked")
+    return {
+        **gate,
+        "status": status,
+        "can_execute_here": can_execute_here,
+        "blockers": blockers,
+    }
+
+
+def _upstream_aitune_gate_blocked(gate: dict[str, Any]) -> bool:
+    return bool(
+        gate.get("can_execute_here") is False
+        or gate.get("status") in {"blocked", "blocked-upstream-gate"}
+        or gate.get("blockers")
+    )

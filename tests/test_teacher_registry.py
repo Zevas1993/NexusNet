@@ -119,24 +119,24 @@ def test_live_registry_preserves_exact_primary_secondary_pairs(tmp_path):
     assert len(live_pairs) == 19
     expected_pairs = {
         "Coder Expert": ("Qwen3-Coder-Next", "Devstral 2", None),
-        "Strategist Expert": ("Qwen3-30B-A3B", "Magistral Small 1.2", None),
-        "Analyst Expert": ("DeepSeek-R1-Distill-Qwen-32B", "Qwen3-30B-A3B", None),
-        "Researcher Expert": ("Qwen3-30B-A3B", "Kimi K2.5", None),
-        "Critique Expert": ("DeepSeek-R1-Distill-Qwen-32B", "Qwen3-30B-A3B", None),
+        "Strategist Expert": ("Qwen3-30B-A3B", "Mistral Small 4", None),
+        "Analyst Expert": ("DeepSeek-V4-Pro", "Qwen3-30B-A3B", None),
+        "Researcher Expert": ("Qwen3-30B-A3B", "Kimi K2.6", None),
+        "Critique Expert": ("DeepSeek-V4-Pro", "Qwen3-30B-A3B", None),
         "Conversationalist Expert": ("Mistral Small 4", "Qwen3-30B-A3B", None),
         "Toolsmith Expert": ("Devstral 2", "Qwen3-Coder-Next", "LFM2"),
-        "Security Expert": ("Code LLaMA-Secure", "Devstral 2", "LFM2"),
-        "Memory Weaver Expert": ("RecurrentGemma memory-tuned", "DeepSeek-V2-Lite", "LFM2"),
+        "Security Expert": ("Devstral 2", "Qwen3-Coder-Next", "LFM2"),
+        "Memory Weaver Expert": ("NexusNet-RecurrentMemory-v0", "DeepSeek-V4-Flash", "LFM2"),
         "Meta Reasoner Expert": ("DeepSeek-R1-Distill-Qwen-32B", "Qwen3-30B-A3B", None),
-        "Router Expert": ("DeepSeek-V2-Lite", "Qwen3-30B-A3B", "LFM2"),
+        "Router Expert": ("DeepSeek-V4-Flash", "Qwen3-30B-A3B", "LFM2"),
         "Linguist Expert": ("Qwen3-30B-A3B", "BLOOMZ", None),
-        "Vision Expert": ("Qwen3-VL", "Kimi K2.5", None),
+        "Vision Expert": ("Qwen3-VL", "Kimi K2.6", None),
         "Audio Expert": ("Voxtral Small", "Whisper-Large-V3", None),
         "Simulation Expert": ("Dreamer-V3", "MuZero", None),
         "Builder Expert": ("Devstral 2", "Mistral Small 4", None),
         "Instructor Expert": ("Qwen3-30B-A3B", "Mistral Small 4", None),
-        "Intent Mapper Expert": ("Intent-BERT", "Qwen3-30B-A3B", None),
-        "Critic Historian Expert": ("LLaMA-Historian-tuned", "DeepSeek-R1-Distill-Qwen-32B", None),
+        "Intent Mapper Expert": ("NexusNet-Intent-BERT-v0", "Qwen3-30B-A3B", None),
+        "Critic Historian Expert": ("NexusNet-Historian-v0", "DeepSeek-V4-Pro", None),
     }
     assert {
         role: (
@@ -147,4 +147,9 @@ def test_live_registry_preserves_exact_primary_secondary_pairs(tmp_path):
         for role, details in live_pairs.items()
     } == expected_pairs
     assert live_pairs["Security Expert"]["evaluation_family"] == ["CyberSecEval"]
+    assert "CodeQL" in live_pairs["Security Expert"]["validator_family"]
+    assert payload["teacher_profiles"]["code-llama-secure"]["status"] == "blocked_unverified"
+    assert payload["teacher_profiles"]["deepseek-v2-lite"]["status"] == "fallback_only"
+    assert payload["teacher_profiles"]["magistral-small-1-2"]["status"] == "deprecated"
+    assert payload["teacher_profiles"]["lfm2"]["license_gate"] == "commercial_license_required_above_10m_revenue"
     assert payload["auxiliary_paths"]["Curriculum Architect"]["canon_status"] == "STRONG ACCEPTED DIRECTION"

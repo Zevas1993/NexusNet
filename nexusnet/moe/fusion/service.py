@@ -29,9 +29,14 @@ class MoEFusionScaffoldService:
         selected_expert: str | None = None,
         memory_node_context: dict | None = None,
         hardware_profile: dict | None = None,
+        upstream_aitune_gate: dict | None = None,
     ) -> dict:
         harness = self.harness.build(selected_expert=selected_expert)
-        alignment = self.alignment.snapshot(router_id=harness["router_id"], expert_ids=harness["expert_ids"])
+        alignment = self.alignment.snapshot(
+            router_id=harness["router_id"],
+            expert_ids=harness["expert_ids"],
+            upstream_aitune_gate=upstream_aitune_gate,
+        )
         return {
             "status_label": "IMPLEMENTATION BRANCH",
             "branch_lineage": harness["branch_lineage"],

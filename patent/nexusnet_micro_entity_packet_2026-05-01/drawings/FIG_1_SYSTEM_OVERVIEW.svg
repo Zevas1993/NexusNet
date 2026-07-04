@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="850" height="1100" viewBox="0 0 850 1100">
+  <rect x="75" y="50" width="700" height="975" fill="white" stroke="black"/>
+  <text x="425" y="90" text-anchor="middle" font-family="Arial" font-size="22" font-weight="bold">FIG 1 SYSTEM OVERVIEW</text>
+  <rect x="300" y="390" width="250" height="80" fill="white" stroke="black"/><text x="425" y="435" text-anchor="middle" font-family="Arial" font-size="18">NexusBrain 114</text><rect x="110" y="250" width="180" height="70" fill="white" stroke="black"/><text x="200" y="292" text-anchor="middle" font-family="Arial" font-size="16">AO Hive 116</text><rect x="560" y="250" width="180" height="70" fill="white" stroke="black"/><text x="650" y="292" text-anchor="middle" font-family="Arial" font-size="16">Router 112</text><rect x="110" y="560" width="180" height="70" fill="white" stroke="black"/><text x="200" y="602" text-anchor="middle" font-family="Arial" font-size="16">Memory 122</text><rect x="560" y="560" width="180" height="70" fill="white" stroke="black"/><text x="650" y="602" text-anchor="middle" font-family="Arial" font-size="16">Governance 128</text>
+</svg>

@@ -146,3 +146,4 @@ class VisualizerOverlayState(BaseModel):
     diff_catalog: dict[str, Any] = Field(default_factory=dict)
     replay_catalog: dict[str, Any] = Field(default_factory=dict)
     performance_profile: dict[str, Any] = Field(default_factory=dict)
+    control_panel: dict[str, Any] = Field(default_factory=dict)

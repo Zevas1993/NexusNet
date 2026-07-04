@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="850" height="1100" viewBox="0 0 850 1100">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="black"/>
+    </marker>
+  </defs>
+  <rect x="75" y="50" width="700" height="975" fill="white" stroke="black"/>
+  <text x="425" y="90" text-anchor="middle" font-family="Arial" font-size="22" font-weight="bold" fill="black">FIG. 1 SYSTEM ARCHITECTURE</text>
+
+  <rect x="110" y="135" width="150" height="55" fill="white" stroke="black"/>
+  <text x="185" y="158" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Input Interface</text>
+  <text x="185" y="176" text-anchor="middle" font-family="Arial" font-size="14" fill="black">102</text>
+
+  <rect x="350" y="135" width="150" height="55" fill="white" stroke="black"/>
+  <text x="425" y="158" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Activation Builder</text>
+  <text x="425" y="176" text-anchor="middle" font-family="Arial" font-size="14" fill="black">110</text>
+
+  <rect x="590" y="135" width="150" height="55" fill="white" stroke="black"/>
+  <text x="665" y="158" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Controller</text>
+  <text x="665" y="176" text-anchor="middle" font-family="Arial" font-size="14" fill="black">120</text>
+
+  <line x1="260" y1="162" x2="350" y2="162" stroke="black" marker-end="url(#arrow)"/>
+  <line x1="500" y1="162" x2="590" y2="162" stroke="black" marker-end="url(#arrow)"/>
+
+  <rect x="110" y="265" width="150" height="60" fill="white" stroke="black"/>
+  <text x="185" y="288" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Node</text>
+  <text x="185" y="306" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Registry 140</text>
+
+  <rect x="350" y="265" width="150" height="60" fill="white" stroke="black"/>
+  <text x="425" y="288" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Routing Service</text>
+  <text x="425" y="306" text-anchor="middle" font-family="Arial" font-size="14" fill="black">150</text>
+
+  <rect x="590" y="265" width="150" height="60" fill="white" stroke="black"/>
+  <text x="665" y="288" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Multi-Plane</text>
+  <text x="665" y="306" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Memory 180</text>
+
+  <line x1="665" y1="190" x2="425" y2="265" stroke="black" marker-end="url(#arrow)"/>
+  <line x1="260" y1="295" x2="350" y2="295" stroke="black" marker-end="url(#arrow)"/>
+  <line x1="500" y1="295" x2="590" y2="295" stroke="black" marker-end="url(#arrow)"/>
+
+  <rect x="155" y="405" width="540" height="45" fill="white" stroke="black"/>
+  <text x="425" y="433" text-anchor="middle" font-family="Arial" font-size="16" fill="black">Neural Bus / Typed Message Path 130</text>
+  <line x1="425" y1="325" x2="425" y2="405" stroke="black" marker-end="url(#arrow)"/>
+
+  <rect x="110" y="535" width="150" height="60" fill="white" stroke="black"/>
+  <text x="185" y="558" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Governance</text>
+  <text x="185" y="576" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Gates 200</text>
+
+  <rect x="350" y="535" width="150" height="60" fill="white" stroke="black"/>
+  <text x="425" y="558" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Evaluator</text>
+  <text x="425" y="576" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Gates 270</text>
+
+  <rect x="590" y="535" width="150" height="60" fill="white" stroke="black"/>
+  <text x="665" y="558" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Tool / Runtime</text>
+  <text x="665" y="576" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Selection 210</text>
+
+  <line x1="185" y1="450" x2="185" y2="535" stroke="black" marker-end="url(#arrow)"/>
+  <line x1="425" y1="450" x2="425" y2="535" stroke="black" marker-end="url(#arrow)"/>
+  <line x1="665" y1="450" x2="665" y2="535" stroke="black" marker-end="url(#arrow)"/>
+
+  <rect x="350" y="690" width="150" height="60" fill="white" stroke="black"/>
+  <text x="425" y="713" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Output / Action</text>
+  <text x="425" y="731" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Gate 220</text>
+
+  <rect x="590" y="690" width="150" height="60" fill="white" stroke="black"/>
+  <text x="665" y="713" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Approved</text>
+  <text x="665" y="731" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Output 225</text>
+
+  <line x1="425" y1="595" x2="425" y2="690" stroke="black" marker-end="url(#arrow)"/>
+  <line x1="500" y1="720" x2="590" y2="720" stroke="black" marker-end="url(#arrow)"/>
+
+  <rect x="110" y="840" width="170" height="60" fill="white" stroke="black"/>
+  <text x="195" y="863" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Trace Ledger</text>
+  <text x="195" y="881" text-anchor="middle" font-family="Arial" font-size="14" fill="black">230</text>
+
+  <rect x="340" y="840" width="170" height="60" fill="white" stroke="black"/>
+  <text x="425" y="863" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Checkpoint /</text>
+  <text x="425" y="881" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Rollback 240</text>
+
+  <rect x="570" y="840" width="170" height="60" fill="white" stroke="black"/>
+  <text x="655" y="863" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Operator Review</text>
+  <text x="655" y="881" text-anchor="middle" font-family="Arial" font-size="14" fill="black">Surface 290</text>
+
+  <line x1="425" y1="750" x2="195" y2="840" stroke="black" marker-end="url(#arrow)"/>
+  <line x1="425" y1="750" x2="425" y2="840" stroke="black" marker-end="url(#arrow)"/>
+  <line x1="425" y1="750" x2="655" y2="840" stroke="black" marker-end="url(#arrow)"/>
+</svg>

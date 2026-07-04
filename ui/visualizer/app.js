@@ -37,6 +37,7 @@ const dom = {
   selectionCard: document.getElementById("selectionCard"),
   evidenceCard: document.getElementById("evidenceCard"),
   governanceCard: document.getElementById("governanceCard"),
+  hiveNeuralCard: document.getElementById("hiveNeuralCard"),
   compareBundleLeft: document.getElementById("compareBundleLeft"),
   compareBundleRight: document.getElementById("compareBundleRight"),
   compareBundleButton: document.getElementById("compareBundleButton"),
@@ -1265,10 +1266,149 @@ function renderLivePosture() {
   const physiology = overlay.safe_mode_physiology || {};
   const physiologyActivity = overlay.physiology_activity || {};
   const performanceProfile = overlay.performance_profile || {};
+  const releaseTelemetry = overlay.control_panel?.release_wrapper_telemetry
+    || overlay.control_panel?.release_wrapper_runtime?.live_wrapper_telemetry
+    || {};
+  const releaseSelfRepairLedger = overlay.control_panel?.release_wrapper_self_repair_ledger
+    || overlay.control_panel?.release_wrapper_runtime?.self_repair_ledger
+    || {};
+  const releaseForwardPassCoverage = releaseTelemetry.forward_pass_coverage
+    || overlay.control_panel?.release_wrapper_runtime?.forward_pass_coverage
+    || {};
+  const releaseNexusBrainRuntimeCycle = overlay.control_panel?.release_wrapper_runtime?.nexusbrain_runtime_cycle
+    || releaseTelemetry.nexusbrain_runtime_cycle
+    || {};
+  const releaseWholeSystemHeartbeat = overlay.control_panel?.release_wrapper_runtime?.whole_system_heartbeat || {};
+  const releaseForwardPassMatrix = overlay.control_panel?.release_wrapper_forward_pass_enforcement_matrix
+    || overlay.control_panel?.release_wrapper_runtime?.whole_system_forward_pass_enforcement_matrix
+    || {};
+  const releaseCanonicalAoCoverage = overlay.control_panel?.release_wrapper_runtime?.canonical_ao_coverage || {};
+  const releaseDomainAoRouting = overlay.control_panel?.release_wrapper_runtime?.domain_ao_routing || {};
+  const releaseDomainTeacherEval = overlay.control_panel?.release_wrapper_runtime?.domain_teacher_eval_handoff || {};
+  const releaseContextWindowPosture = overlay.control_panel?.release_wrapper_runtime?.context_window_posture || {};
+  const releaseContextCapability = overlay.control_panel?.release_wrapper_runtime?.context_capability_envelope || {};
+  const releaseProviderReadiness = overlay.control_panel?.release_wrapper_runtime?.provider_readiness || {};
+  const developmentalReleaseContract = overlay.control_panel?.release_wrapper_developmental_release_contract
+    || overlay.control_panel?.release_wrapper_runtime?.developmental_release_contract
+    || {};
+  const releaseFirstRunReadiness = overlay.control_panel?.release_wrapper_runtime?.first_run_readiness || {};
+  const releaseFirstRunProduction = releaseFirstRunReadiness.production_spine || {};
+  const productionSpineReleaseLifecycle = overlay.control_panel?.release_wrapper_runtime?.production_spine_release_lifecycle
+    || overlay.control_panel?.release_wrapper_session_lifecycle?.production_spine_release_lifecycle
+    || {};
+  const latestProductionSpineReleaseLifecycle = productionSpineReleaseLifecycle.latest_run || {};
+  const productionSpineReleaseLifecycleApproval = latestProductionSpineReleaseLifecycle.admin_approval || productionSpineReleaseLifecycle.admin_approval || {};
+  const productionSpineReleaseLifecycleGovernance = latestProductionSpineReleaseLifecycle.authority_evidence_tool_governance || {};
+  const productionSpineReleaseLifecycleRollback = productionSpineReleaseLifecycle.latest_rollback || {};
+  const releaseSessionLifecycle = overlay.control_panel?.release_wrapper_session_lifecycle || {};
+  const releaseSessionLifecycleSteps = releaseSessionLifecycle.lifecycle_steps || [];
+  const releaseManifestLifecycleStep = releaseSessionLifecycleSteps.find((step) => step.step_id === "release-manifest-rollup") || {};
+  const releaseManifestRollup = releaseSessionLifecycle.release_manifest_status_rollup
+    || overlay.control_panel?.release_wrapper_runtime?.release_manifest_status_rollup
+    || {};
+  const releaseManifestMutationLabel = (
+    releaseManifestLifecycleStep.release_mutation_allowed || releaseManifestRollup.release_mutation_allowed
+  ) ? "active mutation allowed" : "active mutation blocked";
+  const releaseBootSupervisor = overlay.control_panel?.release_wrapper_boot_supervisor
+    || overlay.control_panel?.release_wrapper_runtime?.boot_supervisor
+    || {};
+  const releaseProductSmoke = overlay.control_panel?.release_wrapper_release_product_smoke
+    || overlay.control_panel?.release_wrapper_runtime?.release_product_smoke
+    || {};
+  const releaseRunHistory = overlay.control_panel?.release_wrapper_release_run_history
+    || overlay.control_panel?.release_wrapper_runtime?.release_run_history
+    || {};
+  const releaseNativeHiveHeartbeatWatchdog = overlay.control_panel?.release_wrapper_native_hive_heartbeat_watchdog
+    || overlay.control_panel?.release_wrapper_runtime?.native_hive_heartbeat_watchdog
+    || {};
+  const releaseHealthHeartbeat = overlay.control_panel?.release_wrapper_release_health_heartbeat
+    || overlay.control_panel?.release_wrapper_runtime?.release_health_heartbeat
+    || {};
+  const releaseHealthHeartbeatLoop = overlay.control_panel?.release_wrapper_release_health_heartbeat_loop
+    || overlay.control_panel?.release_wrapper_runtime?.release_health_heartbeat_loop
+    || {};
+  const releaseHealthHeartbeatSupervisor = overlay.control_panel?.release_wrapper_release_health_heartbeat_supervisor
+    || overlay.control_panel?.release_wrapper_runtime?.release_health_heartbeat_supervisor
+    || {};
+  const releaseHealthRepairHistory = releaseHealthHeartbeatSupervisor.repair_history || {};
+  const releaseProjectHeartbeat = overlay.control_panel?.project_heartbeat
+    || overlay.control_panel?.release_wrapper_runtime?.project_heartbeat
+    || {};
+  const releaseNativeHeartbeatRecoveryGovernance = releaseProjectHeartbeat.failure_recovery_governance || {};
+  const releaseCanonContractLedger = overlay.control_panel?.release_wrapper_canon_contract_ledger
+    || overlay.control_panel?.release_wrapper_runtime?.canon_contract_ledger
+    || {};
+  const releaseCanonSourceManifest = releaseCanonContractLedger.source_manifest || {};
+  const releaseCanonContractReceipts = overlay.control_panel?.release_wrapper_canon_contract_receipts
+    || overlay.control_panel?.release_wrapper_runtime?.canon_contract_receipts
+    || {};
+  const releaseBootProductPath = releaseBootSupervisor.evidence?.release_product_path || {};
+  const latestSelfRepairGuard = releaseSelfRepairLedger.latest_ao_guard || {};
+  const latestSelfRepairGuardReceipts = latestSelfRepairGuard.receipt_refs || [];
+  const releaseTelemetryFederation = releaseTelemetry.federation || {};
+  const releaseTelemetryGrowth = releaseTelemetry.global_growth || {};
+  const releaseTelemetryFailureLearning = releaseTelemetry.failure_learning || {};
+  const releaseFederatedPacketOutbox = overlay.control_panel?.release_wrapper_runtime?.federated_packet_outbox || {};
+  const releaseFederatedPacketInbox = overlay.control_panel?.release_wrapper_runtime?.federated_packet_inbox || {};
+  const releaseOperationReceiptRows = (releaseForwardPassMatrix.entrypoints || []).filter((row) => row.operation_receipt?.receipt_id);
+  const releaseCoveredOperationReceiptRows = releaseOperationReceiptRows.filter((row) => row.operation_receipt?.status === "covered");
+  const latestFederatedImportReceipt = releaseFederatedPacketInbox.latest_import?.operation_receipt || {};
+  const releaseSelfRepairOperationReceiptActions = (releaseSelfRepairLedger.actions || []).filter((action) => action.operation_receipt?.receipt_id);
+  const developmentalCortex = overlay.control_panel?.developmental_cortex_scorecard || {};
+  const latestDevelopmentalAssessment = developmentalCortex.latest_assessment || {};
   dom.livePosture.innerHTML = `
     <div class="metric"><strong>${escapeHtml(overlay.active_registry_layer || "pending")}</strong><small>Registry Layer</small></div>
     <div class="metric"><strong>${escapeHtml(runtime.selected_runtime_name || "pending")}</strong><small>Runtime</small></div>
     <div class="metric"><strong>${escapeHtml(runtime.selected_backend_name || "pending")}</strong><small>Backend</small></div>
+    <div class="metric release-wrapper-live-telemetry"><strong>${escapeHtml(String(releaseTelemetry.event_count || 0))}</strong><small>Release wrapper telemetry</small></div>
+    <div class="metric release-wrapper-forward-pass-coverage"><strong>${escapeHtml(String(releaseForwardPassCoverage.receipt_count || 0))}</strong><small>Wrapper forward coverage receipts</small></div>
+    <div class="metric release-wrapper-nexusbrain-runtime-cycle"><strong>${escapeHtml(releaseNexusBrainRuntimeCycle.latest_status || "not-run")}</strong><small>NexusBrain cycle</small></div>
+    <div class="metric release-wrapper-whole-system-heartbeat"><strong>${escapeHtml(releaseWholeSystemHeartbeat.status || "not-observed")}</strong><small>Whole-system heartbeat</small></div>
+    <div class="metric release-wrapper-forward-pass-enforcement-matrix"><strong>${escapeHtml(releaseForwardPassMatrix.coverage_status || "partial")}</strong><small>forward-pass matrix</small></div>
+    <div class="metric release-wrapper-operation-receipts"><strong>${escapeHtml(`${releaseCoveredOperationReceiptRows.length}/${releaseOperationReceiptRows.length}`)}</strong><small>Wrapper operation receipts</small></div>
+    <div class="metric release-wrapper-import-receipt"><strong>${escapeHtml(latestFederatedImportReceipt.status || "not-imported")}</strong><small>Wrapper import receipt</small></div>
+    <div class="metric release-wrapper-self-repair-operation-receipt"><strong>${escapeHtml(String(releaseSelfRepairOperationReceiptActions.length || 0))}</strong><small>self-repair operation receipt</small></div>
+    <div class="metric release-wrapper-canonical-ao-coverage"><strong>${escapeHtml(String(releaseCanonicalAoCoverage.receipt_count || 0))}</strong><small>Wrapper canonical AOs</small></div>
+    <div class="metric release-wrapper-domain-ao-routing"><strong>${escapeHtml(releaseDomainAoRouting.latest_domain_ao || "not-routed")}</strong><small>Wrapper domain AO</small></div>
+    <div class="metric release-wrapper-domain-teacher-eval"><strong>${escapeHtml(releaseDomainTeacherEval.latest_domain_ao || "not-linked")}</strong><small>Wrapper domain teacher/eval</small></div>
+    <div class="metric release-wrapper-expert-growth"><strong>${escapeHtml(String(releaseDomainTeacherEval.expert_growth_candidate_count || 0))}</strong><small>Wrapper expert growth</small></div>
+    <div class="metric release-wrapper-expert-growth-admin-replay"><strong>${escapeHtml(releaseDomainTeacherEval.latest_admin_eval_replay_status || "not-run")}</strong><small>Wrapper expert replay</small></div>
+    <div class="metric release-wrapper-expert-growth-sandbox-takeover"><strong>${escapeHtml(releaseDomainTeacherEval.latest_sandbox_takeover_evidence_status || "not-run")}</strong><small>Wrapper takeover evidence</small></div>
+    <div class="metric release-wrapper-context-window-posture"><strong>${escapeHtml(String(releaseContextWindowPosture.observed_effective_context_tokens || 0))}</strong><small>Wrapper effective ctx tokens</small></div>
+    <div class="metric release-wrapper-context-capability"><strong>${escapeHtml(String(releaseContextCapability.host_context_cap_tokens || 0))}</strong><small>Wrapper context cap</small></div>
+    <div class="metric release-wrapper-provider-readiness"><strong>${escapeHtml(String(releaseProviderReadiness.usable_provider_count || 0))}</strong><small>Wrapper usable providers</small></div>
+    <div class="metric release-wrapper-developmental-release-contract"><strong>${escapeHtml(developmentalReleaseContract.latest_status || "not-recorded")}</strong><small>Wrapper developmental release contract</small></div>
+    <div class="metric release-wrapper-first-run-readiness"><strong>${escapeHtml(releaseFirstRunReadiness.decision || "not-run")}</strong><small>Wrapper first-run readiness</small></div>
+    <div class="metric release-wrapper-first-run-scope"><strong>${escapeHtml(releaseFirstRunReadiness.product_scope || "wrapper-session")}</strong><small>Whole-system first-run scope</small></div>
+    <div class="metric release-wrapper-first-run-cycle"><strong>${escapeHtml(releaseFirstRunProduction.cycle_id || "none")}</strong><small>First-run production cycle</small></div>
+    <div class="metric release-wrapper-production-spine-release-lifecycle"><strong>${escapeHtml(latestProductionSpineReleaseLifecycle.status || productionSpineReleaseLifecycle.status || "not-run")}</strong><small>production-spine-release-lifecycle</small></div>
+    <div class="metric release-wrapper-production-spine-release-lifecycle-approval"><strong>${escapeHtml(productionSpineReleaseLifecycleApproval.status || "pending-admin-approval")}</strong><small>production spine lifecycle approval</small></div>
+    <div class="metric release-wrapper-production-spine-release-lifecycle-governance"><strong>${escapeHtml(productionSpineReleaseLifecycleGovernance.status || "missing")}</strong><small>production spine lifecycle governance</small></div>
+    <div class="metric release-wrapper-production-spine-release-lifecycle-rollback"><strong>${escapeHtml(productionSpineReleaseLifecycleRollback.status || "not-rolled-back")}</strong><small>production spine lifecycle rollback</small></div>
+    <div class="metric release-wrapper-native-hive-heartbeat-watchdog"><strong>${escapeHtml(releaseNativeHiveHeartbeatWatchdog.status || "blocked")}</strong><small>heartbeat watchdog</small></div>
+    <div class="metric release-wrapper-release-health-heartbeat"><strong>${escapeHtml(releaseHealthHeartbeat.status || "not-run")}</strong><small>release health heartbeat</small></div>
+    <div class="metric release-wrapper-release-health-heartbeat-loop"><strong>${escapeHtml(releaseHealthHeartbeatLoop.status || "not-run")}</strong><small>release health loop</small></div>
+    <div class="metric release-wrapper-release-health-heartbeat-supervisor"><strong>${escapeHtml(releaseHealthHeartbeatSupervisor.status || "disabled")}</strong><small>release health supervisor</small></div>
+    <div class="metric release-wrapper-health-repair-envelopes"><strong>${escapeHtml(String(releaseHealthRepairHistory.latest_subsystem_repair_envelope_count || 0))}</strong><small>health repair envelopes</small></div>
+    <div class="metric release-wrapper-native-heartbeat-recovery-governance"><strong>${escapeHtml(releaseNativeHeartbeatRecoveryGovernance.status || "not-emitted")}</strong><small>native heartbeat recovery governance</small></div>
+    <div class="metric release-wrapper-release-manifest-rollup"><strong>${escapeHtml(releaseManifestRollup.status || releaseManifestLifecycleStep.status || "not_recorded")}</strong><small>Wrapper release manifest rollup</small></div>
+    <div class="metric release-wrapper-release-manifest-mutation"><strong>${escapeHtml(releaseManifestMutationLabel)}</strong><small>release-manifest-rollup</small></div>
+    <div class="metric release-wrapper-developmental-cortex"><strong>${escapeHtml(latestDevelopmentalAssessment.request_id || "none")}</strong><small>Wrapper developmental cortex</small></div>
+    <div class="metric release-wrapper-boot-supervisor"><strong>${escapeHtml(String(releaseBootSupervisor.pass_count || 0))}/${escapeHtml(String(releaseBootSupervisor.check_count || 0))}</strong><small>Wrapper boot supervisor</small></div>
+    <div class="metric release-wrapper-release-product-smoke"><strong>${escapeHtml(releaseProductSmoke.latest_status || "not-run")}</strong><small>release product smoke</small></div>
+    <div class="metric release-wrapper-release-run-history"><strong>${escapeHtml(String(releaseRunHistory.run_count || 0))}/${escapeHtml(String(releaseRunHistory.global_run_count || 0))}</strong><small>release run history</small></div>
+    <div class="metric release-wrapper-canon-contract-ledger"><strong>${escapeHtml(releaseCanonContractLedger.coverage_status || "missing")}</strong><small>canon contract ledger</small></div>
+    <div class="metric release-wrapper-canon-sources"><strong>${escapeHtml(String(releaseCanonSourceManifest.ingested_source_count || 0))}/${escapeHtml(String(releaseCanonSourceManifest.source_count || 0))}</strong><small>canon sources ingested</small></div>
+    <div class="metric release-wrapper-canon-contract-receipts"><strong>${escapeHtml(String(releaseCanonContractReceipts.receipt_count || 0))}</strong><small>canon contract receipts</small></div>
+    <div class="metric release-wrapper-product-path"><strong>${escapeHtml(String(releaseBootProductPath.federated_packet_count || 0))}</strong><small>Wrapper product path</small></div>
+    <div class="metric release-wrapper-self-repair-ledger"><strong>${escapeHtml(String(releaseSelfRepairLedger.repair_count || 0))}</strong><small>Release wrapper self repair actions</small></div>
+    <div class="metric release-wrapper-ao-guard"><strong>${escapeHtml(String(latestSelfRepairGuardReceipts.length || releaseSelfRepairLedger.ao_guard_passed_count || 0))}</strong><small>Wrapper AO guard receipts</small></div>
+    <div class="metric release-wrapper-authority-receipts"><strong>${escapeHtml(String(releaseSelfRepairLedger.authority_decision_count || 0))}</strong><small>Wrapper authority receipts</small></div>
+    <div class="metric"><strong>${escapeHtml(String(releaseTelemetryFederation.packet_count || 0))}</strong><small>Wrapper federated packets</small></div>
+    <div class="metric release-wrapper-federated-packet-outbox"><strong>${escapeHtml(String(releaseFederatedPacketOutbox.packet_count || 0))}</strong><small>Wrapper packet outbox</small></div>
+    <div class="metric release-wrapper-federated-packet-inbox"><strong>${escapeHtml(String(releaseFederatedPacketInbox.import_count || 0))}</strong><small>Wrapper packet inbox</small></div>
+    <div class="metric"><strong>${escapeHtml(String(releaseTelemetryGrowth.global_captures || 0))}</strong><small>Wrapper growth captures</small></div>
+    <div class="metric release-wrapper-failure-learning"><strong>${escapeHtml(String(releaseTelemetryFailureLearning.captured_count || 0))}</strong><small>failure learning captures</small></div>
     <div class="metric"><strong>${escapeHtml(physiology.thermal_mode || "unknown")}</strong><small>Thermal Mode</small></div>
     <div class="metric"><strong>${escapeHtml(physiology.vram_pressure || "unreported")}</strong><small>VRAM Pressure</small></div>
     <div class="metric"><strong>${escapeHtml(physiology.retry_state || "stable")}</strong><small>Retry State</small></div>
@@ -1721,6 +1861,68 @@ async function loadOverlay() {
   updateActiveClasses();
 }
 
+function buildSacredGeometrySvg(fab) {
+  // Render the fabric's sacred geometry: Flower-of-Life node field + Metatron-chord lateral mesh.
+  if (!fab || !fab.node_positions) return "";
+  const pos = fab.node_positions;
+  const chords = fab.lateral_chords || [];
+  const types = fab.node_types || {};
+  const activeSet = new Set(fab.active_node_set || []);
+  const W = 260, H = 260, cx = W / 2, cy = H / 2, scale = 34;
+  const X = (p) => cx + (p.x || 0) * scale;
+  const Y = (p) => cy + (p.y || 0) * scale;
+  const color = { core: "#ffd166", orchestrator: "#06d6a0", assistant_orchestrator: "#118ab2", expert: "#9b5de5" };
+  const rad = { core: 8, orchestrator: 6, assistant_orchestrator: 5, expert: 3.5 };
+  const rings = [1, 2, 3].map((r) =>
+    `<circle cx="${cx}" cy="${cy}" r="${r * scale}" fill="none" stroke="#22304d" stroke-width="0.5" stroke-dasharray="2 3"/>`).join("");
+  const lines = chords.map((c) => {
+    const a = pos[c[0]], b = pos[c[1]];
+    if (!a || !b) return "";
+    return `<line x1="${X(a)}" y1="${Y(a)}" x2="${X(b)}" y2="${Y(b)}" stroke="#3a4a6b" stroke-width="0.7" opacity="0.55"/>`;
+  }).join("");
+  const nodes = Object.keys(pos).map((nid) => {
+    const p = pos[nid], t = types[nid] || "expert", on = activeSet.has(nid);
+    return `<circle cx="${X(p)}" cy="${Y(p)}" r="${rad[t] || 3}" fill="${color[t] || "#888"}" opacity="${on ? 1 : 0.35}">` +
+      `<title>${escapeHtml(nid)}${on ? " (active)" : ""}</title></circle>`;
+  }).join("");
+  const sig = (fab.sacred_geometry && fab.sacred_geometry.route_geometry_signature) || "";
+  return `<div class="kv"><span>Sacred topology</span><strong>${escapeHtml(sig)}</strong></div>` +
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:260px;background:#0b1020;border-radius:8px" aria-label="Flower-of-Life hive topology with Metatron chords">${rings}${lines}${nodes}</svg>`;
+}
+
+async function loadHiveNeural() {
+  if (!dom.hiveNeuralCard) return;
+  try {
+    const snap = await fetchJSON("/ops/brain/canon/hive-neural-snapshot");
+    const fwd = (snap.layers && snap.layers.neural_core && snap.layers.neural_core.forward) || {};
+    const dreams = (snap.layers && snap.layers.dreaming) || {};
+    const geom = (snap.layers && snap.layers.neural_core && snap.layers.neural_core.geometry_signature) || {};
+    const active = (fwd.router_active_experts || []).join(", ");
+    const energy = typeof fwd.final_energy === "number" ? fwd.final_energy.toFixed(4) : "n/a";
+    const planeRows = Object.keys(geom).map((plane) => {
+      const g = geom[plane] || {};
+      return `<tr><td>${escapeHtml(plane)}</td><td>${escapeHtml(g.platonic_solid || "")}` +
+        ` (E=${g.euler_characteristic})</td><td>${escapeHtml(g.field_shape || "")}</td></tr>`;
+    }).join("");
+    dom.hiveNeuralCard.innerHTML =
+      `<div class="kv"><span>Active experts (sparse)</span><strong>${escapeHtml(active) || "—"}</strong></div>` +
+      `<div class="kv"><span>EBT deliberation</span><strong>${fwd.deliberation_steps_used ?? "?"} steps, energy ${energy}, ` +
+      `${fwd.deliberation_converged ? "converged" : "running"}</strong></div>` +
+      `<div class="kv"><span>Output finite</span><strong>${fwd.output_finite ? "yes" : "NO"}</strong></div>` +
+      `<div class="kv"><span>Dream mode</span><strong>${escapeHtml(dreams.mode || "—")} ` +
+      `(${dreams.observe_only ? "observe-only" : "active"})</strong></div>` +
+      `<div class="kv"><span>Euler invariant</span><strong>${snap.layers?.neural_core?.euler_invariant_holds ? "holds (==2)" : "VIOLATED"}</strong></div>` +
+      `<div class="kv"><span>Shadow-gated</span><strong>${snap.all_layers_shadow_gated ? "yes" : "NO"}</strong></div>` +
+      `<table class="mini-table"><thead><tr><th>plane</th><th>solid</th><th>field</th></tr></thead><tbody>${planeRows}</tbody></table>` +
+      buildSacredGeometrySvg(snap.layers && snap.layers.fabric);
+    if (dom.hiveNeuralStatus) {
+      dom.hiveNeuralStatus.textContent = `Hive compute: ${(fwd.router_active_experts || []).length} active / ${Object.keys(geom).length} planes`;
+    }
+  } catch (error) {
+    dom.hiveNeuralCard.innerHTML = `<small>Hive neural snapshot unavailable: ${escapeHtml(error.message)}</small>`;
+  }
+}
+
 async function bootstrap() {
   dom.sessionInput.value = sessionId();
   state.scene = await fetchJSON("./data/scene.json");
@@ -1738,14 +1940,18 @@ async function bootstrap() {
   selectNode(state.scene.nodes.find((node) => node.node_type === "core")?.node_id);
   await loadOverlay();
   await loadReplay();
+  await loadHiveNeural();
   cancelAnimationFrame(state.animationHandle);
   drawAmbientFrame(performance.now());
   setInterval(loadOverlay, 8000);
+  setInterval(loadHiveNeural, 8000);
 }
 
 dom.refreshButton.addEventListener("click", () => loadOverlay().catch((error) => {
   dom.overlayStatus.textContent = `Overlay error: ${error.message}`;
 }));
+
+dom.refreshButton.addEventListener("click", () => loadHiveNeural());
 
 dom.resetViewButton.addEventListener("click", () => {
   animateViewBox({ ...DEFAULT_VIEWBOX });

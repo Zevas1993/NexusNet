@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>NexusNet Wrapper Surface</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0f1115;
+      --panel: #171b22;
+      --panel-2: #202632;
+      --text: #edf2f7;
+      --muted: #a8b3c4;
+      --border: #313947;
+      --accent: #50c878;
+      --accent-2: #7dd3fc;
+      --warn: #f4c35d;
+      --danger: #f87171;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); }
+    a { color: inherit; }
+    .shell { min-height: 100vh; display: grid; grid-template-columns: minmax(320px, 1fr) minmax(300px, 420px); }
+    .workspace { min-height: 100vh; display: flex; flex-direction: column; border-right: 1px solid var(--border); }
+    header { padding: 20px clamp(18px, 3vw, 36px); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+    h1 { margin: 0; font-size: clamp(24px, 3vw, 36px); line-height: 1.05; letter-spacing: 0; }
+    .subtitle { margin-top: 6px; color: var(--muted); font-size: 14px; line-height: 1.45; }
+    .nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    button, .button-link { min-height: 38px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); color: var(--text); padding: 8px 12px; font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 7px; text-decoration: none; white-space: nowrap; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #07110b; }
+    button.secondary, .button-link.secondary { background: transparent; }
+    button:disabled { cursor: not-allowed; opacity: 0.55; }
+    .chat { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+    .controls { padding: 16px clamp(18px, 3vw, 36px); display: grid; grid-template-columns: minmax(190px, 1fr) minmax(170px, 0.65fr); gap: 12px; border-bottom: 1px solid var(--border); background: rgba(23, 27, 34, 0.72); }
+    label { display: grid; gap: 7px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 750; }
+    select, input, textarea { width: 100%; border: 1px solid var(--border); border-radius: 8px; background: #0d1118; color: var(--text); font: inherit; font-size: 14px; padding: 10px 11px; outline: none; }
+    textarea { min-height: 88px; max-height: 220px; resize: vertical; line-height: 1.45; }
+    select:focus, input:focus, textarea:focus { border-color: var(--accent-2); box-shadow: 0 0 0 3px rgba(125, 211, 252, 0.14); }
+    .log { flex: 1; overflow: auto; padding: 18px clamp(18px, 3vw, 36px); display: flex; flex-direction: column; gap: 12px; }
+    .entry { border: 1px solid var(--border); background: var(--panel); border-radius: 8px; padding: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18); }
+    .entry.user { border-color: rgba(125, 211, 252, 0.45); }
+    .entry.assistant { border-color: rgba(80, 200, 120, 0.45); }
+    .entry.error { border-color: rgba(248, 113, 113, 0.7); }
+    .entry-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+    .role { font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: 0.07em; }
+    .meta { color: var(--muted); font-size: 12px; text-align: right; }
+    .content { white-space: pre-wrap; line-height: 1.5; font-size: 14px; }
+    .composer { padding: 16px clamp(18px, 3vw, 36px); border-top: 1px solid var(--border); background: rgba(15, 17, 21, 0.92); display: grid; gap: 10px; }
+    .composer-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .hint { color: var(--muted); font-size: 12px; line-height: 1.35; }
+    aside { min-height: 100vh; display: flex; flex-direction: column; background: var(--panel); }
+    .status-head { padding: 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .status-title { font-size: 16px; font-weight: 850; letter-spacing: 0; }
+    .status-body { padding: 18px 20px 22px; overflow: auto; display: grid; gap: 14px; }
+    .status-card { border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); padding: 13px; display: grid; gap: 11px; }
+    .status-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
+    .status-row strong { font-size: 13px; }
+    .status-row span { color: var(--muted); font-size: 12px; text-align: right; }
+    .pill { display: inline-flex; align-items: center; justify-content: center; min-height: 24px; border-radius: 999px; border: 1px solid var(--border); padding: 3px 8px; font-size: 12px; font-weight: 800; color: var(--muted); }
+    .pill.good { color: var(--accent); border-color: rgba(80, 200, 120, 0.45); }
+    .pill.warn { color: var(--warn); border-color: rgba(244, 195, 93, 0.45); }
+    .pill.bad { color: var(--danger); border-color: rgba(248, 113, 113, 0.45); }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .metric { border: 1px solid var(--border); border-radius: 8px; padding: 10px; background: rgba(13, 17, 24, 0.55); }
+    .metric strong { display: block; font-size: 20px; line-height: 1.1; margin-bottom: 5px; }
+    .metric span { color: var(--muted); font-size: 12px; line-height: 1.35; }
+    .release-runtime-summary, .release-wrapper-boot-supervisor, .release-wrapper-admin-action-lane, .release-wrapper-self-repair-ledger { display: grid; gap: 9px; }
+    .admin-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .admin-actions a, .admin-actions button { min-width: 0; font-size: 12px; }
+    code { color: var(--accent-2); font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
+    .empty { color: var(--muted); border: 1px dashed var(--border); border-radius: 8px; padding: 12px; font-size: 13px; line-height: 1.45; }
+    @media (max-width: 900px) { .shell { grid-template-columns: 1fr; } .workspace { min-height: auto; border-right: 0; } aside { min-height: auto; border-top: 1px solid var(--border); } header { align-items: flex-start; flex-direction: column; } .nav { justify-content: flex-start; } }
+    @media (max-width: 620px) { .controls, .grid, .admin-actions { grid-template-columns: 1fr; } .composer-actions { align-items: stretch; flex-direction: column; } .composer-actions button { width: 100%; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="workspace" aria-label="NexusNet wrapper product surface">
+      <header>
+        <div>
+          <h1>Chat Through The Wrapper</h1>
+          <div class="subtitle">Local/API model access with live growth routing, federated packet emission, and governed update proposals.</div>
+        </div>
+        <nav class="nav" aria-label="Wrapper navigation">
+          <a class="button-link secondary" href="/ui/control-panel/">Control Panel</a>
+          <a class="button-link secondary" href="/ui/visualizer/">Visualizer</a>
+          <a class="button-link secondary" href="/ops/wrapper/release-runtime" target="_blank" rel="noreferrer">Runtime JSON</a>
+          <a class="button-link secondary" href="/ops/wrapper/session-lifecycle" target="_blank" rel="noreferrer">Lifecycle JSON</a>
+          <button class="secondary" id="wrapperRefresh" type="button">Refresh</button>
+        </nav>
+      </header>
+
+      <section class="chat">
+        <div class="controls">
+          <label for="wrapperModelSelect">
+            Model
+            <select class="live-wrapper-model-select" id="wrapperModelSelect" name="model"></select>
+          </label>
+          <label for="wrapperSessionInput">
+            User Session
+            <input id="wrapperSessionInput" name="session_id" autocomplete="off" value="release-wrapper-user"/>
+          </label>
+        </div>
+
+        <section class="log" id="wrapperChatLog" aria-live="polite">
+          <article class="entry assistant">
+            <div class="entry-head">
+              <span class="role">Wrapper</span>
+              <span class="meta">boot surface</span>
+            </div>
+            <div class="content">Send a message to exercise the OpenAI-compatible wrapper path. The status panel updates from sanitized runtime telemetry.</div>
+          </article>
+        </section>
+
+        <form class="composer" id="wrapperComposer">
+          <label for="wrapperPrompt">
+            Prompt
+            <textarea id="wrapperPrompt" name="prompt" placeholder="Ask through the release wrapper..."></textarea>
+          </label>
+          <div class="composer-actions">
+            <span class="hint">Requests go through <code>/v1/chat/completions</code>; status comes from <code>/ops/wrapper/status-card</code>.</span>
+            <button class="primary" id="wrapperSend" type="submit">Send Through Wrapper</button>
+          </div>
+        </form>
+      </section>
+    </section>
+
+    <aside aria-label="Wrapper runtime status">
+      <div class="status-head">
+        <div>
+          <div class="status-title">Release Status</div>
+          <div class="subtitle">Honest live indicators from wrapper runtime endpoints.</div>
+        </div>
+        <span class="pill warn" id="wrapperStatusPill">Loading</span>
+      </div>
+      <div class="status-body">
+        <section class="status-card wrapper-product-status-card" id="wrapperStatusCard">
+          <div class="empty">Loading wrapper status card...</div>
+        </section>
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    const dom = {
+      model: document.getElementById("wrapperModelSelect"),
+      session: document.getElementById("wrapperSessionInput"),
+      status: document.getElementById("wrapperStatusCard"),
+      statusPill: document.getElementById("wrapperStatusPill"),
+      log: document.getElementById("wrapperChatLog"),
+      form: document.getElementById("wrapperComposer"),
+      prompt: document.getElementById("wrapperPrompt"),
+      send: document.getElementById("wrapperSend"),
+      refresh: document.getElementById("wrapperRefresh"),
+    };
+
+    const escaper = document.createElement("textarea");
+    let latestOperatorActionLane = {};
+    let latestSandboxEvidenceRef = "";
+    let latestSandboxCommand = "";
+
+    function escapeHtml(value) {
+      escaper.textContent = value == null ? "" : String(value);
+      return escaper.innerHTML;
+    }
+
+    async function fetchJSON(url, options = {}) {
+      const response = await fetch(url, options);
+      const text = await response.text();
+      let payload = {};
+      if (text) {
+        try {
+          payload = JSON.parse(text);
+        } catch (error) {
+          payload = {detail: text};
+        }
+      }
+      if (!response.ok) {
+        const detail = payload.detail || payload.error || response.statusText;
+        throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+      }
+      return payload;
+    }
+
+    function setPill(label, tone) {
+      dom.statusPill.textContent = label;
+      dom.statusPill.className = `pill ${tone || "warn"}`;
+    }
+
+    function addEntry(role, title, content, meta) {
+      const article = document.createElement("article");
+      article.className = `entry ${role}`;
+      article.innerHTML = `
+        <div class="entry-head">
+          <span class="role">${escapeHtml(title)}</span>
+          <span class="meta">${escapeHtml(meta || "")}</span>
+        </div>
+        <div class="content">${escapeHtml(content)}</div>
+      `;
+      dom.log.appendChild(article);
+      dom.log.scrollTop = dom.log.scrollHeight;
+    }
+
+    function countOrZero(value) {
+      return Number.isFinite(Number(value)) ? Number(value) : 0;
+    }
+
+    function renderStatusCard(card) {
+      const runtime = card.runtime || {};
+      const sessionHistory = runtime.session_history || card.session_history || {};
+      const assimilation = runtime.continuous_assimilation || card.assimilation || {};
+      const assimilationNodes = assimilation.nodes || {};
+      const assimilationCaptures = Object.values(assimilationNodes).reduce((total, node) => total + countOrZero(node && node.captures), 0);
+      const federationPacketCount = runtime.federated_packet_count || (card.federation && card.federation.packet_count) || 0;
+      const growth = runtime.global_growth || card.growth || {};
+      const liveTelemetry = runtime.live_wrapper_telemetry || {};
+      const failureLearning = liveTelemetry.failure_learning || {};
+      const federatedPacketOutbox = runtime.federated_packet_outbox || {};
+      const federatedPacketInbox = runtime.federated_packet_inbox || {};
+      const admin = card.operator_action_lane || card.admin_action_lane || {};
+      const adminStatuses = admin.latest_action_statuses || {};
+      const selfRepairLedger = runtime.self_repair_ledger || card.self_repair_ledger || {};
+      const forwardCoverage = runtime.forward_pass_coverage || card.forward_pass_coverage || {};
+      const canonicalAoCoverage = runtime.canonical_ao_coverage || {};
+      const domainAoRouting = runtime.domain_ao_routing || {};
+      const domainTeacherEval = runtime.domain_teacher_eval_handoff || {};
+      const contextWindowPosture = runtime.context_window_posture || {};
+      const contextCapability = runtime.context_capability_envelope || {};
+      const providerReadiness = runtime.provider_readiness || {};
+      const firstRunReadiness = runtime.first_run_readiness || card.first_run_readiness || {};
+      const releaseManifestRollup = runtime.release_manifest_status_rollup || card.release_manifest_status_rollup || {};
+      const productionSpineReleaseLifecycle = runtime.production_spine_release_lifecycle || card.production_spine_release_lifecycle || {};
+      const latestProductionSpineReleaseLifecycle = productionSpineReleaseLifecycle.latest_run || {};
+      const productionSpineReleaseLifecycleApproval = latestProductionSpineReleaseLifecycle.admin_approval || productionSpineReleaseLifecycle.admin_approval || {};
+      const productionSpineReleaseLifecycleGovernance = latestProductionSpineReleaseLifecycle.authority_evidence_tool_governance || {};
+      const productionSpineReleaseLifecycleRollback = productionSpineReleaseLifecycle.latest_rollback || {};
+      const firstRunProduction = firstRunReadiness.production_spine || {};
+      const firstRunScope = firstRunReadiness.product_scope || "wrapper-session";
+      const firstRunScopeLabel = firstRunScope === "whole-system" ? "Whole-System First Run" : "Wrapper First Run";
+      const bootSupervisor = runtime.boot_supervisor || card.boot_supervisor || {};
+      const bootProductPath = bootSupervisor.evidence && bootSupervisor.evidence.release_product_path || {};
+      const bootProductPathAdmin = bootProductPath.admin_action_statuses || {};
+      const bootProductPathFailureLearning = bootProductPath.failure_learning || {};
+      const autonomousUpdates = card.autonomous_updates || {};
+      const latestDreamProposal = autonomousUpdates.latest_dream_research_proposal || {};
+      const latestSandbox = latestDreamProposal.latest_sandbox_test_evidence || autonomousUpdates.latest_sandbox_test_evidence || {};
+      const privacy = card.privacy || {};
+      const refs = card.endpoint_refs || card.refs || {};
+      const readiness = String(card.honest_status_label || (card.readiness && card.readiness.go_no_go) || "unknown");
+      const tone = ["go", "live", "live-bound"].includes(readiness) ? "good" : readiness === "degraded" ? "bad" : "warn";
+      const runtimeLink = refs.runtime || "/ops/wrapper/release-runtime";
+      const nexusbrainRuntimeCycle = runtime.nexusbrain_runtime_cycle || {};
+      const lifecycleLink = refs.session_lifecycle || "/ops/wrapper/session-lifecycle";
+      const firstRunReadinessLink = refs.first_run_readiness || (firstRunReadiness.endpoint_refs && firstRunReadiness.endpoint_refs.first_run_readiness) || "/ops/wrapper/first-run-readiness";
+      const productionSpineReleaseLifecycleLink = refs.production_spine_release_lifecycle || (productionSpineReleaseLifecycle.endpoint_refs && productionSpineReleaseLifecycle.endpoint_refs.production_spine_release_lifecycle) || "/ops/wrapper/production-spine-release-lifecycle";
+      const bootManifestRef = refs.boot_manifest || bootSupervisor.manifest_ref || "artifacts/release-wrapper-runtime/boot-manifest.json";
+      const proposalRef = admin.admin_approval_ref || admin.proposal_ref || refs.admin_proposal || "/ops/brain/autonomous-updates";
+      const sandboxRef = admin.sandbox_tests_ref || admin.sandbox_ref || refs.admin_sandbox || "/ops/brain/autonomous-updates";
+      const applyRef = admin.apply_ref || refs.admin_apply || "/ops/brain/autonomous-updates";
+      const rollbackRef = admin.rollback_ref || refs.admin_rollback || "/ops/brain/autonomous-updates";
+      const readinessRunRef = admin.run_readiness_evidence_ref || refs.readiness_evidence_run || "/ops/wrapper/release-readiness/run";
+      const latestAoGuard = selfRepairLedger.latest_ao_guard || {};
+      const aoGuardReceiptCount = (latestAoGuard.receipt_refs || []).length;
+      const aoGuardRequired = selfRepairLedger.ao_guard_required !== false ? "required" : "not-required";
+      latestOperatorActionLane = admin;
+      latestSandboxCommand = admin.default_sandbox_command || latestSandboxCommand;
+      if (latestSandbox.evidence_ref) {
+        latestSandboxEvidenceRef = latestSandbox.evidence_ref;
+      }
+      setPill(readiness, tone);
+      dom.status.innerHTML = `
+        <div class="status-row"><strong>Surface</strong><span>${escapeHtml(card.surface_id || "release-wrapper-status-card")}</span></div>
+        <div class="status-row"><strong>Readiness</strong><span><span class="pill ${tone}">${escapeHtml(readiness)}</span></span></div>
+        <div class="grid">
+          <div class="metric"><strong>${assimilationCaptures}</strong><span>continuous assimilation captures</span></div>
+          <div class="metric"><strong>${countOrZero(federationPacketCount)}</strong><span>sanitized federated packets</span></div>
+          <div class="metric"><strong>${countOrZero(failureLearning.captured_count)}</strong><span>failure learning captures</span></div>
+          <div class="metric"><strong>${countOrZero(growth.users || growth.user_event_count)}</strong><span>users reflected in growth</span></div>
+          <div class="metric"><strong>${countOrZero(growth.global_captures || growth.global_event_count)}</strong><span>global growth captures</span></div>
+        </div>
+        <section class="release-runtime-summary">
+          <div class="status-row"><strong>Wrapper Entrypoint</strong><span>${escapeHtml(runtime.entrypoint && runtime.entrypoint.boot_target || "/ui/wrapper/")}</span></div>
+          <div class="status-row"><strong>Runtime Summary</strong><span>${escapeHtml(runtime.honest_status_label || runtime.status || runtime.readiness || "unknown")}</span></div>
+          <div class="status-row"><strong>Runtime Evidence</strong><span><a href="${escapeHtml(runtimeLink)}" target="_blank" rel="noreferrer"><code>${escapeHtml(runtimeLink)}</code></a></span></div>
+          <div class="status-row release-wrapper-session-history"><strong>Session History</strong><span>${escapeHtml(`${sessionHistory.event_count || 0} session events / ${sessionHistory.global_event_count || 0} global`)}</span></div>
+          <div class="status-row release-wrapper-federated-packet-outbox"><strong>Federated Packet Outbox</strong><span>${escapeHtml(`${federatedPacketOutbox.status || "empty"} | ${federatedPacketOutbox.packet_count || 0} packets`)}</span></div>
+          <div class="status-row release-wrapper-federated-packet-inbox"><strong>Federated Packet Inbox</strong><span>${escapeHtml(`${federatedPacketInbox.status || "empty"} | ${federatedPacketInbox.import_count || 0} imports`)}</span></div>
+          <div class="status-row release-wrapper-forward-pass-coverage"><strong>Forward Pass Coverage</strong><span>${escapeHtml(`${forwardCoverage.latest_status || "not-run"} | ${forwardCoverage.receipt_count || 0} receipts`)}</span></div>
+          <div class="status-row release-wrapper-nexusbrain-runtime-cycle"><strong>NexusBrain Cycle</strong><span>${escapeHtml(`${nexusbrainRuntimeCycle.latest_status || "not-run"} | ${nexusbrainRuntimeCycle.receipt_count || 0} receipts`)}</span></div>
+          <div class="status-row release-wrapper-canonical-ao-coverage"><strong>Canonical AO Coverage</strong><span>${escapeHtml(`${canonicalAoCoverage.passed ? "passed" : "blocked"} | ${canonicalAoCoverage.receipt_count || 0} receipts`)}</span></div>
+          <div class="status-row release-wrapper-domain-ao-routing"><strong>Domain AO Routing</strong><span>${escapeHtml(`${domainAoRouting.latest_domain_ao || "not-routed"} | ${domainAoRouting.route_count || 0} receipts`)}</span></div>
+          <div class="status-row release-wrapper-domain-teacher-eval"><strong>Domain Teacher/Eval Handoff</strong><span>${escapeHtml(`${domainTeacherEval.latest_domain_ao || "not-linked"} | ${domainTeacherEval.handoff_count || 0} handoffs`)}</span></div>
+          <div class="status-row release-wrapper-expert-growth"><strong>Expert Growth Candidates</strong><span>${escapeHtml(`${domainTeacherEval.expert_growth_candidate_count || 0} candidates | ${domainTeacherEval.latest_promotion_candidate_id || "no promotion candidate"}`)}</span></div>
+          <div class="status-row release-wrapper-expert-growth-admin-replay"><strong>Expert Growth Admin Replay</strong><span>${escapeHtml(`${domainTeacherEval.latest_admin_eval_replay_status || "not-run"} | ${domainTeacherEval.latest_admin_promotion_decision || "no governance decision"}`)}</span></div>
+          <div class="status-row release-wrapper-expert-growth-sandbox-takeover"><strong>Expert Takeover Evidence</strong><span>${escapeHtml(`${domainTeacherEval.latest_sandbox_takeover_evidence_status || "not-run"} | ${domainTeacherEval.latest_takeover_scorecard_id || "no takeover scorecard"}`)}</span></div>
+          <div class="status-row release-wrapper-context-window-posture"><strong>Context Window Posture</strong><span>${escapeHtml(`${contextWindowPosture.status || "not-measured"} | ${contextWindowPosture.observed_effective_context_tokens || 0}/${contextWindowPosture.canon_min_context_tokens || 1000000} tokens`)}</span></div>
+          <div class="status-row release-wrapper-context-capability"><strong>Context Capability</strong><span>${escapeHtml(`${contextCapability.canon_target_status || "not-measured"} | host cap ${contextCapability.host_context_cap_tokens || 0}`)}</span></div>
+          <div class="status-row release-wrapper-provider-readiness"><strong>Provider Readiness</strong><span>${escapeHtml(`${providerReadiness.status || "not-configured"} | usable ${providerReadiness.usable_provider_count || 0}/${providerReadiness.provider_count || 0}`)}</span></div>
+          <div class="status-row release-wrapper-first-run-readiness"><strong>First Run Readiness</strong><span><a href="${escapeHtml(firstRunReadinessLink)}" target="_blank" rel="noreferrer">${escapeHtml(firstRunReadiness.decision || "not-run")}</a></span></div>
+          <div class="status-row release-wrapper-first-run-scope"><strong>${escapeHtml(firstRunScopeLabel)}</strong><span>${escapeHtml(`${firstRunScope} | ${firstRunProduction.cycle_id || "no production-spine cycle"} | ${firstRunProduction.student_id || "no student"}`)}</span></div>
+          <div class="status-row release-wrapper-production-spine-release-lifecycle"><strong>Production Spine Lifecycle</strong><span><a href="${escapeHtml(productionSpineReleaseLifecycleLink)}" target="_blank" rel="noreferrer">${escapeHtml(`${latestProductionSpineReleaseLifecycle.status || productionSpineReleaseLifecycle.status || "not-run"} | approval ${productionSpineReleaseLifecycleApproval.status || "pending-admin-approval"} | governance ${productionSpineReleaseLifecycleGovernance.status || "missing"} | lifecycle rollback ${productionSpineReleaseLifecycleRollback.status || "not-rolled-back"} | mutation ${latestProductionSpineReleaseLifecycle.release_mutation_allowed ? "allowed" : "blocked"}`)}</a></span></div>
+          <div class="status-row release-wrapper-release-manifest-rollup"><strong>Release Manifest Rollup</strong><span>${escapeHtml(`${releaseManifestRollup.status || "not_recorded"} | mutation ${releaseManifestRollup.release_mutation_allowed ? "allowed" : "blocked"} | ${releaseManifestRollup.control_panel_label || "Release package preview"}`)}</span></div>
+          <div class="status-row release-wrapper-failure-learning"><strong>Failure Learning</strong><span>${escapeHtml(`${failureLearning.latest_status || "not-run"} | ${failureLearning.captured_count || 0} captures`)}</span></div>
+          <div class="status-row release-wrapper-session-lifecycle"><strong>Session Lifecycle</strong><span><a href="${escapeHtml(lifecycleLink)}" target="_blank" rel="noreferrer"><code>${escapeHtml(lifecycleLink)}</code></a></span></div>
+        </section>
+        <section class="release-wrapper-boot-supervisor">
+          <div class="status-row"><strong>Release wrapper boot supervisor</strong><span>${escapeHtml(bootSupervisor.latest_status || "not-run")}</span></div>
+          <div class="status-row"><strong>Boot Checks</strong><span>${escapeHtml(`${bootSupervisor.pass_count || 0}/${bootSupervisor.check_count || 0} pass | ${bootSupervisor.failed_count || 0} blocked`)}</span></div>
+          <div class="status-row"><strong>Forward Smoke</strong><span>${escapeHtml(bootSupervisor.evidence && bootSupervisor.evidence.forward_pass_coverage && bootSupervisor.evidence.forward_pass_coverage.latest_status || "not-run")}</span></div>
+          <div class="status-row"><strong>Readiness Smoke</strong><span>${escapeHtml(bootSupervisor.evidence && bootSupervisor.evidence.release_readiness && bootSupervisor.evidence.release_readiness.go_no_go || "no-go")}</span></div>
+          <div class="status-row"><strong>Release Product Path</strong><span>${escapeHtml(`fed:${bootProductPath.federated_packet_count || 0} dream:${bootProductPath.dream_research_item_count || 0} repair:${bootProductPath.self_repair_action_count || 0}`)}</span></div>
+          <div class="status-row"><strong>Boot Admin Path</strong><span>${escapeHtml(`apply:${bootProductPathAdmin.apply || "not-applied"} rollback:${bootProductPathAdmin.rollback || "not-rolled-back"}`)}</span></div>
+          <div class="status-row"><strong>Boot Failure Learning</strong><span>${escapeHtml(`${bootProductPathFailureLearning.latest_status || "not-run"} | ${bootProductPathFailureLearning.captured_count || 0} captures`)}</span></div>
+          <div class="status-row"><strong>Boot Manifest</strong><span><code>${escapeHtml(bootManifestRef)}</code></span></div>
+          <div class="status-row"><strong>Boot Evidence Key</strong><span><code>boot_supervisor</code> / <code>boot_manifest</code></span></div>
+        </section>
+        <section class="release-wrapper-admin-action-lane">
+          <div class="status-row"><strong>Admin Action Lane</strong><span>${escapeHtml(admin.surface_id || "release-wrapper-admin-action-lane")}</span></div>
+          <div class="status-row"><strong>Latest Actions</strong><span>${escapeHtml(`approval:${adminStatuses.admin_approval || "pending"} sandbox:${adminStatuses.sandbox_tests || "unknown"} apply:${adminStatuses.apply || "blocked"} rollback:${adminStatuses.rollback || "blocked"}`)}</span></div>
+          <div class="admin-actions">
+            <button class="secondary" type="button" data-admin-action="admin_approval" data-admin-ref="${escapeHtml(proposalRef)}">Approve</button>
+            <button class="secondary" type="button" data-admin-action="sandbox_tests" data-admin-ref="${escapeHtml(sandboxRef)}">Sandbox</button>
+            <button class="secondary" type="button" data-admin-action="apply" data-admin-ref="${escapeHtml(applyRef)}">Apply</button>
+            <button class="secondary" type="button" data-admin-action="rollback" data-admin-ref="${escapeHtml(rollbackRef)}">Rollback</button>
+            <button class="secondary" type="button" data-admin-action="run_readiness_evidence" data-admin-ref="${escapeHtml(readinessRunRef)}">Run readiness evidence</button>
+          </div>
+        </section>
+        <section class="release-wrapper-self-repair-ledger">
+          <div class="status-row"><strong>Self Repair Ledger</strong><span>${escapeHtml(selfRepairLedger.surface_id || "release-wrapper-self-repair-ledger")}</span></div>
+          <div class="status-row"><strong>Repair Evidence</strong><span>${escapeHtml(`${selfRepairLedger.repair_count || 0} scoped / ${selfRepairLedger.global_repair_count || 0} global`)}</span></div>
+          <div class="status-row"><strong>AO Guard Receipts</strong><span>${escapeHtml(`${selfRepairLedger.ao_guard_passed_count || 0} guarded actions / ${aoGuardRequired}`)}</span></div>
+          <div class="status-row"><strong>Latest AO Guard</strong><span>${escapeHtml(`${latestAoGuard.passed ? "passed" : "not-run"}:${aoGuardReceiptCount} receipts`)}</span></div>
+          <div class="status-row"><strong>Latest Repair</strong><span>${escapeHtml(`${selfRepairLedger.latest_action || "none"}:${selfRepairLedger.latest_status || "not-run"}`)}</span></div>
+        </section>
+        <div class="status-row"><strong>Privacy</strong><span>${escapeHtml(card.privacy_boundary || privacy.redaction || privacy.status || "sanitized")}</span></div>
+      `;
+    }
+
+    function adminActionPayload(action, endpoint) {
+      const sandboxCommand = latestSandboxCommand || latestOperatorActionLane.default_sandbox_command || "pytest tests/test_release_wrapper_runtime.py::test_release_wrapper_status_card_is_lightweight_control_panel_surface_after_restart -q";
+      if (action === "admin_approval") {
+        return {
+          approved_by: "release-wrapper-ui",
+          approval_ref: "operator-ui::release-wrapper-admin-action-lane",
+        };
+      }
+      if (action === "sandbox_tests") {
+        return {
+          command: sandboxCommand,
+          timeout_seconds: 60,
+        };
+      }
+      if (action === "apply") {
+        if (!latestSandboxEvidenceRef) {
+          throw new Error("Run sandbox tests before apply; safe apply requires sandbox evidence.");
+        }
+        return {
+          test_refs: [sandboxCommand],
+          test_evidence_refs: [latestSandboxEvidenceRef],
+        };
+      }
+      if (action === "rollback") {
+        return {
+          reason: "release-wrapper-ui-operator-rollback",
+        };
+      }
+      if (action === "run_readiness_evidence") {
+        return {
+          session_id: dom.session.value.trim() || "release-wrapper-user",
+          command: sandboxCommand,
+          timeout_seconds: 60,
+          approved_by: "release-wrapper-ui",
+          approval_ref: "operator-ui::release-wrapper-readiness-runner",
+        };
+      }
+      throw new Error(`Unknown admin action for ${endpoint || "wrapper"}.`);
+    }
+
+    async function performAdminAction(action) {
+      const endpoints = {
+        admin_approval: latestOperatorActionLane.admin_approval_ref,
+        sandbox_tests: latestOperatorActionLane.sandbox_tests_ref,
+        apply: latestOperatorActionLane.apply_ref,
+        rollback: latestOperatorActionLane.rollback_ref,
+        run_readiness_evidence: latestOperatorActionLane.run_readiness_evidence_ref,
+      };
+      const labels = {
+        admin_approval: "Admin approval",
+        sandbox_tests: "Sandbox tests",
+        apply: "Safe apply",
+        rollback: "Rollback",
+        run_readiness_evidence: "Run readiness evidence",
+      };
+      const endpoint = endpoints[action];
+      if (!endpoint) {
+        addEntry("error", "Admin Action", `No endpoint available for ${labels[action] || action}.`, "operator action lane");
+        return;
+      }
+
+      const buttons = Array.from(document.querySelectorAll("[data-admin-action]"));
+      buttons.forEach((button) => {
+        button.disabled = true;
+      });
+      try {
+        const payload = adminActionPayload(action, endpoint);
+        const result = await fetchJSON(endpoint, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload),
+        });
+        if (action === "sandbox_tests" && result.evidence_ref) {
+          latestSandboxEvidenceRef = result.evidence_ref;
+          latestSandboxCommand = payload.command;
+        }
+        addEntry("assistant", "Admin Action", `${labels[action] || action}: ${result.status || "accepted"}`, endpoint);
+        await loadStatusCard();
+      } catch (error) {
+        setPill("error", "bad");
+        addEntry("error", "Admin Action", error.message, endpoint);
+      } finally {
+        buttons.forEach((button) => {
+          button.disabled = false;
+        });
+      }
+    }
+
+    async function loadModels() {
+      const payload = await fetchJSON("/v1/models");
+      const models = Array.isArray(payload.data) ? payload.data : [];
+      dom.model.innerHTML = "";
+      for (const model of models) {
+        const option = document.createElement("option");
+        option.value = model.id;
+        option.textContent = model.id;
+        dom.model.appendChild(option);
+      }
+      if (!models.length) {
+        const option = document.createElement("option");
+        option.value = "nexusnet-offline";
+        option.textContent = "nexusnet-offline";
+        dom.model.appendChild(option);
+      }
+    }
+
+    async function loadStatusCard() {
+      const session = encodeURIComponent(dom.session.value.trim() || "release-wrapper-user");
+      const card = await fetchJSON(`/ops/wrapper/status-card?session_id=${session}`);
+      renderStatusCard(card);
+    }
+
+    async function sendMessage(event) {
+      event.preventDefault();
+      const prompt = dom.prompt.value.trim();
+      if (!prompt) {
+        dom.prompt.focus();
+        return;
+      }
+      const session = dom.session.value.trim() || "release-wrapper-user";
+      const model = dom.model.value || "nexusnet-offline";
+      dom.send.disabled = true;
+      addEntry("user", "User", prompt, model);
+      dom.prompt.value = "";
+      try {
+        const payload = await fetchJSON("/v1/chat/completions", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({model, session_id: session, messages: [{role: "user", content: prompt}]}),
+        });
+        const choice = payload.choices && payload.choices[0];
+        const message = choice && choice.message ? choice.message.content : JSON.stringify(payload, null, 2);
+        const runtimeRef = payload.nexusnet && payload.nexusnet.release_runtime_ref || "/ops/wrapper/release-runtime";
+        addEntry("assistant", "NexusNet", message, runtimeRef);
+        await loadStatusCard();
+      } catch (error) {
+        setPill("error", "bad");
+        addEntry("error", "Error", error.message, "wrapper request");
+      } finally {
+        dom.send.disabled = false;
+        dom.prompt.focus();
+      }
+    }
+
+    async function bootstrap() {
+      await loadModels();
+      await loadStatusCard();
+    }
+
+    dom.form.addEventListener("submit", sendMessage);
+    dom.refresh.addEventListener("click", loadStatusCard);
+    dom.session.addEventListener("change", loadStatusCard);
+    document.addEventListener("click", (event) => {
+      const actionButton = event.target.closest("[data-admin-action]");
+      if (!actionButton) {
+        return;
+      }
+      event.preventDefault();
+      performAdminAction(actionButton.dataset.adminAction);
+    });
+    bootstrap().catch((error) => {
+      setPill("error", "bad");
+      dom.status.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+      addEntry("error", "Error", error.message, "bootstrap");
+    });
+  </script>
+</body>
+</html>

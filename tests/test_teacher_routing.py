@@ -19,7 +19,7 @@ def test_live_teacher_routing_selects_expected_primary_secondary_and_bounded_lfm
         },
     )
     assert record.registry_layer == "v2026_live"
-    assert record.selected_teacher_id == "deepseek-v2-lite"
+    assert record.selected_teacher_id == "deepseek-v4-flash"
     assert record.selected_roles["secondary"] == "qwen3-30b-a3b"
     assert record.selected_roles["efficiency"] == "lfm2"
     assert record.arbitration_result == "PATCH_DOMAIN_WITH_LFM2_EDITS_THEN_VERIFY"

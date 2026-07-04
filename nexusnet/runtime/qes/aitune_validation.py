@@ -21,8 +21,20 @@ class AITuneValidationMatrix:
     ) -> dict[str, Any]:
         return self.matrix_builder.matrix(capability=capability, applicability=applicability, model_id=model_id)
 
-    def readiness(self, *, capability: dict[str, Any], applicability: dict[str, Any] | None = None, model_id: str = "unbound") -> dict[str, Any]:
-        return self.runner.readiness(capability=capability, applicability=applicability, model_id=model_id)
+    def readiness(
+        self,
+        *,
+        capability: dict[str, Any],
+        applicability: dict[str, Any] | None = None,
+        model_id: str = "unbound",
+        upstream_inference_gate: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return self.runner.readiness(
+            capability=capability,
+            applicability=applicability,
+            model_id=model_id,
+            upstream_inference_gate=upstream_inference_gate,
+        )
 
     def run(
         self,
@@ -31,5 +43,12 @@ class AITuneValidationMatrix:
         applicability: dict[str, Any] | None = None,
         model_id: str = "unbound",
         simulate: bool = False,
+        upstream_inference_gate: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        return self.runner.run(capability=capability, applicability=applicability, model_id=model_id, simulate=simulate)
+        return self.runner.run(
+            capability=capability,
+            applicability=applicability,
+            model_id=model_id,
+            simulate=simulate,
+            upstream_inference_gate=upstream_inference_gate,
+        )

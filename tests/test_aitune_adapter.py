@@ -4,6 +4,8 @@ from pathlib import Path
 
 from nexus.services import build_services
 from nexusnet.runtime.qes.aitune_adapter import AITuneAdapter
+from nexusnet.runtime.qes.aitune_matrix import AITuneSupportedLaneMatrix
+from nexusnet.runtime.qes.aitune_runner import AITuneValidationRunner
 from tests.test_nexus_phase1_foundation import make_project, _write_yaml
 
 
@@ -78,3 +80,24 @@ def test_aitune_adapter_can_normalize_completed_result_with_fake_module(tmp_path
     assert result["selected_backend"] == "torch-inductor"
     assert result["metrics"]["correctness"] == 0.995
     assert result["artifact_lineage"]["surface"] == "autotune"
+
+
+def test_aitune_readiness_blocks_upstream_inference_gate_even_when_host_capable():
+    runner = AITuneValidationRunner(config={}, artifacts=None, matrix=AITuneSupportedLaneMatrix(config={}))
+
+    readiness = runner.readiness(
+        capability={"available": True, "provider_health": "available", "reasons": []},
+        applicability={"eligible": True, "target_lane": "pytorch-native-transformers"},
+        model_id="transformers/local-ready",
+        upstream_inference_gate={
+            "promotion_allowed": False,
+            "status": "blocked",
+            "blockers": ["inference_architecture_blocks_cache_gate"],
+            "source": "inference_architecture",
+        },
+    )
+
+    assert readiness["status"] == "blocked-upstream-gate"
+    assert readiness["can_execute_here"] is False
+    assert readiness["upstream_inference_gate"]["promotion_allowed"] is False
+    assert "inference_architecture_blocks_cache_gate" in readiness["readiness_blockers"]

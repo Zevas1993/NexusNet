@@ -208,6 +208,11 @@ class TeacherEvidenceService:
         ]
         payload["disagreement_artifacts"] = disagreement_artifacts
         payload["teacher_disagreement_delta"] = payload.get("metrics", {}).get("teacher_disagreement_delta", 0.0)
+        payload["dependency_ratio"] = payload.get("metrics", {}).get("dependency_ratio")
+        payload["native_generation"] = payload.get("metrics", {}).get("native_generation")
+        payload["takeover_readiness"] = payload.get("metrics", {}).get("takeover_readiness")
+        payload["teacher_replacement_candidate"] = payload.get("metrics", {}).get("teacher_replacement_candidate")
+        payload["takeover_rollbackability"] = payload.get("metrics", {}).get("takeover_rollbackability")
         payload["lfm2_bounded_ok"] = payload.get("metrics", {}).get("lfm2_bounded_ok", True)
         payload["teacher_confidence"] = payload.get("metrics", {}).get("teacher_confidence", payload.get("teacher_confidence", 0.0))
         payload["trend_scorecards"] = [

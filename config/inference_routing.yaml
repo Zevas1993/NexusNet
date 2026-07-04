@@ -1,0 +1,92 @@
+inference_economy_router:
+  enabled: true
+  mode: native_primary_manifest_optional
+  authority: NexusBrain
+  routing_order:
+    - privacy_policy
+    - explicit_override
+    - policy_route
+    - specificity_route
+    - complexity_route
+    - capability_provider_selection
+    - fallback_selection
+    - execution_trace_recording
+
+  privacy_policy:
+    local_only:
+      allow_cloud: false
+      allow_external_proxy: false
+    allow_cloud:
+      allow_cloud: true
+      allow_external_proxy: false
+      require_provider_allowlist: true
+    external_ok:
+      allow_cloud: true
+      allow_external_proxy: true
+      require_provider_allowlist: true
+
+  scoring:
+    exclude_roles_from_complexity_scoring:
+      - system
+      - developer
+    recent_message_window: 10
+    default_on_ambiguous: standard
+
+  tiers:
+    simple:
+      selection: cheapest_capable
+      prefer_local: true
+    standard:
+      selection: cheapest_with_min_quality
+      prefer_tool_capable: true
+    complex:
+      selection: highest_quality_cost_tiebreak
+      prefer_tool_capable: true
+    reasoning:
+      selection: highest_quality_reasoning_capable
+      require_validation: true
+
+  specificity_categories:
+    coding:
+      default_tier: complex
+    web_browsing:
+      default_tier: standard
+    data_analysis:
+      default_tier: complex
+    image_generation:
+      default_tier: task_specific
+    video_generation:
+      default_tier: task_specific
+    social_media:
+      default_tier: standard
+    email_management:
+      default_tier: standard
+    calendar_management:
+      default_tier: simple
+    trading:
+      default_tier: reasoning
+      require_human_approval: true
+
+  fallback:
+    strategy: cheapest_capable_then_stronger
+    retry_on:
+      - timeout
+      - transport_error
+      - rate_limit
+      - provider_unavailable
+      - model_unavailable
+      - upstream_5xx
+    do_not_retry_on:
+      - malformed_request
+      - missing_credentials
+      - safety_block
+      - policy_refusal
+
+  manifest_adapter:
+    enabled: true
+    role: optional_openai_compatible_proxy_not_brain
+    base_url: http://localhost:2099/v1
+    model: manifest/auto
+    required_env:
+      MANIFEST_TELEMETRY_DISABLED: "1"
+    capture_response_headers: true

@@ -25,7 +25,7 @@ def test_teacher_provenance_captures_registry_roles_and_lineage(tmp_path):
     assert provenance["registry_layer"] == "v2026_live"
     assert provenance["selected_teacher_roles"]["primary"] == "devstral-2"
     assert provenance["selected_teacher_roles"]["secondary"] == "qwen3-coder-next"
-    assert provenance["selected_teacher_roles"]["critique"] == "deepseek-r1-distill-qwen-32b"
+    assert provenance["selected_teacher_roles"]["critique"] == "deepseek-v4-pro"
     assert provenance["selected_teacher_roles"]["efficiency"] == "lfm2"
     assert provenance["dream_derived"] is True
     assert provenance["live_derived"] is False

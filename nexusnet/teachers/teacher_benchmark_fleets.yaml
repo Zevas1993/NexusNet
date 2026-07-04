@@ -72,7 +72,7 @@ fleets:
       - safe tool use
     teacher_pairs:
       - devstral-2::qwen3-coder-next
-      - code-llama-secure::devstral-2
+      - devstral-2::qwen3-coder-next::validators-codeql-opengrep-owasp
       - devstral-2::mistral-small-4
     budget_classes: [FASTPATH, STANDARD, DEEP]
     output_forms: [TOOL_CALL_STRICT_JSON, CODE_PATCH, STRUCTURED_PLAN]

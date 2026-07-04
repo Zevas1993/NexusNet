@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import hashlib
 import json
 import math
 import shutil
@@ -21,10 +22,169 @@ from .schema import (
     VisualizerOverlayState,
 )
 from .telemetry import VisualizerTelemetryAdapter
+from nexusnet.agents import AgentOpportunityDiscovery
+from nexusnet.agents.harnesses import HarnessImprovementLedger, HarnessModelRouter, HarnessProviderRegistry
+from nexusnet.agents.pipelines import AgenticPipelineRuntime
+from nexusnet.adapters.dataset_forge import DatasetForge
+from nexusnet.adapters.decision_gate import FineTuneDecisionGate
+from nexusnet.adapters.forge import AdapterForgeRegistry
+from nexusnet.adapters.training_planner import AdapterTrainingPlanner
+from nexusnet.browser import BrowserContextMemory, BrowserProfilePolicy
+from nexusnet.core import AutonomousUpdateController, SelfReviewGate
+from nexusnet.core.self_improvement import ImprovementQueue, SelfImprovementLineageRegistry
+from nexusnet.curriculum import DatasetRadar
+from nexusnet.evals import EvalRegistry, VerifierSearchRegistry
+from nexusnet.growth import HiveModelGrowthEngine, NexusNetProductionSpine
+from nexusnet.knowledge import KnowledgeArtifactCompiler
+from nexusnet.memory import MemoryQualityLedger, NexusEngramIndex
+from nexusnet.authority import AuthorityIntegritySpine
+from nexusnet.developmental import DevelopmentalCortexService
+from nexusnet.evals.federation import EvalFederationRegistry
+from nexusnet.evidence import EvidenceStore
+from nexusnet.operations import AssimilationTargetCatalog, AssimilationTargetRegistry, CodegraphGate
+from nexusnet.runtime.decision_ledger import RuntimeDecisionLedger
+from nexusnet.tools.action_harness import ToolActionHarness
+from nexusnet.policy import PolicyKernel
+from nexusnet.protocols import ProtocolTrustRegistry
+from nexusnet.research import ForwardRadarRegistry
+from nexusnet.retrieval import RetrievalPlanner
+from nexusnet.runtime.cache_ledger import EffectiveContextCacheLedger
+from nexusnet.runtime.edge_router import EdgeWorkloadRouter
+from nexusnet.runtime.inference_economy_router import InferenceEconomyRouter
+from nexusnet.runtime.inference_architecture import InferenceArchitectureRegistry
+from nexusnet.runtime.model_passport import EdgeModelCertificationRegistry
+from nexusnet.runtime.quantization.catalog import QuantizationCatalog
+from nexusnet.runtime.workload_scorecards import RuntimeWorkloadScorecardRegistry
+from nexusnet.security import ArtifactTrustRegistry
+from nexusnet.telemetry import ConceptTelemetryRegistry, GenAITraceRegistry
+from nexusnet.vision import MultimodalComputerUseController, OperatorEventRegistry
+from nexusnet.canon import (
+    ao_hive_scorecard,
+    autonomous_evolution_dossier,
+    artifact_trust_scorecard,
+    blackbox_recorder,
+    build_canon_realization,
+    communication_integration_scorecard,
+    eval_suite_scorecard,
+    experts_hive_scorecard,
+    hardware_matrix_scorecard,
+    hive_consensus_scorecard,
+    input_ingestion_scorecard,
+    live_flow_scorecard,
+    memory_provenance_scorecard,
+    neural_core_scorecard,
+    observability_scorecard,
+    output_delivery_scorecard,
+    protocol_trust_scorecard,
+    researcher_swarm_scorecard,
+    runtime_quantization_scorecard,
+    security_governance_scorecard,
+    self_improvement_scorecard,
+    tool_execution_scorecard,
+    visualops_scorecard,
+)
 
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
+
+
+def _dataset_forge_flow_lineage(dataset_forge: dict[str, Any]) -> dict[str, Any]:
+    manifests = list(dataset_forge.get("manifests") or [])
+    canonical_train_lineage: list[dict[str, Any]] = []
+    candidate_material_lineage: list[dict[str, Any]] = []
+    blocked_lineage: list[dict[str, Any]] = []
+    review_blocked_lineage: list[dict[str, Any]] = []
+    lineage_split_policy: dict[str, Any] = {}
+    train_blocked_source_ids: list[str] = []
+    sealed_eval_visibility: dict[str, Any] = {
+        "visible_to_training": False,
+        "visible_to_teacher_council": False,
+        "source_ids": [],
+    }
+    for manifest in manifests[:20]:
+        manifest_id = manifest.get("dataset_manifest_id")
+        if not lineage_split_policy and manifest.get("dataset_radar_lineage_split_policy"):
+            lineage_split_policy = dict(manifest.get("dataset_radar_lineage_split_policy") or {})
+        splits = manifest.get("splits") or {}
+        train_split = splits.get("train") or {}
+        for source_id in train_split.get("blocked_source_ids") or []:
+            if source_id not in train_blocked_source_ids:
+                train_blocked_source_ids.append(source_id)
+        hidden_split = splits.get("teacher_free_hidden") or {}
+        if hidden_split:
+            hidden_source_ids = list(hidden_split.get("source_ids") or [])
+            sealed_eval_visibility = {
+                "visible_to_training": bool(hidden_split.get("visible_to_training")),
+                "visible_to_teacher_council": bool(hidden_split.get("visible_to_teacher_council")),
+                "source_ids": hidden_source_ids,
+            }
+        review_packets = _manifest_review_packets_by_source(manifest)
+        for gate in manifest.get("dataset_radar_gates") or []:
+            review_packet = (
+                review_packets.get(gate.get("source_id"))
+                or review_packets.get(gate.get("request_source_id"))
+                or {}
+            )
+            review_blocking_fields = list(review_packet.get("blocking_fields") or [])
+            training_promotion_allowed = (
+                bool(review_packet.get("training_promotion_allowed"))
+                if review_packet
+                else bool(gate.get("training_eligible"))
+            )
+            row = {
+                "dataset_manifest_id": manifest_id,
+                "source_id": gate.get("source_id"),
+                "request_source_id": gate.get("request_source_id"),
+                "source_kind": gate.get("source_kind"),
+                "requested_split": gate.get("requested_split") or gate.get("split"),
+                "allowed": bool(gate.get("allowed")),
+                "candidate_material": bool(gate.get("candidate_material")),
+                "training_eligible": bool(gate.get("training_eligible")),
+                "material_request_ref": gate.get("material_request_ref"),
+                "latest_candidate_review_id": gate.get("latest_candidate_review_id"),
+                "reason": gate.get("reason"),
+                "source_review_packet_id": review_packet.get("packet_id"),
+                "source_review_state": review_packet.get("review_state") or "not_recorded",
+                "training_promotion_allowed": training_promotion_allowed,
+                "review_blocking_fields": review_blocking_fields,
+            }
+            if row["candidate_material"]:
+                candidate_material_lineage.append(row)
+            elif row["training_eligible"]:
+                canonical_train_lineage.append(row)
+            elif not row["allowed"]:
+                blocked_lineage.append(row)
+            if review_packet and (not training_promotion_allowed or review_blocking_fields):
+                review_blocked_lineage.append(row)
+    return {
+        "manifest_count": dataset_forge.get("manifest_count", 0),
+        "ready_count": dataset_forge.get("ready_count", 0),
+        "blocked_count": dataset_forge.get("blocked_count", 0),
+        "latest_manifest_id": (dataset_forge.get("latest_manifest") or {}).get("dataset_manifest_id"),
+        "required_controls": dataset_forge.get("required_controls", []),
+        "canonical_train_lineage": canonical_train_lineage[:12],
+        "candidate_material_lineage": candidate_material_lineage[:12],
+        "blocked_lineage": blocked_lineage[:12],
+        "review_blocked_lineage": review_blocked_lineage[:12],
+        "lineage_split_policy": lineage_split_policy,
+        "train_blocked_source_ids": train_blocked_source_ids,
+        "sealed_eval_visibility": sealed_eval_visibility,
+    }
+
+
+def _manifest_review_packets_by_source(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    packets: dict[str, dict[str, Any]] = {}
+    for wrapper in manifest.get("dataset_radar_review_packets") or []:
+        review_packet = wrapper.get("review_required_packet") or {}
+        for source_key in (
+            wrapper.get("dataset_radar_source_id"),
+            wrapper.get("source_id"),
+            review_packet.get("dataset_id"),
+        ):
+            if source_key:
+                packets[str(source_key)] = review_packet
+    return packets
 
 
 class NexusVisualizerCompiler:
@@ -199,6 +359,12 @@ class NexusVisualizerCompiler:
 
     def bundled_legacy_3d_dir(self) -> Path:
         return _repo_root() / "ui" / "3d"
+
+    def bundled_control_panel_dir(self) -> Path:
+        return _repo_root() / "ui" / "control-panel"
+
+    def bundled_wrapper_index(self) -> Path:
+        return _repo_root() / "ui" / "wrapper" / "index.html"
 
     def _capsule_position(self, *, index: int, total: int, radius_x: float, radius_y: float) -> tuple[float, float, float]:
         angle = ((math.pi * 2) / total) * index - math.pi / 2
@@ -440,11 +606,56 @@ class NexusVisualizerCompiler:
 
 
 class NexusVisualizerService:
-    def __init__(self, *, paths, teacher_registry, wrapper_surface, store):
+    def __init__(
+        self,
+        *,
+        paths,
+        teacher_registry,
+        wrapper_surface,
+        store,
+        dataset_radar: DatasetRadar | None = None,
+        harness_provider_registry: HarnessProviderRegistry | None = None,
+        harness_model_router: HarnessModelRouter | None = None,
+        assimilation_targets: AssimilationTargetRegistry | None = None,
+        retrieval_planner: RetrievalPlanner | None = None,
+        self_improvement_lineage: SelfImprovementLineageRegistry | None = None,
+        verifier_search: VerifierSearchRegistry | None = None,
+        browser_profile_policy: BrowserProfilePolicy | None = None,
+        operator_events: OperatorEventRegistry | None = None,
+        edge_model_certification: EdgeModelCertificationRegistry | None = None,
+        concept_telemetry: ConceptTelemetryRegistry | None = None,
+        codegraph_gate: CodegraphGate | None = None,
+        developmental_cortex=None,
+        authority_spine=None,
+        evidence_store=None,
+        eval_federation=None,
+        tool_action_harness=None,
+        runtime_decision_ledger=None,
+        assimilation_catalog=None,
+    ):
         self.paths = paths
         self.teacher_registry = teacher_registry
         self.wrapper_surface = wrapper_surface
         self.store = store
+        self.dataset_radar = dataset_radar or DatasetRadar(artifacts_dir=paths.artifacts_dir)
+        self.harness_provider_registry = harness_provider_registry or HarnessProviderRegistry.default()
+        self.harness_model_router = harness_model_router or HarnessModelRouter.default()
+        self.assimilation_targets = assimilation_targets or AssimilationTargetRegistry(artifacts_dir=paths.artifacts_dir)
+        self.retrieval_planner = retrieval_planner or RetrievalPlanner(artifacts_dir=paths.artifacts_dir)
+        self.self_improvement_lineage = self_improvement_lineage or SelfImprovementLineageRegistry(artifacts_dir=paths.artifacts_dir)
+        self.verifier_search = verifier_search or VerifierSearchRegistry(artifacts_dir=paths.artifacts_dir)
+        self.browser_profile_policy = browser_profile_policy or BrowserProfilePolicy(artifacts_dir=paths.artifacts_dir)
+        self.operator_events = operator_events or OperatorEventRegistry(artifacts_dir=paths.artifacts_dir)
+        self.edge_model_certification = edge_model_certification or EdgeModelCertificationRegistry(artifacts_dir=paths.artifacts_dir)
+        self.concept_telemetry = concept_telemetry or ConceptTelemetryRegistry(artifacts_dir=paths.artifacts_dir)
+        self.codegraph_gate = codegraph_gate or CodegraphGate(artifacts_dir=paths.artifacts_dir)
+        self.developmental_cortex = developmental_cortex or DevelopmentalCortexService(artifacts_dir=paths.artifacts_dir)
+        self.authority_spine = authority_spine or AuthorityIntegritySpine(artifacts_dir=paths.artifacts_dir)
+        self.evidence_store = evidence_store or EvidenceStore(artifacts_dir=paths.artifacts_dir)
+        self.eval_federation = eval_federation or EvalFederationRegistry(artifacts_dir=paths.artifacts_dir)
+        self.tool_action_harness = tool_action_harness or ToolActionHarness(artifacts_dir=paths.artifacts_dir)
+        self.runtime_decision_ledger = runtime_decision_ledger or RuntimeDecisionLedger(artifacts_dir=paths.artifacts_dir)
+        self.assimilation_catalog = assimilation_catalog or AssimilationTargetCatalog()
         self.compiler = NexusVisualizerCompiler()
         self.scene = self.compiler.compile_scene()
         self.telemetry = VisualizerTelemetryAdapter(
@@ -465,6 +676,15 @@ class NexusVisualizerService:
         target_legacy = self.paths.ui_dir / "3d"
         if source_legacy.exists() and source_legacy.resolve() != target_legacy.resolve():
             shutil.copytree(source_legacy, target_legacy, dirs_exist_ok=True)
+        source_control_panel = self.compiler.bundled_control_panel_dir()
+        target_control_panel = self.paths.ui_dir / "control-panel"
+        if source_control_panel.exists() and source_control_panel.resolve() != target_control_panel.resolve():
+            shutil.copytree(source_control_panel, target_control_panel, dirs_exist_ok=True)
+        source_wrapper = self.compiler.bundled_wrapper_index()
+        target_wrapper = self.paths.ui_dir / "wrapper" / "index.html"
+        if source_wrapper.exists() and source_wrapper.resolve() != target_wrapper.resolve():
+            target_wrapper.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_wrapper, target_wrapper)
 
     def scene_payload(self) -> dict[str, Any]:
         return self.scene.model_dump(mode="json")
@@ -493,6 +713,9 @@ class NexusVisualizerService:
             },
             "overlay_state": overlay.model_dump(mode="json"),
         }
+
+    def canon_realization(self, session_id: str | None = None) -> dict[str, Any]:
+        return self.state(session_id=session_id)["overlay_state"]["control_panel"]["canon_realization"]
 
     def replay(self, session_id: str | None = None, limit: int = 12) -> dict[str, Any]:
         snapshot = self.wrapper_surface.snapshot(session_id=session_id)
@@ -656,6 +879,18 @@ class NexusVisualizerService:
         )
         inspection_controls["goose_compare"] = goose_compare_controls
         diff_catalog["goose_compare"] = self._goose_compare_catalog(goose_compare_controls)
+        control_panel = self._build_control_panel(
+            session_id=session_id,
+            snapshot=snapshot,
+            recent_trace=recent_trace,
+            teacher_visibility=teacher_visibility,
+            filter_catalog=filter_catalog,
+            diff_catalog=diff_catalog,
+            performance_profile=performance_profile,
+            replay_catalog=replay_catalog,
+            telemetry_window=telemetry_window,
+            safe_mode_physiology=safe_mode_physiology,
+        )
 
         return VisualizerOverlayState(
             scene_version=self.scene.scene_version,
@@ -912,6 +1147,7 @@ class NexusVisualizerService:
             diff_catalog=diff_catalog,
             replay_catalog=replay_catalog,
             performance_profile=performance_profile,
+            control_panel=control_panel,
         )
 
     def _recent_traces(self, *, session_id: str | None, limit: int) -> list[dict[str, Any]]:
@@ -986,6 +1222,1597 @@ class NexusVisualizerService:
 
     def _build_diff_catalog(self, *, teacher_visibility: dict[str, Any], filter_catalog: dict[str, Any]) -> dict[str, Any]:
         return self.telemetry.diff_catalog(teacher_visibility=teacher_visibility, filter_catalog=filter_catalog)
+
+    def _brain_operations_summary(self, *, session_id: str | None) -> dict[str, Any]:
+        commands = self.store.list_brain_operation_commands(session_id=session_id, limit=5)
+        events = self.store.list_brain_operation_events(session_id=session_id, limit=30)
+        latest_command = commands[0] if commands else None
+        active_command_id = latest_command.get("command_id") if latest_command else None
+        active_events = [event for event in events if not active_command_id or event.get("command_id") == active_command_id]
+        return {
+            "status_label": "LOCKED CANON",
+            "state": "live-bound" if latest_command else "standby",
+            "session_id": session_id,
+            "command_count": len(commands),
+            "latest_command": latest_command,
+            "commands": commands,
+            "timeline": list(reversed(active_events or events)),
+            "signal_contract": [
+                "receives_orders",
+                "local_reasoning",
+                "evidence_response",
+                "veto_escalation",
+                "consensus_contribution",
+                "execution_status",
+            ],
+            "canon_binding": {
+                "source_document": "NEXUSNET_COMPLETE_CHAT_CANON_BOOK_2026-04-28.md",
+                "state_taxonomy": [
+                    "live_state",
+                    "simulated_state",
+                    "roadmap_state",
+                    "research_candidate_state",
+                ],
+            },
+        }
+
+    def _brain_operations_columns(self, operations_summary: dict[str, Any]) -> list[dict[str, Any]]:
+        latest_command = operations_summary.get("latest_command") or {}
+        events = operations_summary.get("timeline") or []
+        event_by_type = {event.get("event_type"): event for event in events}
+        veto_event = event_by_type.get("veto_escalation") or event_by_type.get("consensus_state")
+        execution_event = event_by_type.get("execution_status")
+        return [
+            {
+                "label": "NexusBrain orders",
+                "signal_type": "command_issued",
+                "state": "live-bound" if latest_command else "standby",
+                "actor": "NexusBrain",
+                "detail": latest_command.get("command_text") or "No active command issued.",
+            },
+            {
+                "label": "AO local reasoning",
+                "signal_type": "ao_signal",
+                "state": "live-bound" if event_by_type.get("ao_signal") else "standby",
+                "actor": (event_by_type.get("ao_signal") or {}).get("actor") or "AO Hive",
+                "detail": (event_by_type.get("ao_signal") or {}).get("detail") or "AO mini-brains waiting for orders.",
+            },
+            {
+                "label": "Expert evidence",
+                "signal_type": "expert_signal",
+                "state": "live-bound" if event_by_type.get("expert_signal") else "standby",
+                "actor": (event_by_type.get("expert_signal") or {}).get("actor") or "Experts Hive",
+                "detail": (event_by_type.get("expert_signal") or {}).get("detail") or "Expert mini-brains waiting for evidence requests.",
+            },
+            {
+                "label": "Veto / escalation",
+                "signal_type": (veto_event or {}).get("event_type") or "consensus_state",
+                "state": "live-bound" if veto_event else "standby",
+                "actor": (veto_event or {}).get("actor") or "Governance / Safety / NexusBrain",
+                "detail": (veto_event or {}).get("detail")
+                or ((veto_event or {}).get("consensus") or {}).get("veto_state")
+                or "No active veto state.",
+            },
+            {
+                "label": "Execution status",
+                "signal_type": "execution_status",
+                "state": (execution_event or {}).get("state") or latest_command.get("lifecycle_state") or "standby",
+                "actor": (execution_event or {}).get("actor") or latest_command.get("target_surface") or "Tools / Outputs",
+                "detail": (execution_event or {}).get("detail")
+                or "Command lifecycle is tracked through command, AO, expert, consensus, and audit events.",
+            },
+        ]
+
+    def _build_control_panel(
+        self,
+        *,
+        session_id: str | None,
+        snapshot: dict[str, Any],
+        recent_trace: dict[str, Any],
+        teacher_visibility: dict[str, Any],
+        filter_catalog: dict[str, Any],
+        diff_catalog: dict[str, Any],
+        performance_profile: dict[str, Any],
+        replay_catalog: dict[str, Any],
+        telemetry_window: dict[str, Any],
+        safe_mode_physiology: dict[str, Any],
+    ) -> dict[str, Any]:
+        assimilation = snapshot.get("assimilation") or {}
+        compare_refs = assimilation.get("compare_refs") or {}
+        goose = assimilation.get("goose") or {}
+        goose_security = (goose.get("security") or {})
+        goose_extensions = (goose.get("extensions") or {})
+        goose_acp = (goose.get("acp") or {})
+        goose_recipes = (goose.get("recipes") or {})
+        runtime_summary = snapshot.get("runtime") or {}
+        brain_runtime_summary = snapshot.get("brain_runtime") or {}
+        memory_planes = snapshot.get("memory_planes") or {}
+        graph_summary = snapshot.get("graph") or {}
+        retrieval_summary = snapshot.get("retrieval") or {}
+        promotions = snapshot.get("promotions") or {}
+        aos = snapshot.get("aos") or {}
+        agents = snapshot.get("agents") or {}
+        core_execution = snapshot.get("core_execution") or {}
+        release_wrapper_runtime = snapshot.get("release_runtime") or {}
+        project_heartbeat = release_wrapper_runtime.get("project_heartbeat") or {
+            "schema_version": "nexusnet-project-heartbeat-v1",
+            "surface_id": "nexusnet-project-heartbeat",
+            "status": "not-run",
+            "runtime_state": "not-run",
+            "honest_status_label": "core-substrate-heartbeat-not-observed",
+            "trigger": "hive-forward-pass",
+            "heartbeat_id": None,
+            "session_ref_digest": self._session_ref_digest(session_id),
+            "lane_count": 0,
+            "alive_lane_count": 0,
+            "degraded_lane_count": 0,
+            "lanes": [],
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "active_production_mutated": False,
+            "privacy_boundary": (
+                "sanitized-project-heartbeat-status-counts-and-refs-only-no-prompts-outputs-session-ids-or-local-paths"
+            ),
+            "mutation_boundary": "heartbeat-status-and-artifact-refs-only-no-active-production-mutation",
+        }
+        release_wrapper_privacy_consent = release_wrapper_runtime.get("privacy_consent") or {
+            "schema_version": "nexusnet-release-wrapper-privacy-consent-ledger-v1",
+            "surface_id": "release-wrapper-privacy-consent-ledger",
+            "status_label": "LOCKED CANON",
+            "status": "no-live-consent-record-yet-personal-data-default-off",
+            "session_ref_digest": self._session_ref_digest(session_id),
+            "record_count": 0,
+            "latest_record_id": None,
+            "personal_data_training_opt_in": False,
+            "personal_data_federation_allowed": False,
+            "personal_data_dream_training_allowed": False,
+            "sanitized_metadata_federation_allowed": True,
+            "sanitized_dream_research_allowed": True,
+            "raw_content_included": False,
+            "contains_personal_data": False,
+            "active_production_mutation_allowed": False,
+            "privacy_boundary": "hashed-session-consent-state-config-refs-and-retention-policy-only-no-prompts-outputs-session-ids-or-local-paths",
+        }
+        release_wrapper_privacy_consent_enforcement = (
+            release_wrapper_runtime.get("privacy_consent_enforcement")
+            or release_wrapper_privacy_consent.get("queue_enforcement")
+            or {
+                "schema_version": "nexusnet-release-wrapper-privacy-consent-enforcement-ledger-v1",
+                "surface_id": "release-wrapper-privacy-consent-enforcement",
+                "status_label": "LOCKED CANON",
+                "status": "no-revocation-enforcement-recorded",
+                "session_ref_digest": self._session_ref_digest(session_id),
+                "record_count": 0,
+                "latest_record_id": None,
+                "blocked_capabilities": [],
+                "revoked_personal_data_queue_count": 0,
+                "revoked_federated_packet_count": 0,
+                "revoked_federated_import_count": 0,
+                "active_personal_data_training_allowed": False,
+                "active_production_mutation_allowed": False,
+                "raw_content_included": False,
+                "contains_personal_data": False,
+                "privacy_boundary": "sanitized-queue-packet-import-ids-and-consent-record-refs-only-no-prompts-outputs-session-ids-or-local-paths",
+            }
+        )
+        release_wrapper_privacy_retention_enforcement = (
+            release_wrapper_runtime.get("privacy_retention_enforcement")
+            or release_wrapper_privacy_consent.get("retention_cleanup")
+            or release_wrapper_privacy_consent_enforcement.get("retention_enforcement")
+            or {
+                "schema_version": "nexusnet-release-wrapper-privacy-retention-enforcement-ledger-v1",
+                "surface_id": "release-wrapper-privacy-retention-enforcement",
+                "status_label": "LOCKED CANON",
+                "status": "no-retention-enforcement-recorded",
+                "session_ref_digest": self._session_ref_digest(session_id),
+                "record_count": 0,
+                "latest_record_id": None,
+                "expired_queue_count": 0,
+                "passivated_global_growth_count": 0,
+                "global_growth_passivation_mode": "not-recorded",
+                "active_personal_data_training_allowed": False,
+                "active_production_mutation_allowed": False,
+                "raw_content_included": False,
+                "contains_personal_data": False,
+                "privacy_boundary": "sanitized-retention-counts-queue-refs-and-growth-passivation-refs-only-no-prompts-outputs-session-ids-or-local-paths",
+            }
+        )
+        project_heartbeat_replay = release_wrapper_runtime.get("project_heartbeat_replay") or {}
+        native_project_heartbeat_replay_status = {
+            "surface_id": "project-heartbeat-native-replay-control-status",
+            "status": (
+                "covered"
+                if project_heartbeat.get("native_replay_ref")
+                and project_heartbeat.get("native_replay_record_id")
+                else "degraded"
+            ),
+            "runtime_state": (
+                "live-bound"
+                if project_heartbeat.get("native_replay_ref")
+                and project_heartbeat.get("native_replay_record_id")
+                else "degraded"
+            ),
+            "session_ref_digest": self._session_ref_digest(session_id),
+            "native_replay_ref": project_heartbeat.get("native_replay_ref"),
+            "native_replay_record_id": project_heartbeat.get("native_replay_record_id"),
+            "wrapper_replay_ref": (
+                project_heartbeat.get("wrapper_replay_ref")
+                or project_heartbeat_replay.get("artifact_ref")
+            ),
+            "wrapper_replay_record_id": (
+                project_heartbeat.get("wrapper_replay_record_id")
+                or project_heartbeat_replay.get("latest_record_id")
+            ),
+            "evidence_refs": [
+                ref
+                for ref in [
+                    project_heartbeat.get("native_replay_ref"),
+                    project_heartbeat.get("native_replay_record_id"),
+                    project_heartbeat_replay.get("artifact_ref"),
+                    project_heartbeat_replay.get("latest_record_id"),
+                ]
+                if ref
+            ],
+            "honest_status_label": (
+                "native-project-heartbeat-replay-covered"
+                if project_heartbeat.get("native_replay_ref")
+                and project_heartbeat.get("native_replay_record_id")
+                else "native-project-heartbeat-replay-missing"
+            ),
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "active_production_mutated": False,
+            "privacy_boundary": "sanitized-native-heartbeat-replay-refs-only-no-prompts-outputs-session-ids-or-local-paths",
+            "mutation_boundary": "control-panel-status-only-no-active-production-mutation",
+        }
+        release_wrapper_telemetry = release_wrapper_runtime.get("live_wrapper_telemetry") or {
+            "surface_id": "release-wrapper-live-telemetry",
+            "runtime_state": "static-canon",
+            "event_count": 0,
+            "recent_events": [],
+            "privacy_boundary": "sanitized-digests-refs-counts-and-status-only-no-raw-prompts-outputs-session-ids",
+        }
+        release_wrapper_self_repair_ledger = release_wrapper_runtime.get("self_repair_ledger") or {
+            "surface_id": "release-wrapper-self-repair-ledger",
+            "scope": "session" if session_id else "global",
+            "session_ref_digest": None,
+            "repair_count": 0,
+            "global_repair_count": 0,
+            "latest_action": None,
+            "latest_status": None,
+            "actions": [],
+            "ao_guard_required": True,
+            "ao_guard_passed_count": 0,
+            "latest_ao_guard": None,
+            "active_production_mutated": False,
+            "raw_content_included": False,
+            "mutation_boundary": "admin-approved-shadow-safe-file-only-no-active-production-mutation",
+            "privacy_boundary": "sanitized-update-session-digests-and-evidence-refs-only-no-raw-prompts-outputs-session-ids",
+        }
+        release_wrapper_boot_supervisor = release_wrapper_runtime.get("boot_supervisor") or {
+            "surface_id": "release-wrapper-boot-supervisor",
+            "runtime_state": "not-run",
+            "latest_status": "not-run",
+            "manifest_ref": "artifacts/release-wrapper-runtime/boot-manifest.json",
+            "check_count": 0,
+            "pass_count": 0,
+            "failed_count": 0,
+            "raw_content_included": False,
+            "privacy_boundary": "sanitized-boot-refs-status-counts-digests-only-no-raw-prompts-outputs-session-ids",
+        }
+        release_wrapper_initial_release_supervisor = release_wrapper_runtime.get("initial_release_supervisor") or {
+            "surface_id": "release-wrapper-initial-release-supervisor",
+            "runtime_state": "not-run",
+            "latest_status": "not-run",
+            "manifest_ref": "artifacts/release-wrapper-runtime/initial-release-supervisor.json",
+            "product_scope": "whole-system",
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "privacy_boundary": "sanitized-status-ids-counts-digests-only-no-raw-prompts-outputs-session-ids",
+        }
+        release_wrapper_release_product_smoke = release_wrapper_runtime.get("release_product_smoke") or {
+            "surface_id": "release-wrapper-product-smoke",
+            "runtime_state": "not-run",
+            "latest_status": "not-run",
+            "manifest_ref": "artifacts/release-wrapper-runtime/release-product-smoke.json",
+            "product_scope": "whole-system",
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "active_production_mutated": False,
+            "privacy_boundary": "sanitized-release-product-smoke-status-counts-digests-and-endpoint-refs-only-no-prompts-outputs-session-ids-or-local-paths",
+        }
+        release_wrapper_release_run_history = release_wrapper_runtime.get("release_run_history") or {
+            "surface_id": "release-wrapper-release-run-history",
+            "runtime_state": "not-run",
+            "latest_status": "not-run",
+            "manifest_ref": "artifacts/release-wrapper-runtime/release-run-history.jsonl",
+            "product_scope": "whole-system",
+            "run_count": 0,
+            "global_run_count": 0,
+            "latest_run": None,
+            "runs": [],
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "active_production_mutated": False,
+            "privacy_boundary": "sanitized-release-run-history-status-counts-digests-and-endpoint-refs-only-no-prompts-outputs-admin-identities-session-ids-or-local-paths",
+        }
+        release_wrapper_native_hive_heartbeat_watchdog = release_wrapper_runtime.get(
+            "native_hive_heartbeat_watchdog"
+        ) or {
+            "schema_version": "nexusnet-release-wrapper-native-hive-heartbeat-watchdog-v1",
+            "surface_id": "release-wrapper-native-hive-heartbeat-watchdog",
+            "status": "blocked",
+            "runtime_state": "not-run",
+            "latest_fresh": False,
+            "freshness_status": "not-run",
+            "heartbeat_count": 0,
+            "latest_heartbeat_id": None,
+            "artifact_ref": "release-wrapper-runtime/native-hive-heartbeats.jsonl",
+            "watchdog_ref": "release-wrapper-runtime/native-hive-heartbeat-watchdog.json",
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "active_production_mutated": False,
+            "privacy_boundary": "sanitized-native-hive-watchdog-status-ids-counts-and-artifact-refs-only-no-prompts-outputs-session-ids-or-local-paths",
+        }
+        release_wrapper_release_health_heartbeat = release_wrapper_runtime.get("release_health_heartbeat") or {
+            "schema_version": "nexusnet-release-wrapper-health-heartbeat-v1",
+            "surface_id": "release-wrapper-health-heartbeat",
+            "status": "not-run",
+            "runtime_state": "not-run",
+            "trigger": "not-run",
+            "product_surface": "wrapper",
+            "heartbeat_count": 0,
+            "latest_heartbeat_id": None,
+            "artifact_ref": "release-wrapper-runtime/release-health-heartbeat.jsonl",
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "active_production_mutated": False,
+            "privacy_boundary": "sanitized-release-health-status-counts-and-refs-only-no-prompts-outputs-session-ids-or-local-paths",
+        }
+        release_wrapper_release_health_heartbeat_loop = release_wrapper_runtime.get("release_health_heartbeat_loop") or {
+            "schema_version": "nexusnet-release-wrapper-health-heartbeat-loop-v1",
+            "surface_id": "release-wrapper-health-heartbeat-loop",
+            "status": "not-run",
+            "runtime_state": "not-run",
+            "trigger": "not-run",
+            "product_surface": "wrapper",
+            "loop_count": 0,
+            "global_loop_count": 0,
+            "latest_loop_id": None,
+            "latest_heartbeat_id": None,
+            "artifact_ref": "release-wrapper-runtime/release-health-heartbeat-loop.jsonl",
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "active_production_mutated": False,
+            "privacy_boundary": "sanitized-release-health-loop-status-counts-timers-and-refs-only-no-prompts-outputs-session-ids-or-local-paths",
+        }
+        release_wrapper_release_health_heartbeat_supervisor = release_wrapper_runtime.get(
+            "release_health_heartbeat_supervisor"
+        ) or {
+            "schema_version": "nexusnet-release-wrapper-health-heartbeat-supervisor-v1",
+            "surface_id": "release-wrapper-health-heartbeat-supervisor",
+            "status": "disabled",
+            "runtime_state": "disabled",
+            "pulse_count": 0,
+            "global_pulse_count": 0,
+            "latest_pulse_id": None,
+            "latest_loop_id": None,
+            "artifact_ref": "release-wrapper-runtime/release-health-heartbeat-supervisor.jsonl",
+            "state_ref": "release-wrapper-runtime/release-health-heartbeat-supervisor.json",
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "active_production_mutated": False,
+            "privacy_boundary": "sanitized-release-health-supervisor-timers-status-counts-and-refs-only-no-prompts-outputs-session-ids-or-local-paths",
+        }
+        release_wrapper_canon_contract_ledger = release_wrapper_runtime.get("canon_contract_ledger") or {
+            "surface_id": "whole-project-canon-contract-ledger",
+            "schema_version": "nexusnet-whole-project-canon-contract-ledger-v1",
+            "status_label": "LOCKED CANON",
+            "product_scope": "whole-system",
+            "coverage_status": "missing",
+            "contract_count": 0,
+            "evidence_present_count": 0,
+            "partial_count": 0,
+            "missing_count": 0,
+            "source_manifest": {
+                "surface_id": "whole-project-canon-source-manifest",
+                "source_refs": [],
+                "source_count": 0,
+                "ingested_source_count": 0,
+                "missing_source_count": 0,
+                "sources": [],
+                "raw_content_included": False,
+            },
+            "contracts": [],
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "active_production_mutated": False,
+            "privacy_boundary": "sanitized-canon-source-refs-hashes-counts-headings-keyword-counts-and-runtime-evidence-refs-only-no-raw-canon-text-prompts-outputs-session-ids-or-local-paths",
+        }
+        release_wrapper_canon_contract_receipts = release_wrapper_runtime.get("canon_contract_receipts") or {
+            "schema_version": "nexusnet-whole-project-canon-contract-receipts-v1",
+            "surface_id": "whole-project-canon-contract-receipts",
+            "status_label": "LOCKED CANON",
+            "runtime_state": "static-canon",
+            "receipt_count": 0,
+            "covered_receipt_count": 0,
+            "partial_receipt_count": 0,
+            "missing_receipt_count": 0,
+            "latest_status": "not-run",
+            "latest_receipt": None,
+            "receipts": [],
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "privacy_boundary": "sanitized-canon-contract-receipt-ids-counts-statuses-and-evidence-refs-only-no-raw-canon-text-prompts-outputs-session-ids-or-local-paths",
+        }
+        release_wrapper_developmental_release_contract = release_wrapper_runtime.get("developmental_release_contract") or {
+            "surface_id": "developmental-release-contract",
+            "runtime_state": "static-canon",
+            "latest_status": "not-recorded",
+            "canonical_output_names": [
+                "body_schema_snapshot",
+                "reference_frame_updates",
+                "dream_request",
+                "causal_test_request",
+                "growth_archive_candidate",
+                "promotion_tribunal_case",
+            ],
+            "canonical_output_count": 6,
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "privacy_boundary": "canonical-developmental-ids-statuses-counts-and-digested-refs-only-no-prompts-outputs-session-ids-or-local-paths",
+        }
+        release_wrapper_forward_pass_enforcement_matrix = release_wrapper_runtime.get(
+            "whole_system_forward_pass_enforcement_matrix"
+        ) or {
+            "surface_id": "whole-system-forward-pass-enforcement-matrix",
+            "runtime_state": "static-canon",
+            "coverage_status": "partial",
+            "required_capability_columns": [
+                "continuous_assimilation",
+                "global_growth",
+                "federated_packet",
+                "production_spine",
+                "ao_eval_tool_governance",
+                "developmental_release_contract",
+                "cache_context_truth",
+                "rollback_safe_updates",
+            ],
+            "entrypoint_count": 0,
+            "covered_entrypoint_count": 0,
+            "missing_entrypoint_count": 0,
+            "entrypoints": [],
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "privacy_boundary": "sanitized-entrypoint-statuses-capability-columns-and-evidence-refs-only-no-prompts-outputs-session-ids-or-local-paths",
+        }
+        release_wrapper_session_lifecycle = snapshot.get("release_session_lifecycle") or {
+            "surface_id": "release-wrapper-session-lifecycle",
+            "runtime_state": release_wrapper_runtime.get("entrypoint", {}).get("runtime_state") or "static-canon",
+            "lifecycle_steps": [],
+            "step_counts": {"total": 0, "passed": 0, "blocked": 0},
+            "session_history": release_wrapper_runtime.get("session_history") or {},
+            "readiness": snapshot.get("release_readiness") or {},
+            "release_manifest_status_rollup": release_wrapper_runtime.get("release_manifest_status_rollup") or {},
+            "privacy_boundary": "sanitized-session-lifecycle-digests-refs-status-only-no-raw-prompts-outputs-session-ids",
+        }
+        native_runtime_growth_governance = (
+            release_wrapper_runtime.get("native_runtime_growth_governance")
+            if isinstance(release_wrapper_runtime.get("native_runtime_growth_governance"), dict)
+            else release_wrapper_session_lifecycle.get("native_runtime_growth_governance")
+            if isinstance(release_wrapper_session_lifecycle.get("native_runtime_growth_governance"), dict)
+            else {}
+        )
+        direct_nexusbrain_native_growth_governance = {
+            "surface_id": "direct-nexusbrain-native-growth-governance",
+            "status_label": "LOCKED CANON",
+            "status": (
+                native_runtime_growth_governance.get("status")
+                if native_runtime_growth_governance.get("direct_nexusbrain_generate") is True
+                else "not-triggered"
+            ),
+            "honest_status_label": (
+                "direct-nexusbrain-native-growth-governance-replayed"
+                if native_runtime_growth_governance.get("direct_nexusbrain_generate") is True
+                and native_runtime_growth_governance.get("latest_runner_run_id")
+                else "direct-nexusbrain-native-growth-governance-not-observed"
+            ),
+            "runtime_state": (
+                "replayed-history"
+                if native_runtime_growth_governance.get("direct_nexusbrain_generate") is True
+                and native_runtime_growth_governance.get("latest_runner_run_id")
+                else "static-canon"
+            ),
+            "direct_nexusbrain_generate": bool(
+                native_runtime_growth_governance.get("direct_nexusbrain_generate")
+            ),
+            "runtime_growth_receipt_id": native_runtime_growth_governance.get("runtime_growth_receipt_id"),
+            "proposal_update_id": native_runtime_growth_governance.get("proposal_update_id"),
+            "latest_runner_run_id": native_runtime_growth_governance.get("latest_runner_run_id"),
+            "latest_action_statuses": native_runtime_growth_governance.get("latest_action_statuses") or {},
+            "active_production_mutated": bool(
+                native_runtime_growth_governance.get("active_production_mutated")
+            ),
+            "active_production_mutation_allowed": False,
+            "raw_content_included": False,
+            "privacy_boundary": (
+                "direct-nexusbrain-native-growth-visualizer-status-uses-receipt-run-status-refs-only-no-prompts-outputs-session-ids"
+            ),
+            "mutation_boundary": "visualizer-status-only-no-active-production-mutation",
+        }
+        operations_summary = self._brain_operations_summary(session_id=session_id)
+        latest_operation_command = operations_summary.get("latest_command") or {}
+        active_command_id = latest_operation_command.get("command_id")
+        live_operation_events = operations_summary.get("timeline") or []
+
+        def count(value: Any) -> int:
+            return len(value) if isinstance(value, list) else 0
+
+        def map_state(condition: Any, fallback: str = "static-canon") -> str:
+            return "live-bound" if condition else fallback
+
+        def status_counts(values: list[str]) -> dict[str, int]:
+            counts: dict[str, int] = {}
+            for value in values:
+                counts[value] = counts.get(value, 0) + 1
+            return counts
+
+        def page(
+            page_id: str,
+            label: str,
+            *,
+            state: str,
+            summary: str,
+            metrics: dict[str, Any],
+            refs: list[str],
+            required: list[str],
+            research: list[str] | None = None,
+        ) -> dict[str, Any]:
+            return {
+                "page_id": page_id,
+                "label": label,
+                "state": state,
+                "summary": summary,
+                "metrics": metrics,
+                "evidence_refs": [ref for ref in refs if ref],
+                "required_surfaces": required,
+                "research_lanes": research or [],
+            }
+
+        runtime_candidates = runtime_summary.get("candidates") or []
+        teacher_profiles = ((snapshot.get("teachers") or {}).get("profiles") or [])
+        memory_configs = memory_planes.get("configs") or []
+        ao_records = aos.get("orchestrators") or aos.get("aos") or aos.get("items") or []
+        agent_capabilities = agents.get("capabilities") or []
+        promotion_items = promotions.get("items") or []
+        extension_summary = goose_extensions if isinstance(goose_extensions, dict) else {}
+        acp_summary = goose_acp if isinstance(goose_acp, dict) else {}
+        recipes_summary = goose_recipes if isinstance(goose_recipes, dict) else {}
+        assimilation_target_scorecard = assimilation.get("assimilation_targets") or self.assimilation_targets.scorecard(
+            session_id=session_id,
+        )
+        video_assimilation_scorecard = self.assimilation_targets.video_scorecard(session_id=session_id)
+
+        research_lanes = [
+            {
+                "lane_id": "inference-architecture",
+                "label": "Inference Architecture Beyond Quantization",
+                "status": "candidate",
+                "watch_items": ["speculative decoding", "disaggregated prefill/decode", "prefix caching", "KV reuse", "LMCache", "continuous batching"],
+                "promotion_gate": "RuntimeWorkloadScorecard plus KVCacheLedger evidence required.",
+            },
+            {
+                "lane_id": "agent-observability",
+                "label": "Agent Observability Standards",
+                "status": "candidate",
+                "watch_items": ["OpenTelemetry GenAI", "trace schema registry", "redaction", "export readiness"],
+                "promotion_gate": "TraceSchemaRegistry and TracePrivacyGate must be populated.",
+            },
+            {
+                "lane_id": "agent-protocols",
+                "label": "Agent Protocol Future",
+                "status": "candidate",
+                "watch_items": ["MCP", "A2A", "AG-UI", "ACP", "agent identity", "permission scopes"],
+                "promotion_gate": "GovernedProtocolAdapterRegistry and ProtocolTrustEnvelope required.",
+            },
+            {
+                "lane_id": "agent-evals",
+                "label": "Agent Eval Suite",
+                "status": "candidate",
+                "watch_items": ["GAIA", "tau-bench", "OSWorld", "SWE-bench", "BrowserGym", "WebArena", "NexusNet held-out evals"],
+                "promotion_gate": "EvalSuiteRegistry and held-out regression evidence required.",
+            },
+            {
+                "lane_id": "memory-rag-kg",
+                "label": "Memory, RAG, And Knowledge Graphs",
+                "status": "candidate",
+                "watch_items": ["GraphRAG", "LightRAG", "HippoRAG", "RAGChecker", "RAGAS", "source-to-claim maps"],
+                "promotion_gate": "MemoryQualityLedger and SourceClaimMap evidence required.",
+            },
+            {
+                "lane_id": "ai-supply-chain",
+                "label": "AI Supply Chain Security",
+                "status": "candidate",
+                "watch_items": ["Sigstore", "ML-BOM", "AI-BOM", "safetensors", "pickle scanning", "artifact provenance"],
+                "promotion_gate": "ArtifactTrustLedger and unsafe-artifact gate required.",
+            },
+            {
+                "lane_id": "edge-local-hardware",
+                "label": "Edge, Browser, And Local Hardware Roadmap",
+                "status": "candidate",
+                "watch_items": ["WebNN", "WebGPU", "MLX", "QAIRT", "LiteRT-LM", "ExecuTorch", "OpenVINO", "Ryzen AI"],
+                "promotion_gate": "EdgeHardwareMatrix and DeviceCertificationGate required.",
+            },
+            {
+                "lane_id": "multimodal-computer-use",
+                "label": "Multimodal Computer Use",
+                "status": "candidate",
+                "watch_items": ["screen agents", "OCR", "VLM routing", "OmniParser", "ASR", "TTS", "OS/browser control"],
+                "promotion_gate": "ComputerUseSafetyCase and action permission gates required.",
+            },
+            {
+                "lane_id": "autonomous-updates",
+                "label": "Autonomous Updates And Self-Review",
+                "status": "shadow-only",
+                "watch_items": ["multi-agent researcher", "self-review", "harness diffing", "shadow simulation", "rollback"],
+                "promotion_gate": "PromotionProvenanceGate and rollback readiness required.",
+            },
+        ]
+
+        quantization_catalog = {
+            "method_families": [
+                "GGUF",
+                "GPTQ",
+                "AWQ",
+                "EXL2",
+                "MXFP4",
+                "NVFP4",
+                "FP4",
+                "FP8",
+                "NF4",
+                "INT8",
+                "INT4",
+                "SmoothQuant",
+                "SpinQuant",
+                "QuaRot",
+                "HQQ",
+                "AQLM",
+                "KV-cache quantization",
+                "TurboQuant",
+            ],
+            "formats": ["safetensors", "GGUF", "ONNX", "MLX", "MNN", "ExecuTorch", "LiteRT", "OpenVINO IR", "TensorRT-LLM"],
+            "required_fields": [
+                "backend_support",
+                "hardware_fit",
+                "eval_delta",
+                "cache_impact",
+                "license",
+                "provenance",
+                "rollback_path",
+            ],
+        }
+        dataset_radar = self.dataset_radar.scorecard()
+        dataset_forge = DatasetForge(artifacts_dir=self.paths.artifacts_dir, dataset_radar=self.dataset_radar).scorecard()
+        knowledge_artifacts = KnowledgeArtifactCompiler(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        latest_knowledge_artifact = knowledge_artifacts.get("latest_artifact") or {}
+        knowledge_artifact_runtime_gate_coverage = knowledge_artifacts.get("downstream_runtime_gate_coverage") or {}
+        dataset_flow_view = {
+            "view_id": "dataset-flow-view",
+            "label": "Dataset Flow View",
+            "stage_views": [
+                "Macro Hive",
+                "Neural Substrate",
+                "Transformer/MoE Path",
+                "Growth Flow",
+                "Dataset Curriculum",
+                "Replay Mode",
+            ],
+            "flow_label": "dataset -> license/privacy gate -> teacher council -> curriculum stage -> student -> eval -> promotion",
+            "runtime_state": dataset_radar.get("runtime_state", "static-canon"),
+            "source_count": dataset_radar.get("source_count", 0),
+            "blocked_count": dataset_radar.get("blocked_count", 0),
+            "candidate_gate_blocked_count": dataset_radar.get("candidate_gate_blocked_count", 0),
+            "state_counts": dataset_radar.get("state_counts", {}),
+            "coder_expert_lineage": dataset_radar.get("coder_expert_lineage", []),
+            "coder_expert_lineage_split_policy": dataset_radar.get("coder_expert_lineage_split_policy", {}),
+            "candidate_gate_previews": dataset_radar.get("candidate_gate_previews", []),
+            "candidate_review_history": dataset_radar.get("candidate_review_history", []),
+            "material_request_history": dataset_radar.get("material_request_history", []),
+            "refresh_batch_history": dataset_radar.get("refresh_batch_history", []),
+            "dataset_forge_lineage": _dataset_forge_flow_lineage(dataset_forge),
+            "node_fields": [
+                "source_url",
+                "freshness",
+                "license_state",
+                "allowed_uses",
+                "target_nodes",
+                "blocked_reason",
+                "source_kind",
+                "candidate_material",
+                "training_eligible",
+                "material_request_ref",
+                "replay",
+            ],
+            "gate_sequence": [
+                "dataset",
+                "license/privacy gate",
+                "candidate review",
+                "material request",
+                "teacher council",
+                "curriculum stage",
+                "student",
+                "eval",
+                "promotion",
+            ],
+        }
+        hive_mind = {
+            "operating_model_id": "commanded-collective-hive",
+            "label": "Commanded Collective Hive",
+            "summary": (
+                "NexusBrain centrally orchestrates goals, priorities, constraints, and orders while AO and Expert "
+                "mini-brains contribute local reasoning, evidence, veto/escalation signals, and execution status."
+            ),
+            "central_orchestrator": {
+                "authority": "NexusBrain",
+                "role": "central neural command and arbitration layer",
+                "command_chain": [
+                    "NexusBrain",
+                    "AO Hive",
+                    "Experts Hive",
+                    "Tools / Outputs",
+                    "Memory Feedback",
+                    "NexusBrain",
+                ],
+                "responsibilities": [
+                    "issue mission intent",
+                    "set priorities",
+                    "route work",
+                    "enforce policy",
+                    "arbitrate conflict",
+                    "promote verified outcomes",
+                ],
+            },
+            "hybrid_traits": {
+                "collective_intelligence": [
+                    "proposal/evidence consensus",
+                    "local specialist reasoning",
+                    "veto/downvote escalation",
+                    "shared memory contribution",
+                ],
+                "unified_command": [
+                    "central command pressure",
+                    "shared mission state",
+                    "synchronized execution",
+                    "organization-wide awareness",
+                ],
+                "business_organization": [
+                    "executive command",
+                    "AO departments",
+                    "expert teams",
+                    "tool/operator workforce",
+                ],
+            },
+            "mini_brain_signal_contract": [
+                "receives_orders",
+                "local_reasoning",
+                "evidence_response",
+                "veto_escalation",
+                "consensus_contribution",
+                "execution_status",
+            ],
+            "mini_brain_nodes": [
+                {
+                    "node_id": "ao-hive",
+                    "role": "AO mini-brain",
+                    "scope": "department-level orchestration across NexusNet brain regions",
+                    "reports_to": "NexusBrain",
+                    "state": map_state(ao_records, "static-canon"),
+                    "signals": ["receives_orders", "local_reasoning", "veto_escalation", "consensus_contribution"],
+                },
+                {
+                    "node_id": "experts-hive",
+                    "role": "Expert mini-brain",
+                    "scope": "specialized knowledge, tools, and local evidence for each domain",
+                    "reports_to": "AO Hive",
+                    "state": map_state(teacher_profiles, "static-canon"),
+                    "signals": ["receives_orders", "evidence_response", "execution_status", "consensus_contribution"],
+                },
+                {
+                    "node_id": "tools-outputs",
+                    "role": "Execution workforce",
+                    "scope": "tool calls, build actions, artifacts, outputs, and operator-visible results",
+                    "reports_to": "Experts Hive",
+                    "state": map_state(recipes_summary or agent_capabilities, "static-canon"),
+                    "signals": ["receives_orders", "execution_status", "evidence_response"],
+                },
+                {
+                    "node_id": "memory-feedback",
+                    "role": "Memory feedback loop",
+                    "scope": "shared memory updates, source-to-claim maps, continuity, and learning feedback",
+                    "reports_to": "NexusBrain",
+                    "state": map_state(memory_configs or graph_summary or retrieval_summary, "static-canon"),
+                    "signals": ["evidence_response", "consensus_contribution", "execution_status"],
+                },
+            ],
+        }
+        cockpit = {
+            "surface_id": "mission-control-cockpit",
+            "label": "NexusNet Mission Control",
+            "primary_mode": "Command",
+            "modes": [
+                "Command",
+                "Brain Map",
+                "AOs",
+                "Experts",
+                "Security",
+                "Runtime",
+                "Memory",
+                "Forward Radar",
+            ],
+            "command_chain": [
+                "NexusBrain",
+                "AO Hive",
+                "Experts",
+                "Tools/Outputs",
+                "Memory Feedback",
+                "NexusBrain",
+            ],
+            "command_bar": {
+                "label": "Pilot Command Deck",
+                "authority": "NexusBrain",
+                "state": "live-bound" if active_command_id else "standby",
+                "active_surface": "Command",
+                "session_trace": recent_trace.get("trace_id") or "standby",
+                "active_command_id": active_command_id,
+                "primary_order": latest_operation_command.get("command_text")
+                or "orchestrate NexusNet brain, AO hive, expert hive, tools, outputs, and memory feedback",
+            },
+            "command_rail": {
+                "label": "Command Rail",
+                "actions": [
+                    "Refresh live state",
+                    "Open wrapper",
+                    "Open visualizer",
+                    "Inspect selected brain surface",
+                    "Review promotion gates",
+                ],
+            },
+            "operations_board": {
+                "label": "AO / Expert Operations Board",
+                "columns": [
+                    "NexusBrain orders",
+                    "AO local reasoning",
+                    "Expert evidence",
+                    "Veto / escalation",
+                    "Execution status",
+                ],
+                "live_columns": self._brain_operations_columns(operations_summary),
+            },
+            "alert_rail": {
+                "label": "Alert Rail",
+                "channels": [
+                    "security posture",
+                    "governance gates",
+                    "runtime health",
+                    "eval blockers",
+                    "protocol permissions",
+                ],
+            },
+            "timeline": {
+                "label": "Operations Timeline",
+                "lanes": [
+                    "flow trace",
+                    "decisions",
+                    "tool runs",
+                    "memory writes",
+                    "autonomous update proposals",
+                ],
+                "events": live_operation_events,
+            },
+            "brain_map_deck": {
+                "label": "Brain Map Deck",
+                "role": "secondary cockpit deck for architecture inspection after the live command viewport",
+            },
+            "live_operations": operations_summary,
+        }
+
+        expert_topologies = [
+            topology.model_dump(mode="json")
+            for topology in self.compiler.topologies.values()
+            if topology.authoritative_core_roster and not topology.auxiliary
+        ]
+        improvement_queue_items = ImprovementQueue(self.paths.state_dir / "self_improvement_queue.json").list_items()
+        improvement_queue_summary = {
+            "item_count": len(improvement_queue_items),
+            "status_counts": status_counts([item.status for item in improvement_queue_items]),
+        }
+
+        pages = [
+            page(
+                "overview",
+                "Overview",
+                state="live-bound",
+                summary="Brain authority, layer posture, live/degraded/static state, and promotion posture.",
+                metrics={
+                    "trace_count": telemetry_window.get("trace_count", 0),
+                    "registry_layer": ((recent_trace.get("teacher_provenance") or {}).get("registry_layer")),
+                    "promotion_candidate_count": count(promotion_items),
+                    "recommended_render_tier": performance_profile.get("recommended_tier"),
+                    "active_command_id": active_command_id,
+                },
+                refs=["/ops/brain/visualizer/state", "/ops/brain/wrapper-surface"],
+                required=["brain authority", "12-layer posture", "state truthfulness", "promotion posture"],
+            ),
+            page(
+                "input-ingestion",
+                "Input Ingestion",
+                state=map_state(active_command_id or retrieval_summary or acp_summary, "static-canon"),
+                summary="User commands, files, project notes, code snippets, transcripts, external APIs, webhooks, events, streams, source permissions, and freshness.",
+                metrics={
+                    "active_command_id": active_command_id,
+                    "command_count": operations_summary.get("command_count", 0),
+                    "retrieval_scorecard": (((retrieval_summary.get("scorecards") or {}).get("latest_scorecard") or {}).get("scorecard_id")),
+                    "permission_surface": "/ops/brain/security/permissions",
+                },
+                refs=["/ops/brain/canon/input-ingestion", "/ops/brain/operations", "/retrieval/ingest", "/ops/brain/security/permissions"],
+                required=["user commands", "uploaded files", "project notes", "code snippets", "transcripts", "external APIs", "events", "streams", "source permissions", "freshness"],
+                research=["agent-observability", "memory-rag-kg", "agent-protocols"],
+            ),
+            page(
+                "live-flow-trace",
+                "Live Flow Trace",
+                state=map_state(recent_trace, "degraded"),
+                summary="Route, model, memory, tool, policy, eval, and output trace correlation.",
+                metrics={
+                    "latest_trace_id": recent_trace.get("trace_id"),
+                    "selected_ao": recent_trace.get("selected_ao"),
+                    "selected_expert": recent_trace.get("selected_expert"),
+                    "replay_frames": replay_catalog.get("frame_count", 0),
+                },
+                refs=["/ops/brain/visualizer/replay", "/ops/traces/{trace_id}"],
+                required=["route trace", "memory trace", "tool trace", "policy trace", "eval link"],
+                research=["agent-observability"],
+            ),
+            page(
+                "neural-core",
+                "Neural Core Orchestrator",
+                state=map_state(core_execution.get("latest_trace_id"), "static-canon"),
+                summary="NexusBrain routes, lock state, expert routing, policy decisions, and fallback paths.",
+                metrics={
+                    "brain_first_execution": core_execution.get("brain_first_execution"),
+                    "execution_mode": core_execution.get("execution_mode"),
+                    "selected_runtime_name": core_execution.get("selected_runtime_name"),
+                    "latest_artifact_id": core_execution.get("latest_artifact_id"),
+                },
+                refs=["/ops/brain/core", "/ops/brain/wrapper-surface"],
+                required=["NexusBrain authority", "fallback path", "policy decision", "artifact trace"],
+            ),
+            page(
+                "ao-hive",
+                "AO Hive",
+                state=map_state(ao_records, "static-canon"),
+                summary="AO roles, active work, context shards, model/tool permissions, and collaboration state.",
+                metrics={
+                    "ao_count": count(ao_records),
+                    "agent_capability_count": count(agent_capabilities),
+                    "active_agent_id": (agents.get("session_provenance") or {}).get("active_agent_id"),
+                },
+                refs=["/ops/brain/subagents", "/ops/brain/agents/scheduled"],
+                required=["AO roles", "delegation state", "context ownership", "tool permissions"],
+                research=["agent-protocols", "autonomous-updates"],
+            ),
+            page(
+                "experts-hive",
+                "Experts Hive",
+                state=map_state(expert_topologies, "static-canon"),
+                summary="Domain-specialized expert mini-brains with local reasoning, evidence response, consensus signals, veto escalation, and memory feedback.",
+                metrics={
+                    "expert_count": count(expert_topologies),
+                    "selected_expert": recent_trace.get("selected_expert"),
+                    "expert_signal_count": sum(len(event.get("signals") or []) for event in operations_summary.get("timeline", []) if event.get("event_type") == "expert_signal"),
+                    "mini_nexusnet_per_expert": True,
+                },
+                refs=["/ops/brain/canon/experts-hive", "/ops/brain/core", "/ops/brain/operations", "nexusnet/visuals/expert_topologies.yaml"],
+                required=["domain roster", "mini NexusNet per expert", "expert routing", "evidence response", "veto escalation", "memory feedback"],
+                research=["agent-protocols", "agent-evals", "memory-rag-kg"],
+            ),
+            page(
+                "hive-organization",
+                "Hive Organization",
+                state="static-canon",
+                summary="Commanded collective hive structure: NexusBrain executive command, AO departments, Expert teams, tools, outputs, and memory feedback.",
+                metrics={
+                    "operating_model": hive_mind["operating_model_id"],
+                    "command_chain_length": len(hive_mind["central_orchestrator"]["command_chain"]),
+                    "mini_brain_count": len(hive_mind["mini_brain_nodes"]),
+                    "signal_contract_count": len(hive_mind["mini_brain_signal_contract"]),
+                },
+                refs=["overlay.control_panel.hive_mind", "/ops/brain/visualizer/state"],
+                required=["central orchestration", "AO departments", "expert mini-brains", "command chain", "feedback loop"],
+                research=["agent-protocols", "agent-observability", "autonomous-updates"],
+            ),
+            page(
+                "context-memory",
+                "Context And Memory",
+                state=map_state(memory_configs or graph_summary or retrieval_summary, "static-canon"),
+                summary="Memory quality, source-to-claim maps, graph health, stale memory, and privacy controls.",
+                metrics={
+                    "memory_plane_count": count(memory_configs),
+                    "projection_adapter_count": count(memory_planes.get("projection_adapters") or []),
+                    "graph_status": graph_summary.get("status") or graph_summary.get("state"),
+                    "retrieval_scorecard": (((retrieval_summary.get("scorecards") or {}).get("latest_scorecard") or {}).get("scorecard_id")),
+                },
+                refs=["/ops/memory/{session_id}", compare_refs.get("attention_comparative_summary")],
+                required=["MemoryQualityLedger", "SourceClaimMap", "graph health", "staleness queue"],
+                research=["memory-rag-kg"],
+            ),
+            page(
+                "governance-observability",
+                "Governance And Observability",
+                state=map_state(telemetry_window.get("trace_count"), "degraded"),
+                summary="Policies, GenAI trace mapping, redaction, audit trails, and export readiness.",
+                metrics={
+                    "trace_count": telemetry_window.get("trace_count", 0),
+                    "source_status": telemetry_window.get("source_status", {}),
+                    "safe_mode": safe_mode_physiology.get("safe_mode"),
+                    "compare_ref_count": len(compare_refs),
+                },
+                refs=["/ops/brain/visualizer/state", "/ops/brain/security/adversary-reviews", "/ops/brain/security/permissions"],
+                required=["TraceSchemaRegistry", "GenAISpanMapper", "TracePrivacyGate", "audit export"],
+                research=["agent-observability", "ai-supply-chain"],
+            ),
+            page(
+                "connections-protocols",
+                "Connections And Protocols",
+                state=map_state(acp_summary or extension_summary, "research-candidate"),
+                summary="MCP, A2A, AG-UI, ACP, webhooks, buses, identities, consent, and trust envelopes.",
+                metrics={
+                    "acp_provider_count": acp_summary.get("provider_count", 0),
+                    "acp_enabled": acp_summary.get("enabled", False),
+                    "extension_count": extension_summary.get("extension_count", 0),
+                    "approval_required_count": extension_summary.get("approval_required_count", 0),
+                },
+                refs=[compare_refs.get("goose_acp"), compare_refs.get("goose_extensions"), compare_refs.get("goose_extension_policy_sets")],
+                required=["GovernedProtocolAdapterRegistry", "ProtocolTrustEnvelope", "identity ledger", "revocation controls"],
+                research=["agent-protocols"],
+            ),
+            page(
+                "communication-integration",
+                "Communication And Integration",
+                state=map_state(acp_summary or extension_summary or recipes_summary, "static-canon"),
+                summary="Webhooks, message buses, event streams, sync, external integrations, notifications, and chat/collaboration channels.",
+                metrics={
+                    "acp_provider_count": acp_summary.get("provider_count", 0),
+                    "extension_count": extension_summary.get("extension_count", 0),
+                    "recipe_count": recipes_summary.get("recipe_count", 0),
+                    "trust_adapter_state": "nexusbrain-governed",
+                },
+                refs=["/ops/brain/canon/communication-integration", "/ops/brain/canon/protocol-trust", "/ops/brain/gateway", "/ops/brain/extensions"],
+                required=["webhooks", "message bus", "event streams", "real-time sync", "external services", "notifications", "chat collaboration"],
+                research=["agent-protocols", "agent-observability"],
+            ),
+            page(
+                "tools-execution",
+                "Tools And Execution",
+                state=map_state(recipes_summary or goose_security, "static-canon"),
+                summary="Tool registry, sandboxing, approvals, failures, runtime isolation, and replay traces.",
+                metrics={
+                    "recipe_count": recipes_summary.get("recipe_count", 0),
+                    "runbook_count": recipes_summary.get("runbook_count", 0),
+                    "permission_mode": (((goose_security.get("permissions") or {}).get("active_mode") or {}).get("mode_id")),
+                    "sandbox_profile": (((goose_security.get("sandbox") or {}).get("active_profile") or {}).get("profile_id")),
+                },
+                refs=[compare_refs.get("goose_recipes"), compare_refs.get("goose_runbooks"), compare_refs.get("goose_security_permissions"), compare_refs.get("goose_security_sandbox")],
+                required=["tool registry", "sandbox state", "approval path", "execution replay"],
+                research=["agent-protocols", "ai-supply-chain"],
+            ),
+            page(
+                "claude-code-assimilation",
+                "Claude Code Assimilation",
+                state=assimilation_target_scorecard.get("runtime_state", "live-bound"),
+                summary="Assimilated Claude-code-style harness targets: tool registry, rewind ledger, task graph, provider resilience, prompt overlays, plan jail, skill systems, bridges, and monitors.",
+                metrics={
+                    "target_count": assimilation_target_scorecard.get("target_count", 0),
+                    "covered_target_count": len((assimilation_target_scorecard.get("coverage_summary") or {}).get("covered_target_ids") or []),
+                    "skill_system_model": (assimilation_target_scorecard.get("coverage_summary") or {}).get("skill_system_model"),
+                    "latest_skill_system": ((assimilation_target_scorecard.get("latest_skill_system") or {}).get("system_id")),
+                },
+                refs=["/ops/brain/canon/assimilation-targets", "/ops/brain/skill-systems/compose"],
+                required=["ToolDef metadata", "checkpoint rewind", "task graph", "provider circuit breaker", "prompt overlays", "plan-mode jail", "skill-system orchestrator", "bridge catalog", "research monitor"],
+                research=["agent-protocols", "agent-observability", "autonomous-updates"],
+            ),
+            page(
+                "outputs-deliverables",
+                "Outputs And Deliverables",
+                state=map_state(recent_trace or replay_catalog or promotion_items, "static-canon"),
+                summary="Architecture diagrams, implementation plans, source code, documentation, reports, working artifacts, exports, packages, and memory feedback.",
+                metrics={
+                    "latest_trace_id": recent_trace.get("trace_id"),
+                    "replay_frame_count": replay_catalog.get("frame_count", 0),
+                    "promotion_candidate_count": count(promotion_items),
+                    "blackbox_ref": "/ops/brain/canon/blackbox",
+                },
+                refs=["/ops/brain/canon/output-delivery", "/ops/brain/canon/artifact-trust", "/ops/brain/canon/blackbox", "/ops/brain/canon/completion"],
+                required=["architecture diagrams", "implementation plans", "source code", "documentation", "reports", "working artifacts", "exports", "memory feedback"],
+                research=["agent-observability", "memory-rag-kg", "ai-supply-chain"],
+            ),
+            page(
+                "runtime-lab",
+                "Runtime Lab",
+                state=map_state(runtime_candidates or brain_runtime_summary, "static-canon"),
+                summary="Quantization formats, backend eligibility, cache economics, speculative decoding, and runtime scorecards.",
+                metrics={
+                    "runtime_candidate_count": count(runtime_candidates),
+                    "selected_runtime_name": (recent_trace.get("runtime_selection") or {}).get("selected_runtime_name"),
+                    "quantization_default": (brain_runtime_summary.get("quantization") or {}).get("default"),
+                    "aitune_status": ((brain_runtime_summary.get("aitune") or {}).get("supported_lane_readiness") or {}).get("status"),
+                },
+                refs=["/ops/brain/backends", compare_refs.get("runtime_doctor"), compare_refs.get("aitune_execution_plan")],
+                required=["RuntimeWorkloadScorecard", "KVCacheLedger", "cache economics", "backend eligibility"],
+                research=["inference-architecture"],
+            ),
+            page(
+                "eval-center",
+                "Eval Center",
+                state=map_state(promotions or retrieval_summary or teacher_visibility.get("scorecards"), "static-canon"),
+                summary="GAIA, tau-bench, OSWorld, SWE-bench, BrowserGym/WebArena, RAG, private NexusNet evals, and promotion blockers.",
+                metrics={
+                    "promotion_candidate_count": count(promotion_items),
+                    "teacher_scorecard_count": count(teacher_visibility.get("scorecards") or []),
+                    "retrieval_review_count": count(retrieval_summary.get("promotion_reviews") or []),
+                    "held_out_eval_state": "required",
+                },
+                refs=["/ops/brain/promotions", "/ops/brain/promotions/evaluate", compare_refs.get("cost_energy")],
+                required=["EvalSuiteRegistry", "HeldOutTaskLedger", "TraceReplayEvalHarness", "regression gates"],
+                research=["agent-evals", "memory-rag-kg"],
+            ),
+            page(
+                "artifact-trust",
+                "Artifact Trust",
+                state=map_state(extension_summary or teacher_profiles, "research-candidate"),
+                summary="Model provenance, signatures, AI-BOM, unsafe serialization, scanner results, and license review.",
+                metrics={
+                    "teacher_profile_count": count(teacher_profiles),
+                    "extension_count": extension_summary.get("extension_count", 0),
+                    "certification_count": (goose.get("extension_certifications") or {}).get("artifact_count", 0),
+                    "unsafe_serialization_gate": "required",
+                },
+                refs=[compare_refs.get("goose_extension_certifications"), compare_refs.get("goose_extension_certification_compare")],
+                required=["ArtifactTrustLedger", "AIBillOfMaterials", "UnsafeArtifactGate", "LicenseReviewRollup"],
+                research=["ai-supply-chain"],
+            ),
+            page(
+                "hardware-matrix",
+                "Hardware Matrix",
+                state=map_state(runtime_summary.get("device_profile"), "static-canon"),
+                summary="Browser, desktop, mobile, NPU, GPU, CPU, server, and edge deployment lanes.",
+                metrics={
+                    "device_profile": runtime_summary.get("device_profile") or {},
+                    "hardware_classes": filter_catalog.get("hardware_classes", []),
+                    "recommended_render_tier": performance_profile.get("recommended_tier"),
+                    "edge_lane_state": "required",
+                },
+                refs=[compare_refs.get("runtime_init"), compare_refs.get("runtime_doctor"), "/ops/brain/vision/edge-lane"],
+                required=["EdgeHardwareMatrix", "BackendEligibilityReport", "RuntimeCompatibilityLedger", "DeviceCertificationGate"],
+                research=["edge-local-hardware"],
+            ),
+            page(
+                "visualops",
+                "VisualOps",
+                state="live-bound",
+                summary="Multimodal computer-use traces, OCR/VLM state, screen actions, and safety gates.",
+                metrics={
+                    "scene_version": self.scene.scene_version,
+                    "replay_available": replay_catalog.get("available", False),
+                    "replay_frame_count": replay_catalog.get("frame_count", 0),
+                    "depth_renderer_allowed": performance_profile.get("allow_depth_enhancement"),
+                },
+                refs=["/ui/visualizer/", "/ops/brain/visualizer/state", "/ops/brain/visualizer/replay"],
+                required=["ComputerUseSafetyCase", "VisualParseTrace", "ActionPermissionGate", "ScreenAgentEvalReport"],
+                research=["multimodal-computer-use"],
+            ),
+            page(
+                "dreaming-evolution",
+                "Dreaming And Evolution",
+                state=map_state(promotion_items or snapshot.get("dream_activity"), "static-canon"),
+                summary="Research candidates, self-review, autonomous update proposals, shadow simulations, and rollback.",
+                metrics={
+                    "promotion_candidate_count": count(promotion_items),
+                    "dream_derived_trace_count": sum(
+                        1
+                        for trace in self.store.list_traces(limit=40)
+                        if (trace.get("teacher_provenance") or {}).get("dream_lineage") == "dream-derived"
+                    ),
+                    "rollback_readiness": "required",
+                },
+                refs=["/ops/brain/promotions", "/ops/brain/foundry/status", compare_refs.get("scheduled_agents")],
+                required=["HarnessImprovementLedger", "ResearchCandidateRegistry", "PromotionProvenanceGate", "RollbackReadinessRecord"],
+                research=["autonomous-updates", "agent-evals"],
+            ),
+            page(
+                "self-improvement-layer",
+                "Self-Improvement Layer",
+                state=map_state(improvement_queue_items or snapshot.get("dream_activity"), "static-canon"),
+                summary="Experience capture, ImprovementEvent schema, data triage, provenance tracking, eval generation, improvement queue, update policies, and regression gates.",
+                metrics={
+                    "queue_item_count": improvement_queue_summary["item_count"],
+                    "queued_status_counts": improvement_queue_summary["status_counts"],
+                    "model_update_boundary": "human-review-external-verification-regression-gates",
+                    "direct_training_enabled": False,
+                },
+                refs=["/ops/brain/canon/self-improvement", "/ops/brain/self-improvement/queue", "docs/SELF_IMPROVEMENT_LAYER.md"],
+                required=["experience capture", "event schema", "triage", "provenance", "eval generation", "queue", "memory/prompt policy", "training review", "regression gates"],
+                research=["autonomous-updates", "agent-evals", "memory-rag-kg", "multimodal-computer-use"],
+            ),
+            page(
+                "forward-radar",
+                "Forward Radar",
+                state="research-candidate",
+                summary="Living watchlist for quantization, protocols, evals, memory, supply chain, edge runtimes, and computer use.",
+                metrics={
+                    "lane_count": len(research_lanes),
+                    "candidate_lane_count": sum(1 for lane in research_lanes if lane["status"] == "candidate"),
+                    "shadow_lane_count": sum(1 for lane in research_lanes if lane["status"] == "shadow-only"),
+                    "source_date": "2026-04-28",
+                },
+                refs=["docs/NEXUSNET_COMPLETE_CHAT_CANON_BOOK_2026-04-28.md", "docs/NEXUSNET_FORWARD_RESEARCH_DEEP_DIVE_2026-04-28.md"],
+                required=["freshness", "evidence", "maturity", "impact", "promotion gates"],
+                research=[lane["lane_id"] for lane in research_lanes],
+            ),
+        ]
+        pages.append(
+            page(
+                "dataset-radar",
+                "Dataset Radar",
+                state=dataset_radar.get("runtime_state", "live-bound"),
+                summary="Living dataset discovery, source-state gating, teacher context routing, sealed eval separation, and student lineage.",
+                metrics={
+                    "source_count": dataset_radar.get("source_count", 0),
+                    "approved_train_count": dataset_radar.get("approved_train_count", 0),
+                    "blocked_count": dataset_radar.get("blocked_count", 0),
+                    "candidate_count": dataset_radar.get("candidate_count", 0),
+                },
+                refs=["/ops/brain/dataset-radar", "/ops/brain/dataset-radar/sources", "/ops/brain/canon/dataset-radar"],
+                required=["source freshness", "license state", "privacy gate", "teacher context gate", "sealed eval split", "student targets"],
+                research=["memory-rag-kg", "agent-evals", "ai-supply-chain"],
+            )
+        )
+        pages.append(
+            page(
+                "knowledge-artifacts",
+                "Knowledge Artifacts",
+                state=knowledge_artifacts.get("runtime_state", "static-canon"),
+                summary="Compiled task-specific context artifacts with field-level citations, source digests, conflict objects, freshness invalidation, permission filters, and raw retrieval fallback.",
+                metrics={
+                    "artifact_count": knowledge_artifacts.get("artifact_count", 0),
+                    "stale_count": knowledge_artifacts.get("stale_count", 0),
+                    "query_event_count": knowledge_artifacts.get("query_event_count", 0),
+                    "conflict_count": latest_knowledge_artifact.get("conflict_count", 0),
+                    "excluded_source_count": latest_knowledge_artifact.get("excluded_source_count", 0),
+                    "blocked_source_ref_count": (
+                        latest_knowledge_artifact.get("source_ref_security_gate") or {}
+                    ).get("blocked_count", 0),
+                    "artifact_trust_preview_status": (
+                        latest_knowledge_artifact.get("artifact_trust_preview") or {}
+                    ).get("status", "not_scanned"),
+                    "active_runtime_blocker_count": len(knowledge_artifacts.get("active_runtime_blockers") or []),
+                    "downstream_runtime_gate_gated_count": knowledge_artifact_runtime_gate_coverage.get("gated_consumer_count", 0),
+                    "downstream_runtime_gate_enforced_count": knowledge_artifact_runtime_gate_coverage.get(
+                        "enforced_consumer_count",
+                        0,
+                    ),
+                    "downstream_runtime_gate_required_count": knowledge_artifact_runtime_gate_coverage.get(
+                        "required_consumer_count",
+                        0,
+                    ),
+                    "downstream_runtime_gate_all_gated": knowledge_artifact_runtime_gate_coverage.get(
+                        "all_runtime_consumers_gated",
+                        False,
+                    ),
+                    "downstream_runtime_gate_proof_ref_count": knowledge_artifact_runtime_gate_coverage.get(
+                        "proof_ref_count",
+                        0,
+                    ),
+                },
+                refs=[
+                    "/ops/brain/knowledge-artifacts",
+                    "/ops/brain/knowledge-artifacts/compile",
+                    "/ops/brain/knowledge-artifacts/query",
+                    "/ops/brain/knowledge-artifacts/query-events",
+                    "/ops/brain/canon/knowledge-artifacts",
+                    "/ops/brain/artifact-trust/knowledge-artifacts/scan",
+                    *knowledge_artifact_runtime_gate_coverage.get("proof_refs", [])[:8],
+                ],
+                required=[
+                    "field citations",
+                    "source digests",
+                    "freshness",
+                    "RBAC/privacy filter",
+                    "conflict objects",
+                    "raw retrieval fallback",
+                    "source-ref security gate",
+                    "artifact trust preview",
+                    "runtime gate proof refs",
+                ],
+                research=["memory-rag-kg", "agent-evals", "ai-supply-chain"],
+            )
+        )
+
+        build_gates = [
+            {
+                "gate_id": "canon-book-updated",
+                "label": "Complete chat canon book carries 2026 research refresh.",
+                "state": "satisfied",
+                "evidence_ref": "docs/NEXUSNET_COMPLETE_CHAT_CANON_BOOK_2026-04-28.md#2026-research-refresh-integration-addendum",
+            },
+            {
+                "gate_id": "truthful-live-state",
+                "label": "Live cards must be backed by endpoints or shown as degraded/static/research.",
+                "state": "enforced",
+                "evidence_ref": "/ops/brain/visualizer/state",
+            },
+            {
+                "gate_id": "brain-authority",
+                "label": "Protocol adapters, tools, and autonomous updates remain subordinate to NexusBrain governance.",
+                "state": "enforced",
+                "evidence_ref": "/ops/brain/core",
+            },
+            {
+                "gate_id": "research-candidate-boundary",
+                "label": "Forward-looking items stay candidate/shadow-only until promotion gates pass.",
+                "state": "enforced",
+                "evidence_ref": "overlay.control_panel.research_lanes",
+            },
+        ]
+        canon_realization = build_canon_realization(
+            session_id=session_id,
+            pages=pages,
+            research_lanes=research_lanes,
+            build_gates=build_gates,
+            cockpit=cockpit,
+            operations_summary=operations_summary,
+        )
+        runtime_scorecard = runtime_quantization_scorecard(
+            control_panel={
+                "quantization_catalog": quantization_catalog,
+                "canon_realization": canon_realization,
+            },
+        )
+        evolution_dossier = autonomous_evolution_dossier(canon_realization)
+        self_improvement = self_improvement_scorecard(canon_realization, queue_summary=improvement_queue_summary)
+        protocol_trust = protocol_trust_scorecard(canon_realization)
+        communication_integration = communication_integration_scorecard(canon_realization)
+        eval_suite = eval_suite_scorecard(canon_realization)
+        memory_provenance = memory_provenance_scorecard(canon_realization)
+        artifact_trust = artifact_trust_scorecard(canon_realization)
+        hardware_matrix = hardware_matrix_scorecard(canon_realization)
+        visualops = visualops_scorecard(canon_realization)
+        input_ingestion = input_ingestion_scorecard(canon_realization, operations_summary=operations_summary)
+        live_flow = live_flow_scorecard(canon_realization, operations_summary=operations_summary)
+        neural_core = neural_core_scorecard(canon_realization, operations_summary=operations_summary)
+        tool_execution = tool_execution_scorecard(canon_realization)
+        output_delivery = output_delivery_scorecard(canon_realization)
+        ao_hive = ao_hive_scorecard(
+            canon_realization,
+            ao_snapshot=aos,
+            operations_summary=operations_summary,
+        )
+        experts_hive = experts_hive_scorecard(
+            canon_realization,
+            operations_summary=operations_summary,
+            expert_topologies=expert_topologies,
+        )
+        observability = observability_scorecard(canon_realization)
+        security_governance = security_governance_scorecard(canon_realization)
+        policy_kernel = PolicyKernel.default().scorecard()
+        agentic_pipeline = AgenticPipelineRuntime(artifacts_dir=self.paths.artifacts_dir).scorecard(session_id=session_id)
+        agent_opportunities = AgentOpportunityDiscovery(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        harness_provider = self.harness_provider_registry.scorecard()
+        harness_routing = self.harness_model_router.scorecard()
+        harness_improvement_ledger = HarnessImprovementLedger(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        edge_workload_router = EdgeWorkloadRouter(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        multimodal_computer_use = MultimodalComputerUseController(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        inference_economy_router = InferenceEconomyRouter(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        inference_architecture = InferenceArchitectureRegistry(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        cache_ledger = EffectiveContextCacheLedger(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        runtime_workload_scorecards = RuntimeWorkloadScorecardRegistry(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        quantization_catalog_scorecard = QuantizationCatalog.default(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        protocol_trust_registry = ProtocolTrustRegistry(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        browser_context = BrowserContextMemory(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        adapter_registry = AdapterForgeRegistry(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        fine_tune_decision_gate = FineTuneDecisionGate(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        adapter_training = AdapterTrainingPlanner(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        growth_engine = HiveModelGrowthEngine(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        production_spine = NexusNetProductionSpine(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        eval_registry = EvalRegistry.default(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        artifact_trust_registry = ArtifactTrustRegistry(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        autonomous_updates = AutonomousUpdateController(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        genai_observability = GenAITraceRegistry(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        self_review = SelfReviewGate(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        forward_radar = ForwardRadarRegistry(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        memory_quality = MemoryQualityLedger(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        engram_memory = NexusEngramIndex(artifacts_dir=self.paths.artifacts_dir).scorecard()
+        retrieval_planner = self.retrieval_planner.summary()
+        self_improvement_lineage = self.self_improvement_lineage.summary()
+        verifier_search = self.verifier_search.summary()
+        browser_profile_policy = self.browser_profile_policy.summary()
+        operator_events = self.operator_events.summary()
+        edge_model_certification = self.edge_model_certification.summary()
+        concept_telemetry = self.concept_telemetry.summary()
+        codegraph_gate = self.codegraph_gate.summary()
+        blackbox = blackbox_recorder(canon_realization)
+        hive_consensus = hive_consensus_scorecard(
+            canon_realization,
+            operations_summary=operations_summary,
+            hive_mind=hive_mind,
+        )
+        researcher_swarm = researcher_swarm_scorecard(canon_realization)
+
+        control_panel = {
+            "title": "NexusNet Control Panel",
+            "state_model": ["live-bound", "degraded", "static-canon", "research-candidate", "shadow-only"],
+            "source_documents": [
+                "docs/NEXUSNET_COMPLETE_CHAT_CANON_BOOK_2026-04-28.md",
+                "docs/NEXUSNET_COMPLETE_CANON_RESEARCH_REFRESH_DIFF_2026-04-28.md",
+                "docs/NEXUSNET_OPEN_FIRST_RESEARCH_EXPANSION_2026-04-28.md",
+                "docs/NEXUSNET_QUANTIZATION_AGENTIC_RESEARCH_EXPANSION_2026-04-28.md",
+                "docs/NEXUSNET_FORWARD_RESEARCH_RADAR_2026-04-28.md",
+                "docs/NEXUSNET_FORWARD_RESEARCH_DEEP_DIVE_2026-04-28.md",
+                "docs/NEXUSNET_RESEARCH_CANDIDATE_DOSSIER_2026-04-28.md",
+            ],
+            "pages": pages,
+            "page_count": len(pages),
+            "research_lanes": research_lanes,
+            "quantization_catalog": quantization_catalog,
+            "hive_mind": hive_mind,
+            "cockpit": cockpit,
+            "canon_realization": canon_realization,
+            "completion_assessment": canon_realization["completion_assessment"],
+            "runtime_scorecard": runtime_scorecard,
+            "evolution_dossier": evolution_dossier,
+            "developmental_cortex_scorecard": self.developmental_cortex.scorecard(),
+            "authority_spine_scorecard": self.authority_spine.summary(),
+            "evidence_store_scorecard": self.evidence_store.projection(),
+            "eval_federation_scorecard": self.eval_federation.summary(),
+            "tool_action_harness_scorecard": self.tool_action_harness.summary(),
+            "runtime_decision_ledger_scorecard": self.runtime_decision_ledger.summary(),
+            "assimilation_target_catalog_scorecard": self.assimilation_catalog.scorecard(),
+            "self_improvement_scorecard": self_improvement,
+            "protocol_trust_scorecard": protocol_trust,
+            "communication_integration_scorecard": communication_integration,
+            "eval_suite_scorecard": eval_suite,
+            "memory_provenance_scorecard": memory_provenance,
+            "artifact_trust_scorecard": artifact_trust,
+            "hardware_matrix_scorecard": hardware_matrix,
+            "visualops_scorecard": visualops,
+            "input_ingestion_scorecard": input_ingestion,
+            "live_flow_scorecard": live_flow,
+            "neural_core_scorecard": neural_core,
+            "tool_execution_scorecard": tool_execution,
+            "assimilation_target_scorecard": assimilation_target_scorecard,
+            "video_assimilation_scorecard": video_assimilation_scorecard,
+            "retrieval_planner_scorecard": retrieval_planner,
+            "self_improvement_lineage_scorecard": self_improvement_lineage,
+            "verifier_search_scorecard": verifier_search,
+            "browser_profile_policy_scorecard": browser_profile_policy,
+            "operator_events_scorecard": operator_events,
+            "edge_model_certification_scorecard": edge_model_certification,
+            "concept_telemetry_scorecard": concept_telemetry,
+            "codegraph_gate_scorecard": codegraph_gate,
+            "output_delivery_scorecard": output_delivery,
+            "ao_hive_scorecard": ao_hive,
+            "experts_hive_scorecard": experts_hive,
+            "observability_scorecard": observability,
+            "security_governance_scorecard": security_governance,
+            "policy_kernel_scorecard": policy_kernel,
+            "agentic_pipeline_scorecard": agentic_pipeline,
+            "agent_opportunity_scorecard": agent_opportunities,
+            "harness_provider_scorecard": harness_provider,
+            "harness_routing_scorecard": harness_routing,
+            "harness_improvement_ledger": harness_improvement_ledger,
+            "edge_workload_router_scorecard": edge_workload_router,
+            "multimodal_computer_use_scorecard": multimodal_computer_use,
+            "inference_economy_router_scorecard": inference_economy_router,
+            "inference_architecture_scorecard": inference_architecture,
+            "cache_ledger_scorecard": cache_ledger,
+            "runtime_workload_scorecards": runtime_workload_scorecards,
+            "quantization_catalog_scorecard": quantization_catalog_scorecard,
+            "protocol_trust_registry_scorecard": protocol_trust_registry,
+            "browser_context_scorecard": browser_context,
+            "dataset_radar_scorecard": dataset_radar,
+            "dataset_flow_view": dataset_flow_view,
+            "dataset_forge_scorecard": dataset_forge,
+            "knowledge_artifacts_scorecard": knowledge_artifacts,
+            "adapter_registry_scorecard": adapter_registry,
+            "fine_tune_decision_gate_scorecard": fine_tune_decision_gate,
+            "adapter_training_scorecard": adapter_training,
+            "growth_engine_scorecard": growth_engine,
+            "production_spine_scorecard": production_spine,
+            "eval_registry_scorecard": eval_registry,
+            "artifact_trust_registry_scorecard": artifact_trust_registry,
+            "autonomous_update_scorecard": autonomous_updates,
+            "release_wrapper_runtime": release_wrapper_runtime,
+            "release_wrapper_privacy_consent": release_wrapper_privacy_consent,
+            "release_wrapper_privacy_consent_enforcement": release_wrapper_privacy_consent_enforcement,
+            "release_wrapper_privacy_retention_enforcement": release_wrapper_privacy_retention_enforcement,
+            "project_heartbeat": project_heartbeat,
+            "project_heartbeat_native_replay_status": native_project_heartbeat_replay_status,
+            "release_wrapper_telemetry": release_wrapper_telemetry,
+            "release_wrapper_self_repair_ledger": release_wrapper_self_repair_ledger,
+            "release_wrapper_boot_supervisor": release_wrapper_boot_supervisor,
+            "release_wrapper_initial_release_supervisor": release_wrapper_initial_release_supervisor,
+            "release_wrapper_release_product_smoke": release_wrapper_release_product_smoke,
+            "release_wrapper_release_run_history": release_wrapper_release_run_history,
+            "release_wrapper_native_hive_heartbeat_watchdog": release_wrapper_native_hive_heartbeat_watchdog,
+            "release_wrapper_release_health_heartbeat": release_wrapper_release_health_heartbeat,
+            "release_wrapper_release_health_heartbeat_loop": release_wrapper_release_health_heartbeat_loop,
+            "release_wrapper_release_health_heartbeat_supervisor": release_wrapper_release_health_heartbeat_supervisor,
+            "release_wrapper_canon_contract_ledger": release_wrapper_canon_contract_ledger,
+            "release_wrapper_canon_contract_receipts": release_wrapper_canon_contract_receipts,
+            "release_wrapper_developmental_release_contract": release_wrapper_developmental_release_contract,
+            "release_wrapper_forward_pass_enforcement_matrix": release_wrapper_forward_pass_enforcement_matrix,
+            "release_wrapper_session_lifecycle": release_wrapper_session_lifecycle,
+            "direct_nexusbrain_native_growth_governance": direct_nexusbrain_native_growth_governance,
+            "release_wrapper_readiness": snapshot.get("release_readiness"),
+            "genai_observability_scorecard": genai_observability,
+            "self_review_scorecard": self_review,
+            "forward_radar_scorecard": forward_radar,
+            "memory_quality_scorecard": memory_quality,
+            "engram_memory_scorecard": engram_memory,
+            "blackbox_recorder": blackbox,
+            "hive_consensus_scorecard": hive_consensus,
+            "researcher_swarm_scorecard": researcher_swarm,
+            "book_gate_summary": canon_realization["book_gate_coverage"],
+            "build_gates": build_gates,
+            "live_refs": {
+                "visualizer_state": "/ops/brain/visualizer/state",
+                "wrapper_surface": "/ops/brain/wrapper-surface",
+                "replay": "/ops/brain/visualizer/replay",
+                "compare_refs": compare_refs,
+                "diff_catalog": diff_catalog,
+                "dataset_radar": "/ops/brain/dataset-radar",
+                "dataset_flow_view": "overlay.control_panel.dataset_flow_view",
+                "knowledge_artifacts": "/ops/brain/knowledge-artifacts",
+                "project_heartbeat": "overlay.control_panel.project_heartbeat",
+                "project_heartbeat_native_replay_status": (
+                    "overlay.control_panel.project_heartbeat_native_replay_status"
+                ),
+                "release_wrapper_telemetry": "overlay.control_panel.release_wrapper_telemetry",
+                "release_wrapper_privacy_consent": "overlay.control_panel.release_wrapper_privacy_consent",
+                "release_wrapper_privacy_consent_enforcement": (
+                    "overlay.control_panel.release_wrapper_privacy_consent_enforcement"
+                ),
+                "release_wrapper_privacy_retention_enforcement": (
+                    "overlay.control_panel.release_wrapper_privacy_retention_enforcement"
+                ),
+                "release_wrapper_self_repair_ledger": "overlay.control_panel.release_wrapper_self_repair_ledger",
+                "direct_nexusbrain_native_growth_governance": (
+                    "overlay.control_panel.direct_nexusbrain_native_growth_governance"
+                ),
+            },
+        }
+        return self._sanitize_control_panel_session_ids(control_panel, session_id=session_id)
+
+    def _sanitize_control_panel_session_ids(self, value: Any, *, session_id: str | None) -> Any:
+        session_ref_digest = self._session_ref_digest(session_id)
+        if isinstance(value, dict):
+            sanitized: dict[str, Any] = {}
+            for key, item in value.items():
+                if key == "session_id":
+                    if session_ref_digest:
+                        sanitized["session_ref_digest"] = session_ref_digest
+                    sanitized["raw_session_id_included"] = False
+                    continue
+                sanitized[key] = self._sanitize_control_panel_session_ids(item, session_id=session_id)
+            return sanitized
+        if isinstance(value, list):
+            return [self._sanitize_control_panel_session_ids(item, session_id=session_id) for item in value]
+        return value
+
+    def _session_ref_digest(self, session_id: str | None) -> str | None:
+        if session_id is None or str(session_id).strip() == "":
+            return None
+        return hashlib.sha256(str(session_id).encode("utf-8")).hexdigest()[:16]
 
     def _goose_compare_controls(
         self,

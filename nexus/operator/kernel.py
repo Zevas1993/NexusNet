@@ -342,6 +342,29 @@ class OperatorKernel:
         if safety_result and safety_result.detail.get("issues"):
             steps.append(TraceStep(name="safety_audit", status=safety_result.status, detail=safety_result.detail))
 
+        ao_execution_receipt = None
+        if ao_plan is not None and self.brain_aos is not None and hasattr(self.brain_aos, "record_execution"):
+            ao_execution_receipt = self.brain_aos.record_execution(
+                session_id=request.session_id,
+                trace_id=operator_request.trace_id,
+                plan=ao_plan,
+                selected_expert=expert,
+                selected_teacher_id=selected_teacher_id,
+                wrapper_mode=wrapper_mode,
+            )
+            steps.append(
+                TraceStep(
+                    name="ao_execution_receipt",
+                    detail={
+                        "execution_id": ao_execution_receipt.get("execution_id"),
+                        "ao_name": ao_execution_receipt.get("ao_name"),
+                        "trace_ref": ao_execution_receipt.get("trace_ref"),
+                        "input_contract": ao_execution_receipt.get("input_contract"),
+                        "raw_content_included": False,
+                    },
+                )
+            )
+
         trace = ExecutionTrace(
             trace_id=operator_request.trace_id,
             session_id=request.session_id,

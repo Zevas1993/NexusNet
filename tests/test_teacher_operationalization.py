@@ -20,7 +20,7 @@ def test_curriculum_stage_execution_uses_teacher_regimen_and_records_disagreemen
     assert assessment.total_courses == 4
     assert assessment.teacher_flow["mode"] == "teacher-regimen"
     assert assessment.teacher_flow["selected_teachers"] == [
-        "deepseek-r1-distill-qwen-32b",
+        "deepseek-v4-pro",
         "devstral-2",
         "lfm2",
         "qwen3-coder-next",

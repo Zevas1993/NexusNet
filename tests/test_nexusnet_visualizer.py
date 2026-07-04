@@ -50,10 +50,158 @@ def test_visualizer_endpoint_and_static_ui_are_available(tmp_path: Path):
     assert payload["status_label"] == "LOCKED CANON"
     assert payload["manifest"]["default_mode_id"] == "engineering"
     assert payload["overlay_state"]["safe_mode_physiology"]["retry_state"] in {"stable", "fallback-path-active"}
+    control_panel = payload["overlay_state"]["control_panel"]
+    assert control_panel["page_count"] >= 15
+    assert "runtime-lab" in [page["page_id"] for page in control_panel["pages"]]
+    assert "forward-radar" in [page["page_id"] for page in control_panel["pages"]]
+    assert "TurboQuant" in control_panel["quantization_catalog"]["method_families"]
+    assert "inference-architecture" in [lane["lane_id"] for lane in control_panel["research_lanes"]]
+    hive_mind = control_panel["hive_mind"]
+    assert hive_mind["operating_model_id"] == "commanded-collective-hive"
+    assert hive_mind["central_orchestrator"]["authority"] == "NexusBrain"
+    assert hive_mind["central_orchestrator"]["command_chain"] == [
+        "NexusBrain",
+        "AO Hive",
+        "Experts Hive",
+        "Tools / Outputs",
+        "Memory Feedback",
+        "NexusBrain",
+    ]
+    assert "central command pressure" in hive_mind["hybrid_traits"]["unified_command"]
+    assert "proposal/evidence consensus" in hive_mind["hybrid_traits"]["collective_intelligence"]
+    assert all(
+        signal in hive_mind["mini_brain_signal_contract"]
+        for signal in [
+            "receives_orders",
+            "local_reasoning",
+            "evidence_response",
+            "veto_escalation",
+            "consensus_contribution",
+            "execution_status",
+        ]
+    )
+    assert any(node["role"] == "AO mini-brain" for node in hive_mind["mini_brain_nodes"])
+    assert any(node["role"] == "Expert mini-brain" for node in hive_mind["mini_brain_nodes"])
+    cockpit = control_panel["cockpit"]
+    assert cockpit["surface_id"] == "mission-control-cockpit"
+    assert cockpit["primary_mode"] == "Command"
+    assert cockpit["command_bar"]["authority"] == "NexusBrain"
+    assert cockpit["command_chain"] == [
+        "NexusBrain",
+        "AO Hive",
+        "Experts",
+        "Tools/Outputs",
+        "Memory Feedback",
+        "NexusBrain",
+    ]
+    assert cockpit["modes"] == [
+        "Command",
+        "Brain Map",
+        "AOs",
+        "Experts",
+        "Security",
+        "Runtime",
+        "Memory",
+        "Forward Radar",
+    ]
+    assert "NexusBrain orders" in cockpit["operations_board"]["columns"]
+    assert "Alert Rail" in cockpit["alert_rail"]["label"]
+    assert "Operations Timeline" in cockpit["timeline"]["label"]
+
+    client.post(
+        "/ops/brain/dataset-radar/material-request",
+        json={
+            "session_id": "visual-session",
+            "operator_actor": "Teacher Council",
+            "teacher_ref": "teacher:qwen3-coder-next",
+            "target_node": "Coder Expert",
+            "requested_split": "train",
+            "allowed_use": "train",
+        },
+    )
+    client.post(
+        "/ops/brain/dataset-radar/refresh",
+        json={
+            "session_id": "visual-session",
+            "operator_actor": "Control Panel",
+            "preset_id": "instruction-preference",
+            "hf_results": [
+                {
+                    "id": "example/visual-user-chat-dump",
+                    "downloads": 1,
+                    "lastModified": "2026-05-05T20:00:00Z",
+                    "tags": ["chat-dump", "instruction"],
+                }
+            ],
+        },
+    )
+    review = client.post(
+        "/ops/brain/dataset-radar/candidate-review",
+        json={
+            "dataset_id": "example/visual-user-chat-dump",
+            "review_state": "blocked_private_or_personal",
+            "reviewer": "operator",
+            "reason": "visualizer fixture remains blocked",
+        },
+    ).json()
+    refreshed_payload = client.get("/ops/brain/visualizer/state", params={"session_id": "visual-session"}).json()
+    dataset_flow = refreshed_payload["overlay_state"]["control_panel"]["dataset_flow_view"]
+    assert "material request" in dataset_flow["gate_sequence"]
+    assert dataset_flow["material_request_history"][0]["teacher_ref"] == "teacher:qwen3-coder-next"
+    assert dataset_flow["candidate_review_history"][0]["candidate_review_id"] == review["candidate_review_id"]
+    assert dataset_flow["runtime_state"] == "degraded"
+    assert dataset_flow["candidate_gate_blocked_count"] == 1
+    assert dataset_flow["coder_expert_lineage_split_policy"]["train_source_ids"] == [
+        "the-stack-v2",
+        "stack-edu",
+        "codesearchnet",
+    ]
+    assert dataset_flow["coder_expert_lineage_split_policy"]["teacher_context_only_source_ids"] == ["context7"]
+    assert dataset_flow["coder_expert_lineage_split_policy"]["sealed_eval_source_ids"] == ["swe-bench", "swe-gym"]
+    assert dataset_flow["candidate_gate_previews"][0]["dataset_id"] == "example/visual-user-chat-dump"
+    assert dataset_flow["candidate_gate_previews"][0]["gates"][0]["allowed"] is False
 
     ui_index = client.get("/ui/visualizer/")
     assert ui_index.status_code == 200
     assert "NexusNet Neural Visualizer" in ui_index.text
+    assert "Open Control Panel" in ui_index.text
+
+    root = client.get("/", follow_redirects=False)
+    assert root.status_code in {302, 307}
+    assert root.headers["location"] == "/ui/wrapper/"
+
+    ui_root = client.get("/ui/", follow_redirects=False)
+    assert ui_root.status_code in {302, 307}
+    assert ui_root.headers["location"] == "/ui/control-panel/"
+
+    ui_root_no_slash = client.get("/ui", follow_redirects=False)
+    assert ui_root_no_slash.status_code in {302, 307}
+    assert ui_root_no_slash.headers["location"] == "/ui/control-panel/"
+
+    wrapper_ui = client.get("/ui/wrapper/")
+    assert wrapper_ui.status_code == 200
+    assert "NexusNet Wrapper Surface" in wrapper_ui.text
+
+    control_panel_ui = client.get("/ui/control-panel/")
+    assert control_panel_ui.status_code == 200
+    assert "NexusNet Control Panel" in control_panel_ui.text
+    assert "NEXUSNET NEURAL CORE AI BRAIN" in control_panel_ui.text
+    assert "Hive Mind Collective Layer" in control_panel_ui.text
+    assert "AO Consensus" in control_panel_ui.text
+    assert "Security Panel" in control_panel_ui.text
+    assert "AI Hive Mind Operating Model" in control_panel_ui.text
+    assert "Commanded Collective Hive" in control_panel_ui.text
+    assert "NexusBrain -> AO Hive -> Experts -> Tools/Outputs -> Memory Feedback -> NexusBrain" in control_panel_ui.text
+    assert "receives orders" in control_panel_ui.text
+    assert "NexusNet Mission Control" in control_panel_ui.text
+    assert "Pilot Command Deck" in control_panel_ui.text
+    assert "Command Rail" in control_panel_ui.text
+    assert "Alert Rail" in control_panel_ui.text
+    assert "Operations Timeline" in control_panel_ui.text
+    assert "COCKPIT MODE" in control_panel_ui.text
+    assert "Brain Map Deck" in control_panel_ui.text
+    assert "Runtime Lab" in control_panel_ui.text
+    assert "Forward Radar" in control_panel_ui.text
 
     scene = client.get("/ui/visualizer/data/scene.json")
     assert scene.status_code == 200
@@ -62,6 +210,131 @@ def test_visualizer_endpoint_and_static_ui_are_available(tmp_path: Path):
     legacy = client.get("/ui/3d/")
     assert legacy.status_code == 200
     assert "canonical NexusNet visualizer" in legacy.text
+
+
+def test_dataset_flow_view_separates_candidate_material_from_canonical_train_lineage(tmp_path: Path):
+    project_root = make_project(tmp_path)
+    client = TestClient(create_app(str(project_root)))
+
+    client.post(
+        "/ops/brain/dataset-radar/refresh",
+        json={
+            "session_id": "visual-candidate-forge",
+            "operator_actor": "Control Panel",
+            "query": "open code agent dataset",
+            "hf_results": [
+                {
+                    "id": "example/visual-apache-code-agent",
+                    "downloads": 125000,
+                    "lastModified": "2026-05-05T12:00:00Z",
+                    "trendingScore": 56.0,
+                    "tags": ["license:apache-2.0", "code", "agent"],
+                    "author": "example",
+                }
+            ],
+        },
+    )
+    client.post(
+        "/ops/brain/dataset-radar/candidate-review",
+        json={
+            "dataset_id": "example/visual-apache-code-agent",
+            "review_state": "approved_teacher_context",
+            "reviewer": "operator",
+            "reason": "visualizer fixture uses candidate as teacher context only",
+        },
+    )
+    candidate_request = client.post(
+        "/ops/brain/dataset-radar/material-request",
+        json={
+            "session_id": "visual-candidate-forge",
+            "operator_actor": "Teacher Council",
+            "teacher_ref": "teacher:qwen3-coder-next",
+            "target_node": "Coder Expert",
+            "requested_split": "teacher_context",
+            "allowed_use": "teacher_context",
+            "limit": 200,
+        },
+    ).json()
+    assert "example/visual-apache-code-agent" in candidate_request["approved_source_ids"]
+    train_request = client.post(
+        "/ops/brain/dataset-radar/material-request",
+        json={
+            "session_id": "visual-candidate-forge",
+            "operator_actor": "Teacher Council",
+            "teacher_ref": "teacher:qwen3-coder-next",
+            "target_node": "Coder Expert",
+            "requested_split": "train",
+            "allowed_use": "train",
+        },
+    ).json()
+    assert "the-stack-v2" in train_request["approved_source_ids"]
+
+    client.post(
+        "/ops/brain/dataset-forge/manifests",
+        json={
+            "dataset_manifest_id": "dataset::visual-candidate-context",
+            "purpose": "Visualizer candidate teacher-context lineage",
+            "material_request_ref": candidate_request["material_request_id"],
+            "sources": [
+                {
+                    "source_id": "radar::visual-apache-code-agent",
+                    "source_type": "web",
+                    "text": "Candidate material is reviewed teacher context only.",
+                    "license_status": "approved",
+                    "contains_private_data": False,
+                    "provenance_ref": "https://hf.co/datasets/example/visual-apache-code-agent",
+                    "dataset_radar_source_id": "example/visual-apache-code-agent",
+                    "metadata": {"intended_split": "teacher_context"},
+                }
+            ],
+        },
+    )
+    client.post(
+        "/ops/brain/dataset-forge/manifests",
+        json={
+            "dataset_manifest_id": "dataset::visual-canonical-train",
+            "purpose": "Visualizer canonical train lineage",
+            "material_request_ref": train_request["material_request_id"],
+            "sources": [
+                {
+                    "source_id": "radar::the-stack-v2",
+                    "source_type": "web",
+                    "text": "Canonical train material remains separate from candidate teacher context.",
+                    "license_status": "approved",
+                    "contains_private_data": False,
+                    "provenance_ref": "https://hf.co/datasets/bigcode/the-stack-v2",
+                    "dataset_radar_source_id": "the-stack-v2",
+                }
+            ],
+        },
+    )
+
+    payload = client.get("/ops/brain/visualizer/state", params={"session_id": "visual-candidate-forge"}).json()
+    lineage = payload["overlay_state"]["control_panel"]["dataset_flow_view"]["dataset_forge_lineage"]
+    candidate_row = next(
+        row for row in lineage["candidate_material_lineage"] if row["source_id"] == "example/visual-apache-code-agent"
+    )
+    assert candidate_row["requested_split"] == "teacher_context"
+    assert candidate_row["candidate_material"] is True
+    assert candidate_row["training_eligible"] is False
+    assert candidate_row["source_review_state"] == "review_required"
+    assert candidate_row["training_promotion_allowed"] is False
+    assert "training_eligibility" in candidate_row["review_blocking_fields"]
+    canonical_row = next(row for row in lineage["canonical_train_lineage"] if row["source_id"] == "the-stack-v2")
+    assert canonical_row["requested_split"] == "train"
+    assert canonical_row["training_eligible"] is True
+    assert canonical_row["source_review_state"] == "review_required"
+    assert canonical_row["training_promotion_allowed"] is False
+    assert "privacy_evidence" in canonical_row["review_blocking_fields"]
+    assert lineage["lineage_split_policy"]["train_source_ids"] == ["the-stack-v2", "stack-edu", "codesearchnet"]
+    assert lineage["lineage_split_policy"]["teacher_context_only_source_ids"] == ["context7"]
+    assert lineage["lineage_split_policy"]["sealed_eval_source_ids"] == ["swe-bench", "swe-gym"]
+    assert lineage["train_blocked_source_ids"] == ["swe-bench", "swe-gym"]
+    assert lineage["sealed_eval_visibility"]["visible_to_training"] is False
+    assert lineage["sealed_eval_visibility"]["visible_to_teacher_council"] is False
+    assert any(row["source_id"] == "the-stack-v2" for row in lineage["review_blocked_lineage"])
+    assert "candidate_material_separation" in lineage["required_controls"]
+    assert "dataset_radar_source_review_packet" in lineage["required_controls"]
 
 
 def test_visualizer_overlay_exposes_telemetry_filters_and_performance_profile(tmp_path: Path):
@@ -295,3 +568,18 @@ def test_visualizer_cohort_compare_exposes_scene_delta(tmp_path: Path):
     assert "scene_delta" in payload
     assert payload["scene_delta"]["hot_subjects"][0]["subject"] == "coder"
     assert any(item["link_id"] == "core::coder" for item in payload["scene_delta"]["hot_links"])
+
+
+def test_control_panel_exposes_developmental_cortex_scorecard(tmp_path: Path):
+    project_root = make_project(tmp_path)
+    client = TestClient(create_app(str(project_root)))
+
+    response = client.get("/ops/brain/visualizer/state", params={"session_id": "dev-cortex-session"})
+
+    assert response.status_code == 200
+    control_panel = response.json()["overlay_state"]["control_panel"]
+    scorecard = control_panel["developmental_cortex_scorecard"]
+    assert scorecard["surface_id"] == "developmental-cortex-kernel"
+    assert scorecard["production_mutation_allowed"] is False
+    assert "body_schema" in scorecard["subsurfaces"]
+    assert "promotion_tribunal" in scorecard["subsurfaces"]

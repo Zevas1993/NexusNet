@@ -54,6 +54,12 @@ class InternalExpertHarnessService:
         execution_mode = native_execution_plan.get("execution_mode")
         alignment_hold_required = bool(native_execution_plan.get("alignment_hold_required"))
         alignment_blockers = list(native_execution_plan.get("alignment_blockers") or [])
+        policy_alignment = dict((execution_policy or {}).get("alignment_summary") or {})
+        upstream_aitune_gate = _upstream_aitune_gate(native_execution_plan.get("upstream_aitune_gate") or policy_alignment.get("upstream_aitune_gate") or {})
+        upstream_aitune_blocked = _upstream_aitune_gate_blocked(upstream_aitune_gate)
+        if upstream_aitune_blocked:
+            alignment_hold_required = True
+            alignment_blockers = list(dict.fromkeys(alignment_blockers + ["router_alignment_blocks_upstream_aitune_gate"]))
         outputs = []
         for contract in preview["contracts"]:
             if not contract["capability_gate"]["enabled"]:
@@ -87,6 +93,8 @@ class InternalExpertHarnessService:
         if execution_mode == "native_live_guarded":
             if not teacher_anchor_present:
                 runtime_fallback_triggers.append("teacher_anchor_missing")
+            if upstream_aitune_blocked:
+                runtime_fallback_triggers.append("upstream_aitune_gate_blocked")
             if alignment_hold_required:
                 runtime_fallback_triggers.append("alignment_hold_runtime")
             if disagreements:
@@ -173,6 +181,7 @@ class InternalExpertHarnessService:
             "fallback_triggers": fallback_triggers,
             "alignment_hold_required": alignment_hold_required,
             "alignment_blockers": alignment_blockers,
+            "upstream_aitune_gate": upstream_aitune_gate,
             "recommended_execution_mode": teacher_comparison["recommended_execution_mode"],
             "fallback_recommendation": native_execution_plan.get("teacher_fallback_path"),
         }
@@ -393,3 +402,27 @@ class InternalExpertHarnessService:
             return teacher_comparison["summary"]
         previews = "; ".join(item["summary"] for item in outputs[:2])
         return f"{teacher_comparison['summary']} Native bounded output preview: {previews}"
+
+
+def _upstream_aitune_gate(gate: dict[str, Any]) -> dict[str, Any]:
+    blockers = list(gate.get("blockers") or gate.get("readiness_blockers") or [])
+    status = str(gate.get("status") or "not_provided")
+    can_execute_here = gate.get("can_execute_here")
+    if can_execute_here is False and not blockers:
+        blockers.append("upstream_aitune_execution_not_ready")
+    if status in {"blocked", "blocked-upstream-gate"} and not blockers:
+        blockers.append("upstream_aitune_gate_blocked")
+    return {
+        **gate,
+        "status": status,
+        "can_execute_here": can_execute_here,
+        "blockers": blockers,
+    }
+
+
+def _upstream_aitune_gate_blocked(gate: dict[str, Any]) -> bool:
+    return bool(
+        gate.get("can_execute_here") is False
+        or gate.get("status") in {"blocked", "blocked-upstream-gate"}
+        or gate.get("blockers")
+    )

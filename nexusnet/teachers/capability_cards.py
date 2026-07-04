@@ -11,6 +11,7 @@ TOOL_TEACHERS = {
     "qwen3-coder-next",
     "devstral-2",
     "devstral-small-1-1",
+    "devstral-small-2",
     "toolbench-trained-llama",
     "gorilla-api-agent",
     "mistral-toolformer",
@@ -20,9 +21,13 @@ TOOL_TEACHERS = {
 STRUCTURED_OUTPUT_TEACHERS = TOOL_TEACHERS | {
     "qwen3-30b-a3b",
     "mistral-small-4",
+    "mistral-medium-3-5",
     "deepseek-r1-distill-qwen-32b",
     "deepseek-v2-lite",
+    "deepseek-v4-pro",
+    "deepseek-v4-flash",
     "kimi-k2-5",
+    "kimi-k2-6",
     "deepseek-r1",
     "deepseek-v3",
 }
@@ -31,6 +36,7 @@ EDGE_TEACHERS = {
     "qwen-0.5b-moe",
     "qwen-moe-0.5b",
     "intent-bert",
+    "nexusnet-intent-bert-v0",
     "distilbert-intent",
     "polycoder",
     "deepseek-r1-distill-qwen-1.5b",
@@ -42,11 +48,14 @@ DEEP_TEACHERS = {
     "qwen3-30b-a3b",
     "deepseek-r1",
     "deepseek-v3",
+    "deepseek-v4-pro",
     "deepseek-r1-distill-qwen-32b",
+    "mistral-medium-3-5",
     "mixtral-8x7b",
     "claude-eval-finetunes",
     "claude-eval-historical",
     "kimi-k2-5",
+    "kimi-k2-6",
 }
 
 HIGH_RISK_TEACHERS = {
@@ -55,16 +64,21 @@ HIGH_RISK_TEACHERS = {
     "cyberseceval-llms",
     "gpt-j-security-finetunes",
     "code-llama-secure",
+    "deepseek-v4-pro",
 }
 
 LONG_CONTEXT_TEACHERS = {
     "deepseek-v2-lite",
+    "deepseek-v4-pro",
+    "deepseek-v4-flash",
     "qwen3-30b-a3b",
     "qwen3-vl",
     "kimi-k2-5",
+    "kimi-k2-6",
     "mpt-storywriter",
     "longlora-llama-3-8b",
     "recurrentgemma-memory-tuned",
+    "nexusnet-recurrentmemory-v0",
 }
 
 
@@ -101,6 +115,8 @@ def build_teacher_capability_card(*, teacher_id: str, payload: dict[str, Any], r
 def _infer_modalities(teacher_id: str) -> list[str]:
     if teacher_id in {"openclip", "blip-2", "sam", "eva-clip", "qwen3-vl"}:
         return ["image", "text"]
+    if teacher_id in {"kimi-k2-6", "nvidia-nemotron-3-nano-omni"}:
+        return ["image", "video", "text"]
     if teacher_id in {"whisper-large-v3", "wav2vec-2-0", "audiolm", "bark-tts", "voxtral-small"}:
         return ["audio", "text"]
     return ["text"]

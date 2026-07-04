@@ -23,6 +23,7 @@ dependencies = [
 nexus = "nexus.cli.main:main"
 nexusnet-brain = "nexusnet.cli.brain:main"
 nexusnet-api = "nexusnet.cli.api:main"
+nexusnet-wrapper = "nexusnet.cli.wrapper:main"
 nexusnet-bootstrap = "nexusnet.cli.bootstrap:main"
 nexusnet-qes = "nexusnet.cli.qes:main"
 nexusnet-router-train = "nexusnet.cli.router_train:main"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import platform
 import time
 from datetime import datetime, timezone
@@ -17,6 +18,7 @@ from nexus.storage import NexusStore
 from ..adapters import BaseModelAdapter
 from ..benchmarks import BenchmarkHarness
 from ..experts import InternalExpertExecutionService
+from ..hive.substrate import HiveForwardPassRequest
 from ..memory import MemoryNode, NeuralMemoryCortex
 from ..moe import MoEFusionScaffoldService
 from ..schemas import BrainGenerateResult, BrainGenerateRequest, InferenceTrace, SessionContext
@@ -29,6 +31,29 @@ from .native_execution import NativeExecutionPlanner
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _sanitized_native_hive_metadata_ref(value: Any, *, fallback: str) -> str:
+    raw = str(value or fallback).strip().replace("\\", "/")
+    if not raw:
+        return fallback
+    allowed_relative_prefixes = (
+        "artifacts/autonomous-updates/safe-files/",
+        "docs/",
+        "nexus/",
+        "nexusnet/",
+        "tests/",
+    )
+    simple_ref = all(char.isalnum() or char in "-_." for char in raw)
+    safe_relative_ref = (
+        any(raw.startswith(prefix) for prefix in allowed_relative_prefixes)
+        and ".." not in raw
+        and ":" not in raw
+    )
+    if simple_ref or safe_relative_ref:
+        return raw[:180]
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+    return f"{fallback}::{digest}"
 
 
 class NexusBrain:
@@ -495,6 +520,22 @@ class NexusBrain:
                 "status": critique.status,
             },
         )
+        native_hive_forward_pass = self._record_native_hive_forward_pass(
+            session_context=session_context,
+            model_id=adapter.model_id,
+            runtime_name=adapter.runtime_backend.runtime_name,
+            status=status,
+            critique_status=critique.status,
+        )
+        execution_recorder.record(
+            "native-hive-forward-pass",
+            {
+                "status": native_hive_forward_pass.get("status"),
+                "hive_run_id": native_hive_forward_pass.get("hive_run_id"),
+                "runtime_growth_receipt_id": native_hive_forward_pass.get("runtime_growth_receipt_id"),
+                "federated_packet_id": native_hive_forward_pass.get("federated_packet_id"),
+            },
+        )
 
         trace = InferenceTrace(
             trace_id=session_context.trace_id,
@@ -523,6 +564,7 @@ class NexusBrain:
                 },
                 "attempted_runtimes": attempted_runtimes,
                 "fallback_used": fallback_used,
+                "native_hive_forward_pass": native_hive_forward_pass,
                 "retrieval_policy": retrieval_policy_decision["policy_mode"],
                 "retrieval_effective_policy": retrieval_policy_decision.get("effective_policy_mode"),
                 "graph_store_health": retrieval_policy_decision["graph_store_health"],
@@ -545,6 +587,7 @@ class NexusBrain:
                     "execution_policy": execution_policy,
                     "native_execution": native_execution,
                     "promotion_linkage": promotion_linkage,
+                    "native_hive_forward_pass": native_hive_forward_pass,
                     "qes_execution_plan": core_execution_plan,
                     "model_attachment": attachment_record or {},
                     "teacher_registry_layer": session_context.metadata.get("teacher_registry_layer"),
@@ -687,6 +730,184 @@ class NexusBrain:
 
     def run_benchmark(self, *, suite_name: str, cases, model_hint: str | None = None):
         return self.benchmarks.run(suite_name=suite_name, brain=self, cases=cases, model_hint=model_hint)
+
+    def _record_native_hive_forward_pass(
+        self,
+        *,
+        session_context: SessionContext,
+        model_id: str,
+        runtime_name: str,
+        status: str,
+        critique_status: str,
+    ) -> dict[str, Any]:
+        hive_substrate = getattr(self, "hive_substrate", None)
+        if hive_substrate is None:
+            return {
+                "surface_id": "nexusbrain-native-hive-forward-pass",
+                "status": "not-configured",
+                "raw_content_included": False,
+                "contains_personal_data": False,
+                "active_production_mutated": False,
+            }
+
+        requested_capabilities = [
+            "nexusbrain_generate",
+            "continuous_assimilation",
+            "runtime_growth",
+            "federated_learning",
+            session_context.task_type,
+        ]
+        if session_context.expert:
+            requested_capabilities.append(str(session_context.expert))
+        graph_plane_tags = session_context.metadata.get("graph_plane_tags") or []
+        if isinstance(graph_plane_tags, str):
+            graph_plane_tags = [graph_plane_tags]
+        requested_capabilities.extend(str(tag) for tag in graph_plane_tags)
+        requested_actions = self._native_hive_requested_actions(session_context)
+
+        request = HiveForwardPassRequest(
+            session_id=session_context.session_id,
+            task_id=session_context.trace_id,
+            intent=(
+                "NexusBrain runtime heartbeat for "
+                f"task_type={session_context.task_type}; "
+                f"expert={session_context.expert or 'general'}; "
+                f"model={model_id}; runtime={runtime_name}"
+            ),
+            source_ref=f"nexusbrain-generate::{session_context.trace_id}",
+            requested_capabilities=requested_capabilities,
+            memory_refs=[f"trace::{session_context.trace_id}"],
+            privacy_class="sanitized-runtime-metadata",
+            requested_actions=requested_actions,
+            max_loops=2,
+            metadata={
+                "trace_ref": f"trace::{session_context.trace_id}",
+                "source": "nexusbrain-generate",
+                "requested_action_count": len(requested_actions),
+                "raw_content_included": False,
+            },
+        )
+        try:
+            result = hive_substrate.run_forward_pass(request)
+        except Exception as exc:  # pragma: no cover - live product degraded-status guard
+            return {
+                "surface_id": "nexusbrain-native-hive-forward-pass",
+                "status": "degraded",
+                "error_type": type(exc).__name__,
+                "raw_content_included": False,
+                "contains_personal_data": False,
+                "active_production_mutated": False,
+            }
+
+        receipt = result.get("runtime_growth_receipt") if isinstance(result.get("runtime_growth_receipt"), dict) else {}
+        packet = (
+            result.get("runtime_growth_federated_packet")
+            if isinstance(result.get("runtime_growth_federated_packet"), dict)
+            else {}
+        )
+        runtime_growth_dream_research = self._queue_native_runtime_growth_review(
+            session_id=session_context.session_id,
+            hive_result=result,
+        )
+        return {
+            "surface_id": "nexusbrain-native-hive-forward-pass",
+            "status": result.get("lifecycle_state") or "unknown",
+            "hive_run_id": result.get("run_id"),
+            "hive_task_id": result.get("task_id"),
+            "project_heartbeat_id": ((result.get("project_heartbeat") or {}).get("heartbeat_id")),
+            "runtime_growth_receipt_id": receipt.get("receipt_id"),
+            "federated_packet_id": packet.get("packet_id"),
+            "federated_packet_surface_id": packet.get("surface_id"),
+            "runtime_growth_dream_research": runtime_growth_dream_research,
+            "model_id": model_id,
+            "runtime_name": runtime_name,
+            "trace_ref": f"trace::{session_context.trace_id}",
+            "critique_status": critique_status,
+            "brain_generate_status": status,
+            "raw_content_included": False,
+            "contains_personal_data": False,
+            "active_production_mutated": False,
+        }
+
+    def _native_hive_requested_actions(self, session_context: SessionContext) -> list[dict[str, Any]]:
+        requested_actions = session_context.metadata.get("native_hive_requested_actions") or []
+        if not isinstance(requested_actions, list):
+            return []
+        sanitized_actions: list[dict[str, Any]] = []
+        for index, action in enumerate(requested_actions[:8]):
+            if not isinstance(action, dict):
+                continue
+            action_type = str(action.get("action_type") or "observe").lower()
+            if action_type not in {"delete", "execute", "mutate", "observe", "promote", "read", "write"}:
+                action_type = "observe"
+            action_id = _sanitized_native_hive_metadata_ref(
+                action.get("action_id"),
+                fallback=f"nexusbrain-native-action-{index + 1}",
+            )
+            target_ref = _sanitized_native_hive_metadata_ref(
+                action.get("target_ref") or action_id,
+                fallback=f"nexusbrain-native-target-{index + 1}",
+            )
+            sanitized_action: dict[str, Any] = {
+                "action_id": action_id,
+                "action_type": action_type,
+                "target_ref": target_ref,
+            }
+            if "read_only" in action:
+                sanitized_action["read_only"] = bool(action.get("read_only"))
+            sanitized_actions.append(sanitized_action)
+        return sanitized_actions
+
+    def _queue_native_runtime_growth_review(
+        self,
+        *,
+        session_id: str,
+        hive_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        bridge = getattr(self, "native_runtime_growth_review_bridge", None)
+        if not callable(bridge):
+            receipt = (
+                hive_result.get("runtime_growth_receipt")
+                if isinstance(hive_result.get("runtime_growth_receipt"), dict)
+                else {}
+            )
+            return {
+                "surface_id": "native-hive-runtime-growth-dream-research-bridge",
+                "status": "not-configured",
+                "runtime_growth_receipt_id": receipt.get("receipt_id"),
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+            }
+        try:
+            result = bridge(session_id=session_id, hive_result=hive_result)
+        except Exception as exc:  # pragma: no cover - live product degraded-status guard
+            receipt = (
+                hive_result.get("runtime_growth_receipt")
+                if isinstance(hive_result.get("runtime_growth_receipt"), dict)
+                else {}
+            )
+            return {
+                "surface_id": "native-hive-runtime-growth-dream-research-bridge",
+                "status": "degraded",
+                "runtime_growth_receipt_id": receipt.get("receipt_id"),
+                "error_type": type(exc).__name__,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+            }
+        if isinstance(result, dict):
+            return {
+                **result,
+                "raw_content_included": bool(result.get("raw_content_included", False)),
+                "active_production_mutation_allowed": bool(
+                    result.get("active_production_mutation_allowed", False)
+                ),
+            }
+        return {
+            "surface_id": "native-hive-runtime-growth-dream-research-bridge",
+            "status": "degraded",
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+        }
 
     def _build_prompt(
         self,

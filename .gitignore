@@ -23,11 +23,21 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Local agent/GitNexus workspace helpers
+.claude/
+AGENTS.md
+CLAUDE.md
+
 # Local models & cache
 models/
+!nexus/models/
+!nexus/models/__init__.py
 runtime/rag/
 cache/
 logs/
+ui/wrapper/*
+!ui/wrapper/
+!ui/wrapper/index.html
 runtime/logs/
 *.log
 
@@ -49,8 +59,12 @@ pytest-cache-files-*/
 # Node (future UI bindings)
 node_modules/
 
+# Private research capture helpers
+tools/chatgpt_project_*_capture.mjs
+
 # Docker
 *.pid
 
 # Secrets
 runtime/config/secrets.json
+.gitnexus

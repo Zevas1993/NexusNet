@@ -67,6 +67,7 @@ class WrapperSurfaceService:
         brain_skill_repository: object | None = None,
         brain_skill_evolution: object | None = None,
         brain_skill_refinement: object | None = None,
+        brain_assimilation_targets: object | None = None,
         brain_subagents: object | None = None,
         brain_delegation: object | None = None,
         brain_parallel: object | None = None,
@@ -111,6 +112,7 @@ class WrapperSurfaceService:
         self.brain_skill_repository = brain_skill_repository
         self.brain_skill_evolution = brain_skill_evolution
         self.brain_skill_refinement = brain_skill_refinement
+        self.brain_assimilation_targets = brain_assimilation_targets
         self.brain_subagents = brain_subagents
         self.brain_delegation = brain_delegation
         self.brain_parallel = brain_parallel
@@ -134,6 +136,9 @@ class WrapperSurfaceService:
         self.promotion_provider = promotion_provider
         self.retrieval_scorecard_provider = retrieval_scorecard_provider
         self.brain_core_summary_provider = brain_core_summary_provider
+        self.release_runtime_status_provider = None
+        self.release_readiness_provider = None
+        self.release_session_lifecycle_provider = None
         self._modes = default_wrapper_modes()
 
     def state(self, session_id: str | None = None) -> WrapperSurfaceState:
@@ -472,6 +477,7 @@ class WrapperSurfaceService:
                 "skill_repository": self.brain_skill_repository.summary() if self.brain_skill_repository is not None else None,
                 "skill_evolution": self.brain_skill_evolution.summarize_trajectories([]) if self.brain_skill_evolution is not None else None,
                 "skill_refinement": self.brain_skill_refinement.propose(recurring_patterns=[]) if self.brain_skill_refinement is not None else None,
+                "assimilation_targets": self.brain_assimilation_targets.scorecard(session_id=session_id) if self.brain_assimilation_targets is not None else None,
                 "agent_harness": self.brain_agent_harness.summary() if self.brain_agent_harness is not None else None,
                 "agent_teams": self.brain_agent_teams.summary() if self.brain_agent_teams is not None else None,
                 "attention_research": self.brain_attention_registry.summary() if self.brain_attention_registry is not None else None,
@@ -555,6 +561,12 @@ class WrapperSurfaceService:
         }
         if self.graph_service is not None:
             snapshot["graph"] = self.graph_service.status()
+        if callable(self.release_runtime_status_provider):
+            snapshot["release_runtime"] = self.release_runtime_status_provider(session_id=session_id)
+        if callable(self.release_readiness_provider):
+            snapshot["release_readiness"] = self.release_readiness_provider(session_id=session_id)
+        if callable(self.release_session_lifecycle_provider):
+            snapshot["release_session_lifecycle"] = self.release_session_lifecycle_provider(session_id=session_id)
         snapshot["assimilation"]["aitune"] = (snapshot.get("brain_runtime") or {}).get("aitune")
         snapshot["assimilation"]["compare_refs"] = {
             "aitune_execution_plan": "/ops/brain/aitune/execution-plan",
