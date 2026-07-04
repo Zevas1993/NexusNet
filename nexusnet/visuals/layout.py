@@ -1740,6 +1740,26 @@ class NexusVisualizerService:
             ),
             "mutation_boundary": "visualizer-status-only-no-active-production-mutation",
         }
+        direct_nexusbrain_forward_pass = (
+            release_wrapper_runtime.get("direct_nexusbrain_forward_pass")
+            if isinstance(release_wrapper_runtime.get("direct_nexusbrain_forward_pass"), dict)
+            else {
+                "surface_id": "direct-nexusbrain-forward-pass",
+                "status_label": "LOCKED CANON",
+                "status": "not-observed",
+                "runtime_state": "static-canon",
+                "runtime_growth_receipt_id": None,
+                "runtime_growth_federated_packet_id": None,
+                "federated_learning_packet_id": None,
+                "global_growth_captured": False,
+                "federated_packet_emitted": False,
+                "dream_signal_emitted": False,
+                "active_production_mutated": False,
+                "raw_content_included": False,
+                "privacy_boundary": "direct-nexusbrain-forward-pass-visual-status-ids-only-no-prompts-outputs-session-ids",
+                "mutation_boundary": "visualizer-status-only-no-active-production-mutation",
+            }
+        )
         operations_summary = self._brain_operations_summary(session_id=session_id)
         latest_operation_command = operations_summary.get("latest_command") or {}
         active_command_id = latest_operation_command.get("command_id")
@@ -2752,6 +2772,7 @@ class NexusVisualizerService:
             "release_wrapper_developmental_release_contract": release_wrapper_developmental_release_contract,
             "release_wrapper_forward_pass_enforcement_matrix": release_wrapper_forward_pass_enforcement_matrix,
             "release_wrapper_session_lifecycle": release_wrapper_session_lifecycle,
+            "direct_nexusbrain_forward_pass": direct_nexusbrain_forward_pass,
             "direct_nexusbrain_native_growth_governance": direct_nexusbrain_native_growth_governance,
             "release_wrapper_readiness": snapshot.get("release_readiness"),
             "genai_observability_scorecard": genai_observability,
@@ -2786,6 +2807,9 @@ class NexusVisualizerService:
                     "overlay.control_panel.release_wrapper_privacy_retention_enforcement"
                 ),
                 "release_wrapper_self_repair_ledger": "overlay.control_panel.release_wrapper_self_repair_ledger",
+                "direct_nexusbrain_forward_pass": (
+                    "overlay.control_panel.direct_nexusbrain_forward_pass"
+                ),
                 "direct_nexusbrain_native_growth_governance": (
                     "overlay.control_panel.direct_nexusbrain_native_growth_governance"
                 ),

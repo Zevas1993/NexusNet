@@ -3336,6 +3336,9 @@ function renderAutonomousUpdatesScorecard() {
   const globalGrowth = releaseRuntime.global_growth || {};
   const latestRuntimeGrowthReceipt = globalGrowth.latest_runtime_receipt || {};
   const runtimeGrowthPacket = latestRuntimeGrowthReceipt.federated_packet || {};
+  const directNexusBrainForwardPass = releaseRuntime.direct_nexusbrain_forward_pass
+    || state.controlPanel?.direct_nexusbrain_forward_pass
+    || {};
   const dreamResearchQueue = releaseRuntime.dream_research_queue || {};
   const latestDreamResearchItem = dreamResearchQueue.latest_item || {};
   const latestDreamResearchMetadata = latestDreamResearchItem.metadata || {};
@@ -3388,6 +3391,9 @@ function renderAutonomousUpdatesScorecard() {
         <span><strong>${escapeHtml(globalGrowth.runtime_interaction_count || 0)}</strong><small>runtime growth bridge</small></span>
         <span><strong>${escapeHtml(latestRuntimeGrowthReceipt.surface_id || "no-runtime-growth-receipt")}</strong><small>latest runtime growth receipt</small></span>
         <span><strong>${escapeHtml(runtimeGrowthPacket.surface_id || "no-runtime-growth-packet")}</strong><small>shared growth fed packet</small></span>
+        <span><strong>${escapeHtml(directNexusBrainForwardPass.status || "not-observed")}</strong><small>direct NexusBrain forward pass</small></span>
+        <span><strong>${escapeHtml(directNexusBrainForwardPass.runtime_growth_federated_packet_id || "no-direct-brain-packet")}</strong><small>direct brain federated packet</small></span>
+        <span><strong>${escapeHtml(directNexusBrainForwardPass.dream_signal_emitted ? "true" : "false")}</strong><small>direct brain dream signal</small></span>
         <span><strong>${escapeHtml(nativeRuntimeGrowthBridgeStatus)}</strong><small>native growth dream/research bridge</small></span>
         <span><strong>${escapeHtml(nativeRuntimeGrowthReceiptLabel)}</strong><small>native growth receipt</small></span>
         <span><strong>${escapeHtml(nativeRuntimeGrowthProposalStatus)}</strong><small>native growth proposal</small></span>

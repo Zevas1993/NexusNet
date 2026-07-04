@@ -74,6 +74,82 @@ def test_nexusnet_brain_generate_feeds_native_hive_runtime_growth_without_raw_co
     assert "Private Project Caldera" not in repr(packet)
 
 
+def test_nexusnet_brain_direct_forward_pass_replays_into_release_runtime_and_control_panel(tmp_path: Path):
+    project_root = make_project(tmp_path)
+    session_id = "direct-brain-forward-user"
+    prompt = "Private Direct Brain Packet SECRET-DIRECT-BRAIN should stay out of release replay."
+    client = TestClient(create_app(str(project_root)))
+    services = client.app.state.services
+
+    result = services.brain.generate(
+        session_context=SessionContext(
+            session_id=session_id,
+            expert="researcher",
+            task_type="runtime-heartbeat",
+            use_retrieval=False,
+            metadata={"graph_plane_tags": ["runtime", "federated_learning"]},
+        ),
+        prompt=prompt,
+        model_hint="mock/default",
+    )
+
+    native_hive = result.inference_trace.metrics["native_hive_forward_pass"]
+    assert native_hive["status"] == "completed"
+    assert native_hive["runtime_growth_receipt_id"]
+    assert native_hive["federated_packet_id"]
+
+    restarted_client = TestClient(create_app(str(project_root)))
+    runtime = restarted_client.get(
+        "/ops/wrapper/release-runtime",
+        params={"session_id": session_id},
+    ).json()
+    visualizer = restarted_client.get(
+        "/ops/brain/visualizer/state",
+        params={"session_id": session_id},
+    ).json()
+    control_panel = visualizer["overlay_state"]["control_panel"]
+
+    direct_forward = runtime["direct_nexusbrain_forward_pass"]
+    assert direct_forward["surface_id"] == "direct-nexusbrain-forward-pass"
+    assert direct_forward["status"] == "covered"
+    assert direct_forward["runtime_state"] == "replayed-history"
+    assert direct_forward["runtime_growth_receipt_id"] == native_hive["runtime_growth_receipt_id"]
+    assert direct_forward["runtime_growth_federated_packet_id"] == native_hive["federated_packet_id"]
+    assert direct_forward["global_growth_captured"] is True
+    assert direct_forward["federated_packet_emitted"] is True
+    assert direct_forward["dream_signal_emitted"] is True
+    assert direct_forward["raw_content_included"] is False
+    assert direct_forward["active_production_mutated"] is False
+
+    assert runtime["federated_packet_count"] >= 1
+    assert runtime["latest_federated_packet"]["raw_content_included"] is False
+    assert runtime["global_growth"]["global_captures"] >= 1
+    assert runtime["global_growth"]["latest_runtime_receipt"]["receipt_id"] == native_hive["runtime_growth_receipt_id"]
+
+    control_direct = control_panel["direct_nexusbrain_forward_pass"]
+    assert control_direct["status"] == "covered"
+    assert control_direct["runtime_growth_receipt_id"] == native_hive["runtime_growth_receipt_id"]
+    assert control_direct["runtime_growth_federated_packet_id"] == native_hive["federated_packet_id"]
+    assert (
+        control_panel["live_refs"]["direct_nexusbrain_forward_pass"]
+        == "overlay.control_panel.direct_nexusbrain_forward_pass"
+    )
+
+    serialized = json.dumps(
+        {
+            "direct_forward": direct_forward,
+            "control_direct": control_direct,
+            "latest_federated_packet": runtime["latest_federated_packet"],
+            "global_growth": runtime["global_growth"],
+        },
+        sort_keys=True,
+    )
+    assert prompt not in serialized
+    assert "SECRET-DIRECT-BRAIN" not in serialized
+    assert session_id not in serialized
+    assert str(project_root) not in serialized
+
+
 def test_nexusnet_brain_generate_routes_blocked_native_growth_into_dream_research_bridge(tmp_path: Path):
     project_root = make_project(tmp_path)
     client = TestClient(create_app(str(project_root)))

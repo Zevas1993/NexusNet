@@ -9241,6 +9241,11 @@ class ReleaseWrapperRuntime:
             session_id=session_id,
             session_ref_digest=session_ref_digest,
         )
+        direct_nexusbrain_forward_pass = _direct_nexusbrain_forward_pass_summary(
+            self.hive_substrate,
+            session_id=session_id,
+            session_ref_digest=session_ref_digest,
+        )
         project_heartbeat, project_heartbeat_replay = self._observe_project_heartbeat(
             project_heartbeat,
             session_ref_digest=session_ref_digest,
@@ -9267,6 +9272,53 @@ class ReleaseWrapperRuntime:
                     restored["global_growth"],
                     retention=restored["privacy_retention_enforcement"],
                 )
+            restored["direct_nexusbrain_forward_pass"] = direct_nexusbrain_forward_pass
+            if direct_nexusbrain_forward_pass.get("status") == "covered":
+                direct_packet = (
+                    direct_nexusbrain_forward_pass.get("latest_federated_packet")
+                    if isinstance(direct_nexusbrain_forward_pass.get("latest_federated_packet"), dict)
+                    else None
+                )
+                direct_growth = {
+                    **self.global_growth.growth_status(),
+                    "view": "session-filtered" if session_ref_digest else "global",
+                    "session_ref_digest": session_ref_digest,
+                    "session_captures": max(
+                        1,
+                        int((restored.get("session_history") or {}).get("event_count") or 0),
+                    ),
+                    "global_event_count": max(
+                        1,
+                        int((restored.get("session_history") or {}).get("global_event_count") or 0),
+                    ),
+                }
+                direct_receipt = (
+                    direct_nexusbrain_forward_pass.get("latest_runtime_growth_receipt")
+                    if isinstance(direct_nexusbrain_forward_pass.get("latest_runtime_growth_receipt"), dict)
+                    else None
+                )
+                if direct_receipt is not None:
+                    direct_growth["global_latest_runtime_receipt"] = direct_growth.get("latest_runtime_receipt")
+                    direct_growth["latest_runtime_receipt"] = direct_receipt
+                    direct_growth["latest_runtime_receipt_scope"] = "direct-nexusbrain-forward-pass"
+                restored["global_growth"] = self._global_growth_with_privacy_retention(
+                    direct_growth,
+                    retention=restored["privacy_retention_enforcement"],
+                )
+                restored["federated_packet_count"] = max(
+                    int(restored.get("federated_packet_count") or 0),
+                    1 if direct_packet else 0,
+                )
+                restored["global_federated_packet_count"] = max(
+                    int(restored.get("global_federated_packet_count") or 0),
+                    restored["federated_packet_count"],
+                )
+                if direct_packet is not None:
+                    restored["latest_federated_packet"] = direct_packet
+                restored["status_source"] = "persisted-release-wrapper-runtime-artifact+direct-nexusbrain-forward-pass"
+                restored["honest_status_label"] = "direct-nexusbrain-forward-pass-replayed"
+                if isinstance(restored.get("entrypoint"), dict):
+                    restored["entrypoint"]["runtime_state"] = "replayed-history"
             restored["dream_research_queue"] = self._dream_research_queue_summary(session_ref_digest=session_ref_digest)
             restored["ao_execution_receipts"] = self._ao_execution_receipts_summary(session_ref_digest=session_ref_digest)
             restored["effective_context_cache"] = self._effective_context_cache_summary(
@@ -9430,6 +9482,47 @@ class ReleaseWrapperRuntime:
                     restored["developmental_release_contract"] = _empty_developmental_release_contract(
                         session_ref_digest=session_ref_digest
                     )
+            if direct_nexusbrain_forward_pass.get("status") == "covered":
+                direct_packet = (
+                    direct_nexusbrain_forward_pass.get("latest_federated_packet")
+                    if isinstance(direct_nexusbrain_forward_pass.get("latest_federated_packet"), dict)
+                    else None
+                )
+                direct_receipt = (
+                    direct_nexusbrain_forward_pass.get("latest_runtime_growth_receipt")
+                    if isinstance(direct_nexusbrain_forward_pass.get("latest_runtime_growth_receipt"), dict)
+                    else None
+                )
+                if direct_packet is not None:
+                    restored["federated_packet_count"] = max(
+                        int(restored.get("federated_packet_count") or 0),
+                        1,
+                    )
+                    restored["global_federated_packet_count"] = max(
+                        int(restored.get("global_federated_packet_count") or 0),
+                        restored["federated_packet_count"],
+                    )
+                    restored["latest_federated_packet"] = direct_packet
+                if direct_receipt is not None:
+                    direct_growth = {
+                        **self.global_growth.growth_status(),
+                        "view": "session-filtered" if session_ref_digest else "global",
+                        "session_ref_digest": session_ref_digest,
+                        "session_captures": max(
+                            1,
+                            int((restored.get("session_history") or {}).get("event_count") or 0),
+                        ),
+                        "global_event_count": max(
+                            1,
+                            int((restored.get("session_history") or {}).get("global_event_count") or 0),
+                        ),
+                        "latest_runtime_receipt": direct_receipt,
+                        "latest_runtime_receipt_scope": "direct-nexusbrain-forward-pass",
+                    }
+                    restored["global_growth"] = self._global_growth_with_privacy_retention(
+                        direct_growth,
+                        retention=restored["privacy_retention_enforcement"],
+                    )
             restored.setdefault("live_wrapper_telemetry", _empty_live_wrapper_telemetry())
             restored.setdefault("first_run_readiness", self.first_run_readiness(session_id=session_id))
             restored["whole_system_forward_pass_enforcement_matrix"] = _whole_system_forward_pass_enforcement_matrix(
@@ -9486,10 +9579,19 @@ class ReleaseWrapperRuntime:
             return restored
         active_interactions = self._interactions_for_session(session_ref_digest)
         active_federated_packets = self._federated_packets_for_interactions(active_interactions)
+        direct_nexusbrain_packet = (
+            direct_nexusbrain_forward_pass.get("latest_federated_packet")
+            if isinstance(direct_nexusbrain_forward_pass.get("latest_federated_packet"), dict)
+            else None
+        )
+        direct_nexusbrain_packet_count = (
+            1 if direct_nexusbrain_forward_pass.get("status") == "covered" and direct_nexusbrain_packet else 0
+        )
+        federated_packet_count = len(active_federated_packets) + direct_nexusbrain_packet_count
         active_federated_imports = self._federated_packet_imports_for_session(session_ref_digest)
         active_production_packets = self._production_packets_for_interactions(active_interactions)
         continuous_status = self.continuous_assimilation.status()
-        latest_packet = active_federated_packets[0] if active_federated_packets else None
+        latest_packet = active_federated_packets[0] if active_federated_packets else direct_nexusbrain_packet
         global_growth = self.global_growth.growth_status()
         session_history = self._session_history_summary(
             session_ref_digest=session_ref_digest,
@@ -9524,6 +9626,18 @@ class ReleaseWrapperRuntime:
                 global_growth["global_latest_runtime_receipt"] = global_latest_runtime_receipt
                 global_growth["latest_runtime_receipt"] = session_latest_runtime_receipt
                 global_growth["latest_runtime_receipt_scope"] = "session"
+            elif direct_nexusbrain_forward_pass.get("status") == "covered":
+                direct_receipt = (
+                    direct_nexusbrain_forward_pass.get("latest_runtime_growth_receipt")
+                    if isinstance(direct_nexusbrain_forward_pass.get("latest_runtime_growth_receipt"), dict)
+                    else None
+                )
+                if direct_receipt is not None:
+                    global_growth["global_latest_runtime_receipt"] = global_latest_runtime_receipt
+                    global_growth["latest_runtime_receipt"] = direct_receipt
+                    global_growth["latest_runtime_receipt_scope"] = "direct-nexusbrain-forward-pass"
+                global_growth["session_captures"] = max(int(global_growth.get("session_captures") or 0), 1)
+                global_growth["global_event_count"] = max(int(global_growth.get("global_event_count") or 0), 1)
             else:
                 global_growth["latest_runtime_receipt_scope"] = "global-fallback"
         global_growth = self._global_growth_with_privacy_retention(
@@ -9606,12 +9720,18 @@ class ReleaseWrapperRuntime:
             session_ref_digest=session_ref_digest,
         )
         runtime_decision_ledger = self._runtime_decision_ledger_summary(session_ref_digest=session_ref_digest)
-        runtime_state = "live-bound" if active_interactions else "static-canon"
+        runtime_state = (
+            "live-bound"
+            if active_interactions
+            else "replayed-history"
+            if direct_nexusbrain_forward_pass.get("status") == "covered"
+            else "static-canon"
+        )
         live_wrapper_telemetry = _build_live_wrapper_telemetry(
             interactions=active_interactions,
             continuous_status=continuous_status,
             global_growth=global_growth,
-            federated_packet_count=len(active_federated_packets),
+            federated_packet_count=federated_packet_count,
             latest_packet=latest_packet,
             production_spine=production_spine,
         )
@@ -9678,6 +9798,8 @@ class ReleaseWrapperRuntime:
             "honest_status_label": (
                 "live-wrapper-path-with-shadow-only-updates"
                 if active_interactions
+                else "direct-nexusbrain-forward-pass-replayed"
+                if direct_nexusbrain_forward_pass.get("status") == "covered"
                 else "bootable-wrapper-entrypoint-awaiting-live-use"
             ),
             "session_ref_digest": session_ref_digest,
@@ -9690,6 +9812,7 @@ class ReleaseWrapperRuntime:
                 "control_panel_ref": "/ui/control-panel/",
                 "visualizer_ref": "/ui/visualizer/",
             },
+            "direct_nexusbrain_forward_pass": direct_nexusbrain_forward_pass,
             "continuous_assimilation": {
                 **continuous_status,
                 "provenance": {
@@ -9698,8 +9821,8 @@ class ReleaseWrapperRuntime:
                 },
             },
             "global_growth": global_growth,
-            "federated_packet_count": len(active_federated_packets),
-            "global_federated_packet_count": len(self._federated_packets),
+            "federated_packet_count": federated_packet_count,
+            "global_federated_packet_count": len(self._federated_packets) + direct_nexusbrain_packet_count,
             "latest_federated_packet": latest_packet,
             "federated_packet_outbox": federated_packet_outbox,
             "federated_packet_inbox": federated_packet_inbox,
@@ -19867,6 +19990,103 @@ def _release_project_heartbeat_from_substrate(
     )
 
 
+def _empty_direct_nexusbrain_forward_pass(*, session_ref_digest: str | None) -> dict[str, Any]:
+    return {
+        "surface_id": "direct-nexusbrain-forward-pass",
+        "status_label": "LOCKED CANON",
+        "status": "not-observed",
+        "runtime_state": "static-canon",
+        "session_ref_digest": session_ref_digest,
+        "hive_run_id": None,
+        "hive_task_id": None,
+        "trace_ref": None,
+        "project_heartbeat_id": None,
+        "runtime_growth_receipt_id": None,
+        "runtime_growth_federated_packet_id": None,
+        "federated_learning_packet_id": None,
+        "latest_federated_packet": None,
+        "latest_runtime_growth_receipt": None,
+        "continuous_assimilation_captured": False,
+        "global_growth_captured": False,
+        "federated_packet_emitted": False,
+        "dream_signal_emitted": False,
+        "raw_content_included": False,
+        "contains_personal_data": False,
+        "active_production_mutated": False,
+        "active_production_mutation_allowed": False,
+        "privacy_boundary": "sanitized-direct-nexusbrain-forward-pass-status-ids-and-digests-only-no-prompts-outputs-session-ids-or-paths",
+        "mutation_boundary": "release-projection-only-no-active-production-mutation",
+    }
+
+
+def _direct_nexusbrain_forward_pass_summary(
+    hive_substrate: Any,
+    *,
+    session_id: str | None,
+    session_ref_digest: str | None,
+) -> dict[str, Any]:
+    empty = _empty_direct_nexusbrain_forward_pass(session_ref_digest=session_ref_digest)
+    if hive_substrate is None or not hasattr(hive_substrate, "summary"):
+        return empty
+    try:
+        substrate = hive_substrate.summary(session_id=session_id)
+    except Exception:  # pragma: no cover - defensive product status boundary
+        return {
+            **empty,
+            "status": "degraded",
+            "runtime_state": "degraded",
+        }
+    latest = substrate.get("latest_forward_pass") if isinstance(substrate.get("latest_forward_pass"), dict) else {}
+    metadata = latest.get("metadata") if isinstance(latest.get("metadata"), dict) else {}
+    source_ref = str(latest.get("source_ref") or "")
+    if metadata.get("source") != "nexusbrain-generate" and not source_ref.startswith("nexusbrain-generate::"):
+        return empty
+    runtime_growth_receipt = (
+        latest.get("runtime_growth_receipt")
+        if isinstance(latest.get("runtime_growth_receipt"), dict)
+        else {}
+    )
+    runtime_growth_packet = (
+        latest.get("runtime_growth_federated_packet")
+        if isinstance(latest.get("runtime_growth_federated_packet"), dict)
+        else {}
+    )
+    federated_learning_packet = (
+        latest.get("federated_learning_packet")
+        if isinstance(latest.get("federated_learning_packet"), dict)
+        else {}
+    )
+    packet = runtime_growth_packet or federated_learning_packet
+    coverage = (
+        runtime_growth_receipt.get("forward_pass_coverage")
+        if isinstance(runtime_growth_receipt.get("forward_pass_coverage"), dict)
+        else {}
+    )
+    return {
+        **empty,
+        "status": "covered",
+        "runtime_state": "replayed-history",
+        "hive_run_id": _safe_ref(str(latest.get("run_id") or "")) or None,
+        "hive_task_id": _safe_ref(str(latest.get("task_id") or "")) or None,
+        "trace_ref": f"trace::{_safe_ref(source_ref.removeprefix('nexusbrain-generate::'))}" if source_ref else None,
+        "project_heartbeat_id": ((latest.get("project_heartbeat") or {}).get("heartbeat_id")),
+        "runtime_growth_receipt_id": runtime_growth_receipt.get("receipt_id"),
+        "runtime_growth_federated_packet_id": runtime_growth_packet.get("packet_id"),
+        "federated_learning_packet_id": federated_learning_packet.get("packet_id"),
+        "latest_federated_packet": packet or None,
+        "latest_runtime_growth_receipt": runtime_growth_receipt or None,
+        "continuous_assimilation_captured": bool(coverage.get("continuous_assimilation")),
+        "global_growth_captured": bool(coverage.get("global_growth")),
+        "federated_packet_emitted": bool(packet.get("packet_id")),
+        "dream_signal_emitted": bool(coverage.get("dream_signal")),
+        "lifecycle_state": latest.get("lifecycle_state") or "unknown",
+        "raw_content_included": False,
+        "contains_personal_data": False,
+        "active_production_mutated": False,
+        "active_production_mutation_allowed": False,
+    }
+
+
 def _forward_pass_coverage_summary(interactions: list[dict[str, Any]]) -> dict[str, Any]:
     receipts = [
         interaction.get("forward_pass_receipt")
@@ -21657,6 +21877,9 @@ def _empty_summary(*, session_id: str | None = None) -> dict[str, Any]:
             "control_panel_ref": "/ui/control-panel/",
             "visualizer_ref": "/ui/visualizer/",
         },
+        "direct_nexusbrain_forward_pass": _empty_direct_nexusbrain_forward_pass(
+            session_ref_digest=session_ref_digest
+        ),
         "continuous_assimilation": {"nodes": {}, "training_ready_nodes": [], "continuous": True, "mutates_production": False},
         "global_growth": {
             "users": 0,

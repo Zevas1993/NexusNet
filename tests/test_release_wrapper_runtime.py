@@ -4500,6 +4500,7 @@ def test_release_readiness_runner_drives_governed_evidence_path(tmp_path: Path):
     assert import_receipt["active_production_mutated"] is False
     assert {stage["stage_id"]: stage["status"] for stage in import_receipt["stages"]} == {
         "security_envelope": "covered",
+        "privacy_consent_enforcement": "covered",
         "shadow_quarantine": "covered",
         "continuous_assimilation": "covered",
         "global_growth": "covered",
@@ -5234,21 +5235,42 @@ def test_release_runtime_surfaces_in_wrapper_and_visualizer_control_panel(tmp_pa
     assert wrapper["release_runtime"]["surface_id"] == "release-wrapper-runtime"
     assert wrapper["release_runtime"]["federated_packet_count"] == 1
     assert wrapper["release_readiness"]["surface_id"] == "release-wrapper-readiness"
-    assert wrapper["release_readiness"]["go_no_go"] == "no-go"
+    assert wrapper["release_readiness"]["go_no_go"] == "go"
     assert wrapper["release_readiness"]["boot"]["readiness_ref"] == "/ops/wrapper/release-readiness"
     control_panel = visualizer["overlay_state"]["control_panel"]
     assert control_panel["release_wrapper_runtime"]["surface_id"] == "release-wrapper-runtime"
     assert control_panel["release_wrapper_readiness"]["surface_id"] == "release-wrapper-readiness"
-    assert control_panel["release_wrapper_readiness"]["go_no_go"] == "no-go"
+    assert control_panel["release_wrapper_readiness"]["go_no_go"] == "go"
     assert (
         control_panel["release_wrapper_readiness"]["whole_system_boot_contract"]["surface_id"]
         == "whole-system-release-boot-contract"
     )
-    assert control_panel["release_wrapper_readiness"]["whole_system_boot_contract"]["status"] == "blocked"
-    assert control_panel["release_wrapper_readiness"]["whole_system_boot_contract"]["blocked_count"] > 0
+    assert control_panel["release_wrapper_readiness"]["whole_system_boot_contract"]["status"] == "passed"
+    assert control_panel["release_wrapper_readiness"]["whole_system_boot_contract"]["blocked_count"] == 0
     readiness_checks = {
         check["check_id"]: check
         for check in control_panel["release_wrapper_readiness"]["readiness_checks"]
+    }
+    nonblocking_degraded_checks = {
+        check_id
+        for check_id, check in readiness_checks.items()
+        if check["status"] != "pass" and check.get("go_no_go_blocking") is False
+    }
+    blocking_degraded_checks = {
+        check_id
+        for check_id, check in readiness_checks.items()
+        if check["status"] != "pass" and check.get("go_no_go_blocking") is not False
+    }
+    assert blocking_degraded_checks == set()
+    assert nonblocking_degraded_checks >= {
+        "release-health-heartbeat",
+        "release-health-heartbeat-loop",
+        "release-health-heartbeat-supervisor",
+        "release-product-smoke",
+        "domain-ao-routing",
+        "domain-teacher-eval-handoff",
+        "domain-expert-growth-admin-replay",
+        "domain-expert-growth-sandbox-takeover-evidence",
     }
     assert readiness_checks["teacher-expert-birth-registry"]["status"] == "pass"
     assert readiness_checks["developmental-growth-promotion-governance"]["status"] == "pass"
