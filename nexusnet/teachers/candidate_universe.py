@@ -73,8 +73,9 @@ class TeacherCandidateUniverse:
         normalized = candidate if isinstance(candidate, TeacherCandidate) else TeacherCandidate.model_validate(candidate)
         if normalized.candidate_id in self._candidates and not replace:
             raise ValueError(f"Teacher candidate already registered: {normalized.candidate_id}")
-        self._candidates[normalized.candidate_id] = normalized
-        return normalized
+        stored = normalized.model_copy(deep=True)
+        self._candidates[stored.candidate_id] = stored
+        return stored.model_copy(deep=True)
 
     def get(self, candidate_id: str) -> TeacherCandidate | None:
         candidate = self._candidates.get(candidate_id)

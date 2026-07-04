@@ -156,6 +156,40 @@ def test_registry_get_returns_copy_so_stored_candidate_cannot_be_mutated_without
     assert universe.get("leanstral-1-5").candidate_status == "watchlist"
 
 
+def test_register_copies_input_and_returned_candidate_to_isolate_stored_state():
+    universe = TeacherCandidateUniverse()
+    candidate = TeacherCandidate(
+        candidate_id="mutable-registration",
+        model_or_tool_id="local/mutable-registration",
+        provider="local",
+        source_url="https://example.invalid/mutable-registration",
+        candidate_status="watchlist",
+        teacher_roles=["critic"],
+        source_refs=["source::mutable-registration"],
+    )
+
+    registered = universe.register(candidate)
+    candidate.candidate_status = "shadow"
+    candidate.license_gate = "approved"
+    candidate.privacy_gate = "approved"
+    candidate.hardware_gate = "approved"
+    candidate.cost_gate = "approved"
+    candidate.benchmark_refs.append("benchmark::input-mutated")
+    registered.candidate_status = "canary"
+    registered.license_gate = "approved"
+    registered.privacy_gate = "approved"
+    registered.hardware_gate = "approved"
+    registered.cost_gate = "approved"
+    registered.benchmark_refs.append("benchmark::return-mutated")
+
+    stored = universe.get("mutable-registration")
+    assert stored is not None
+    assert stored.candidate_status == "watchlist"
+    assert stored.license_gate == "needs_review"
+    assert stored.benchmark_refs == []
+    assert universe.promotion_allowed("mutable-registration") is False
+
+
 def test_planned_list_candidate_filter_names_and_summary_contract_work():
     universe = build_default_teacher_candidate_universe()
 
