@@ -887,6 +887,7 @@ git commit -m "feat: add teacher candidate universe registry"
 **Files:**
 - Verify: `nexusnet/experts/ontology.py`
 - Verify: `nexusnet/teachers/candidate_universe.py`
+- Verify: `nexus/models/__init__.py`
 - Verify: `tests/test_open_world_expert_ontology.py`
 - Verify: `tests/test_teacher_candidate_universe.py`
 
@@ -898,7 +899,7 @@ Run:
 pytest tests/test_open_world_expert_ontology.py tests/test_teacher_candidate_universe.py -q
 ```
 
-Expected: `7 passed`.
+Expected: `20 passed`.
 
 - [ ] **Step 2: Run adjacent committed registry tests**
 
@@ -910,12 +911,14 @@ pytest tests/test_teacher_registry.py -q
 
 Expected: all tests pass. The untracked forward-radar registry surface present in the main checkout is intentionally excluded from this isolated worktree's baseline because it is not part of the committed branch state.
 
+Execution note: restoring `nexus/models/__init__.py` in this implementation branch is required for the committed teacher registry import path; before that restoration this adjacent suite failed during package import.
+
 - [ ] **Step 3: Run syntax compile on changed modules**
 
 Run:
 
 ```powershell
-python -m py_compile nexusnet/experts/ontology.py nexusnet/teachers/candidate_universe.py
+python -m py_compile nexus/models/__init__.py nexusnet/experts/ontology.py nexusnet/teachers/candidate_universe.py
 ```
 
 Expected: no output and exit code `0`.
@@ -928,17 +931,17 @@ Run:
 git diff --check
 ```
 
-Expected: no output and exit code `0`.
+Expected: no scoped whitespace errors and exit code `0`. Unrelated dirty-tree line-ending warnings may appear from pre-existing workspace files such as `.gitignore`; report those separately.
 
 - [ ] **Step 5: Run GitNexus detect-changes**
 
 Run:
 
 ```json
-mcp__gitnexus.detect_changes({"repo": "NexusNet", "scope": "all"})
+mcp__gitnexus.detect_changes({"repo": "NexusNet", "scope": "compare", "base_ref": "44c05e9"})
 ```
 
-Expected: changes are limited to new ontology/candidate registry modules, package exports, and the two focused test files. Report any broader dirty-tree noise separately as pre-existing or unrelated if it appears.
+Expected: changes are limited to new ontology/candidate registry modules, package exports, the restored `nexus/models/__init__.py`, the plan note, and the two focused test files. If GitNexus reports broader dirty-tree or indexed-primary-checkout noise, report that limitation and use `git diff --name-status 44c05e9..HEAD`, focused tests, compile checks, and package smokes as fallback evidence.
 
 - [ ] **Step 6: Commit verification note if needed**
 
