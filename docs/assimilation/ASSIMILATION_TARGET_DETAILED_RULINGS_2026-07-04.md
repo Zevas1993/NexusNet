@@ -100,7 +100,7 @@ Native output: `NexusNet Runtime Ladder And Model Passport Registry`
 
 ## Cluster 5: Knowledge, Retrieval, And Memory
 
-Native output: `NexusNet Knowledge Forge`
+Native output: `NexusNet Knowledge Forge And Agent-Native Memory OS`
 
 | Target | Assimilate | Reject or block | Status |
 | --- | --- | --- | --- |
@@ -112,6 +112,11 @@ Native output: `NexusNet Knowledge Forge`
 | Neo4j | Property graph modeling and graph query lessons. | A graph database as final mother brain. | `adapter_candidate` |
 | Qdrant, Weaviate, Chroma, pgvector, FAISS | Vector abstraction, local/cloud index options, hybrid search candidates. | Single vector DB lock-in or raw vector answers as knowledge. | `adapter_candidate` |
 | Semantic caches, provenance crates, evidence DAGs | Freshness-aware reuse, source lineage, content-addressed evidence. | Cached synthesis without source state, privacy, and policy match. | `native_pattern` |
+| MIRIX, A-MEM, MemoryOS, Mem0, MemInsight, Cognitive Weave | Agent-native memory OS patterns, autonomous memory linking, temporal updates, multimodal memory, and memory maintenance. | Static vector memory as enough, raw transcript hoarding, or silent memory overwrite. | `native_pattern` |
+| Graphiti/Zep, LangMem, Letta/MemGPT, context repositories | Temporal graph memory, long-term memory APIs, versioned coding-agent memory, and memory-native learning patterns. | Vendor memory, memory agent, or context repository as NexusNet brain. | `adapter_candidate` |
+| Titans, Engram, M+, memory models, conditional lookup | Model-native memory, hot/conditional lookup, and future teacher/runtime/model-birth inputs. | Promoting model-native memory without eval, rollback, privacy, and teacher review. | `research_only` |
+| LongMemEval, LoCoMo/LoCoMo-Plus, MemoryAgentBench, BEAM, MemoryArena, STATE-Bench | Memory-specific evals for recall, selective forgetting, long-range understanding, temporal reasoning, action usefulness, cost, latency, and privacy. | Generic QA passing as proof of memory quality. | `eval_candidate` |
+| `MemoryEvolutionPassport` | Required passport for memory writes/updates with source, privacy, time, confidence, contradiction, eval, review, rollback, and promotion state. | Memory mutation without consent, provenance, eval, rollback, and mother-brain approval. | `locked_clarification` |
 
 ## Cluster 6: Evaluation, Observability, And Evidence
 
@@ -177,6 +182,10 @@ Native output: `Teacher Council And Expert Birth Registry`
 | Medical models/benchmarks | Evidence-gated clinical reasoning curriculum and safety evals. | Autonomous diagnosis or care authority. | `teacher_candidate` |
 | Finance/quant/crypto tools and models | Risk, simulation, accounting, market, and quant research curriculum. | Autonomous trading or financial advice authority. | `teacher_candidate` |
 | Quantum research/code benchmarks | Qiskit/circuit/code reasoning and quantum research evals. | Hardware truth or physics oracle claims. | `teacher_candidate` |
+| `TeacherCapabilityPassport` | Capability, role, license, distillation rights, hardware fit, eval state, safety state, and promotion state per teacher. | Fixed stale teacher roster or one god teacher. | `locked_clarification` |
+| `ExpertDomainPassport` | Open-world domain atlas records for domain scope, parent O, owner AOs, teacher panel, eval pack, runtime path, and promotion state. | Treating current examples as a complete O/AO/Expert inventory. | `locked_clarification` |
+| Multi-teacher birth verification | Minimum 2+ teachers for every Expert, AO, Orchestrator, and core node before distillation/birth verification is legitimate. | Production birth, merge, split, retirement, or parent replacement from one teacher or one eval. | `locked_clarification` |
+| Memory and graph teacher panels | Teacher panels for agent-native memory, temporal graph memory, graph query, graph evolution, graph safety, GraphRAG planning, graph replay, graph privacy, and graph eval specialists. | Memory/graph O/AO/Expert expansion treated as final before reconciliation. | `teacher_candidate` |
 
 ## Cluster 10: Domain Expert Packs
 
@@ -195,6 +204,8 @@ Native output: `Expert Pack Radar And Domain Curriculum Forge`
 | Education, psychology, communications, design, writing, media | Teaching, coaching, rhetoric, UX, creative review, media workflows. | Therapeutic/clinical authority or manipulative persuasion. | `native_pattern` |
 | Business ops, CRM, HR, sales, marketing, logistics, procurement | Workflow automation, decision support, process analysis. | Unapproved external commitments, hiring/firing/procurement actions. | `native_pattern` |
 | Local device, mobile, accessibility, privacy, offline-first | Device-aware UX, local model fit, accessibility profiles, privacy modes. | Private trace sharing or companion-device independence from mother brain. | `native_pattern` |
+| Expert-pack schema and forge | Domain scope, allowed/disallowed actions, teacher panel, eval pack, source set, human gates, risk policy, confidence policy, and escalation path. | Domain pack mutating production state by itself. | `locked_clarification` |
+| Auto-research and overlap handling | Discovery of teacher models, validators, datasets, simulators, source authorities, and merge/split rules for overlapping domains. | Unevaluable or source-ungrounded expert packs. | `native_pattern` |
 
 ## Cluster 11: UI, Visualizer, Companion, And Product Shell
 
@@ -209,6 +220,8 @@ Native output: `NexusNet Control Panel And Companion`
 | LocalAI WebUI | Local endpoint/admin ergonomics. | Runtime wrapper hiding model/passport truth. | `native_pattern` |
 | Dify/Langflow/Flowise UX | Workflow/app graph ergonomics and packaging ideas. | External product shell as final UI. | `native_pattern` |
 | OpenJarvis productization | First-run init, doctor, preset bundles, local-first recommendations. | Product shell that masks readiness gaps. | `native_pattern` |
+| Workflow Graph Studio surface | Native NexusNet-owned node UX linked to workflow, skill, teacher, expert, runtime, and evidence surfaces. | External builder owning workflow state or authority. | `native_pattern` |
+| Companion trust and sync | PocketPal-style local model loading and edge execution connected back to the mother brain with redacted, permissioned sync. | Raw private trace sync or companion device as independent brain. | `locked_clarification` |
 
 ## Cluster 12: Productization, Ops, And Worktree Governance
 
@@ -223,6 +236,11 @@ Native output: `NexusNet Operational Spine`
 | Feature flags | Staged rollout of prompts, skills, routers, policies, models, UI. | Rollout without monitor and rollback. | `native_pattern` |
 | Reversible patch transaction logs | Apply/rollback receipts and state mutation audit. | Irreversible mutation without preview and rollback proof. | `native_pattern` |
 | Deterministic replay snapshots | Incident replay, eval reproduction, trace audit. | Replay as active mutation path. | `native_pattern` |
+| `Workspace Alignment Spine` | Canonical branch, worktree registry, dirty-tree classifier, preserved artifact index, merge queue, and branch ancestry. | Dirty work becoming baseline or preserved artifacts deleted to reduce confusion. | `locked_clarification` |
+| `Agent Workcell Factory` | Worktree-per-agent and sandbox-per-agent execution with owner, goal, base commit, permissions, artifacts, review, merge, and rollback state. | Hidden agent branches or unowned generated artifacts. | `native_pattern` |
+| Release, rollout, and operational evidence spines | Stable/candidate/shadow/canary channels, proofpacks, command receipts, evals, artifact scans, release manifests, and approval receipts. | Feature rollout without flags, monitoring, owner, evidence, and rollback. | `native_pattern` |
+| Supply-chain, model/data/artifact registry, scheduler, and disaster recovery spines | Signing, provenance, SBOMs, model/data versioning, monitors, source radar, failed-update recovery, and restore points. | CI-green-only readiness or production auto-update without governance. | `native_pattern` |
+| `OperationalChangePassport` | Owner, goal, source, base state, worktree, affected surfaces, permissions, feature flag, rollout stage, evidence, telemetry, rollback, approval, and review date. | Operational mutation without a passport. | `locked_clarification` |
 
 ## Cluster 13: Mother Brain Graph Intelligence
 
@@ -236,6 +254,10 @@ Native output: `NexusGraph Intelligence Fabric`
 | Workflow/skill/model/runtime/policy/eval graphs | Unified connected-state view of all internal artifacts and permissioned external surfaces. | Siloed graphs with no mother-brain visibility. | `native_pattern` |
 | Replay/pathway ledgers | Read-only graph replay, affected-neighborhood view, promotion readiness. | Replay leaking raw private content or mutating runtime. | `native_pattern` |
 | Universal permitted connected state | Everything NexusNet can perceive, connect to, learn from, reason over, govern, or mutate. | Any category list treated as a boundary. | `locked_clarification` |
+| Agentic Evolving GraphRAG Cortex | Graph planner, subgraph search, tool/retriever actions, multi-hop reasoning, contradiction checks, shadow graph deltas, teacher/eval review, and rollback. | Static GraphRAG as enough or graph-driven production mutation. | `native_pattern` |
+| Agentic Memory Evolution Cortex | Cluster 5 memory deltas, stale facts, contradictions, retrieval-policy changes, sleep consolidation, and memory-driven expert lifecycle triggers linked into the graph. | Memory graph deltas promoted without MemoryEvolutionPassport gates. | `native_pattern` |
+| Capability, policy/risk, operational, memory/dream, federation/device, and mutation-impact graphs | Whole-system connected-state reasoning, authority mapping, rollback paths, privacy boundaries, and affected-neighborhood analysis. | Private/federated leakage, inferred edges as facts, graph poisoning, or siloed graphs. | `native_pattern` |
+| `GraphFactPassport`, `GraphQueryPassport`, `GraphEvolutionPassport` | Required passports for graph facts, graph queries, and graph delta proposals. | Stale, uncited, hidden, or non-replayable graph state. | `locked_clarification` |
 
 ## Items Needing Focused Follow-Up
 
@@ -246,4 +268,7 @@ Native output: `NexusGraph Intelligence Fabric`
 | Teacher/model roster | Model cards, licenses, hardware fit, and distillation rights change often; refresh before training or teaching use. |
 | Medical, finance, legal, cyber, robotics | High-risk domains need domain-specific evals, citation policies, and human escalation gates. |
 | `NexusGraph Intelligence Fabric` | Needs a schema, query contract, privacy model, mutability labels, adapters, and Control Panel replay design. |
+| `NexusNet Knowledge Forge And Agent-Native Memory OS` | Needs concrete memory schemas, MemoryEvolutionPassport implementation, memory eval policy, and privacy/forgetting policy. |
+| Cluster 9 graph/memory reconciliation | Cluster 5 and Cluster 13 add memory/graph O/AO/Expert seed candidates that must be reconciled before any final roster is claimed. |
+| `NexusNet Operational Spine` | Needs concrete OperationalChangePassport, worktree registry, release-channel policy, disaster recovery policy, and scheduler/monitor contracts. |
 | Machine-readable target registry | Needed so future agents can query status without parsing prose. |

@@ -1,7 +1,7 @@
 # NexusNet Open-World Teacher, Orchestrator, AO, Expert, and Dreaming Design
 
 Date: 2026-07-04
-Status: design approved in conversation, pending implementation plan
+Status: design approved in conversation, updated by assimilation cluster review, pending implementation plan
 Scope: NexusNet teacher ensemble, Orchestrators, Assistant Orchestrators, Experts, recursive dreaming, auto-research, auto-assimilation, and live self-improvement
 
 ## Purpose
@@ -9,6 +9,16 @@ Scope: NexusNet teacher ensemble, Orchestrators, Assistant Orchestrators, Expert
 NexusNet must not depend on a fixed hand-written list of teachers, Orchestrators, Assistant Orchestrators, or Experts. Model releases, benchmarks, tools, and domain needs change too quickly. The system needs an open-world registry model that can research, quarantine, evaluate, shadow-route, promote, merge, retire, and replace models and experts with evidence.
 
 This design treats the current NexusNet AO and teacher registries as seed registries, not the final universe.
+
+## Assimilation Review Addendum
+
+The 2026-07-04 live assimilation review expanded this design in three important ways:
+
+1. Cluster 5 is now `NexusNet Knowledge Forge And Agent-Native Memory OS`, not only a retrieval or knowledge-artifact subsystem.
+2. Cluster 13 is now `NexusGraph Intelligence Fabric`, including agentic evolving GraphRAG, universal graph intelligence, graph/memory passports, and mutation-impact reasoning.
+3. The O/AO/Expert inventory needs another reconciliation pass for memory-specific and graph-specific lanes before any final roster is claimed.
+
+The lists below are therefore seed lists. They are not exhaustive.
 
 ## Design Goals
 
@@ -55,6 +65,10 @@ The Orchestrator layer should include at least these logical orchestrators:
 - **TaskForceOrchestrator**: creates temporary live task-force experts when NexusNet is stuck.
 - **EvaluationGovernanceOrchestrator**: owns eval gates, verifier panels, evidence standards, and regression policy.
 - **MemoryKnowledgeOrchestrator**: consolidates durable knowledge, knowledge artifacts, and memory quality.
+- **AgentNativeMemoryOrchestrator**: governs memory extraction, routing, maintenance, temporal updates, consolidation, forgetting, evals, and promotion.
+- **MemoryEvolutionOrchestrator**: owns candidate memory deltas, memory merge/split/retire flows, sleep-time memory consolidation, and `MemoryEvolutionPassport` review.
+- **NexusGraphOrchestrator**: owns graph registry contracts, graph query contracts, graph delta proposals, graph freshness, graph poisoning defenses, and graph replay.
+- **GraphEvolutionOrchestrator**: governs agentic GraphRAG, ontology evolution, graph mutation candidates, `GraphEvolutionPassport` review, and graph rollback.
 - **RuntimeResourceOrchestrator**: routes by hardware, cost, latency, privacy, and provider health.
 - **SafetyPolicyOrchestrator**: blocks or constrains high-risk outputs and actions.
 - **DomainRiskOrchestrator**: coordinates regulated domains such as medical, finance, crypto, legal, security, and safety.
@@ -73,6 +87,22 @@ The current AO registry should expand from broad seed AOs into durable capabilit
 - `OperatorAO`
 - `RouterAO`
 - `MemoryAO`
+- `MemoryQualityAO`
+- `MemoryExtractionAO`
+- `MemoryRoutingAO`
+- `TemporalMemoryAO`
+- `MemoryMaintenanceAO`
+- `MultimodalMemoryAO`
+- `SleepConsolidationAO`
+- `MemoryPrivacyAO`
+- `MemoryEvalAO`
+- `GraphRegistryAO`
+- `GraphQueryAO`
+- `GraphEvolutionAO`
+- `GraphSafetyAO`
+- `GraphPrivacyAO`
+- `GraphReplayAO`
+- `GraphEvalAO`
 - `RuntimeAO`
 - `GovernanceAO`
 - `AdminAO`
@@ -669,6 +699,11 @@ Implementation should add focused tests for:
 - model replacement and retirement
 - shadow route before active route mutation
 - GitNexus detect-changes after registry implementation
+- `MemoryEvolutionPassport` before any memory write/update is promoted
+- `GraphFactPassport` for graph nodes and edges
+- `GraphQueryPassport` for graph queries
+- `GraphEvolutionPassport` before any graph delta is promoted
+- graph/memory O/AO/Expert reconciliation before final roster claims
 
 ## Implementation Slices
 
@@ -684,6 +719,11 @@ Recommended slices:
 8. Add auto-research intake and source verification.
 9. Add promotion tribunal integration.
 10. Add UI/control-panel status surfaces for honest operator visibility.
+11. Add agent-native memory schema and `MemoryEvolutionPassport`.
+12. Add memory eval policy, privacy policy, and forgetting policy.
+13. Add NexusGraph schema, graph query profile, and graph passport contracts.
+14. Add agentic evolving GraphRAG shadow-delta lifecycle.
+15. Reconcile Cluster 9 graph/memory O/AO/Expert seed candidates into the open-world atlas.
 
 ## Source References For Initial Research Watchlist
 

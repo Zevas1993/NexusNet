@@ -45,6 +45,8 @@ This pass used the local corpus plus current primary or near-primary sources whe
 - Eval and observability: `https://github.com/EleutherAI/lm-evaluation-harness`, `https://github.com/langfuse/langfuse`, `https://github.com/open-telemetry/semantic-conventions-genai`, `https://owasp.org/www-project-top-10-for-large-language-model-applications/`
 - Domain and science benchmarks: `https://github.com/TsinghuaC3I/MedXpertQA`, `https://github.com/qiskit-community/Qiskit-QuantumKatas`, `https://github.com/AI4Finance-Foundation/FinRL`, `https://github.com/OpenBB-finance/OpenBB`, `https://github.com/danijar/dreamerv3`
 - Formal/proof teacher candidate: `https://huggingface.co/mistralai/Leanstral-1.5-119B-A6B`
+- Agent-native memory and evolving graph research: `https://arxiv.org/abs/2606.24775`, `https://arxiv.org/abs/2507.07957`, `https://arxiv.org/abs/2502.12110`, `https://arxiv.org/abs/2506.06326`, `https://github.com/getzep/graphiti`, `https://github.com/HKUDS/LightRAG`, `https://arxiv.org/abs/2507.21892`
+- Operational spine references: `https://openfeature.dev/`, `https://opentelemetry.io/`, `https://docs.temporal.io/`, `https://slsa.dev/`, `https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds`
 
 ## Detailed Review Artifacts
 
@@ -257,6 +259,10 @@ Representative targets:
 - Neo4j
 - Qdrant, Weaviate, Chroma, pgvector, FAISS
 - Semantic caches, provenance crates, evidence DAGs
+- MIRIX, A-MEM, MemoryOS, Mem0, MemInsight, Cognitive Weave
+- Graphiti/Zep, LangMem, Letta/MemGPT, context repositories
+- Titans, Engram, M+, memory models, and conditional lookup research
+- LongMemEval, LoCoMo/LoCoMo-Plus, MemoryAgentBench, BEAM, MemoryArena, STATE-Bench
 
 What NexusNet should assimilate:
 
@@ -267,25 +273,50 @@ What NexusNet should assimilate:
 - Vector abstraction, metadata filters, hybrid search, local/cloud modes.
 - Graph extraction, relationship reasoning, contradiction detection, community summaries, and memory graph links.
 - Raw retrieval as audit path, fallback, live-data path, and source comparison.
+- `Memory OS`: short-term, working, mid-term, long-term, archival, hot/conditional, and model-native memory tiers.
+- `Memory Extraction Pipeline`: durable facts, preferences, procedures, failures, decisions, source claims, task lessons, and user-approved context distilled from traces.
+- `Memory Router`: lexical, vector, graph, temporal, procedural, episodic, multimodal, hot-memory, and raw-source retrieval selection by task.
+- `Memory Maintenance Loop`: merge, split, decay, retire, refresh, deduplicate, contradict, consolidate, and rollback memories.
+- `Temporal Memory Layer`: valid time, observed time, stale state, previous fact history, source provenance, and contradiction history.
+- `Agentic Memory Evolution`: autonomous linking, augmentation, abstraction, ontology refinement, and retrieval-policy learning as shadow-first memory deltas.
+- `Multimodal Memory`: screen, image, document, tool, device, resource, and environment memory with explicit privacy boundaries.
+- `Sleep-Time Memory Consolidation`: downtime processing that compresses traces, extracts lessons, updates retrieval policies, proposes memory deltas, and routes risky deltas to review.
+- `Memory Eval Harness`: retrieval, test-time learning, long-range understanding, selective forgetting, temporal reasoning, cognitive constraints, multi-hop recall, action usefulness, cost, latency, and privacy checks.
+- `Model-Native Memory Watchlist`: Titans, Engram, M+, memory models, and conditional lookup as future teacher, runtime, or model-birth inputs.
 
 What NexusNet rejects or blocks:
 
 - Direct Pinecone dependency or vendor-owned knowledge layer as brain.
+- Static vector memory as enough.
+- Raw transcript hoarding.
 - Replacing raw retrieval entirely.
 - Storing uncited synthesized facts as trusted knowledge.
-- Letting compiled context mutate prompts, routes, experts, teachers, skills, or model weights without governance.
+- Silent memory overwrite.
+- Memory writes without consent/privacy labels.
+- Dream output promoted as memory fact.
+- Cross-user or federated memory leakage.
+- Letting compiled context or memory deltas mutate prompts, routes, experts, teachers, skills, runtimes, or model weights without governance.
 
 Native NexusNet output:
 
-`NexusNet Knowledge Forge`
+`NexusNet Knowledge Forge And Agent-Native Memory OS`
 
-The Forge includes Source Registry, Ingestion Pipeline, Evidence Ledger, Multi-Index Store, Context Compiler, Artifact Registry, Composable Retriever, Claim Ledger, Governance Gate, Raw Retrieval Fallback, and Review UI.
+The Forge includes Source Registry, Ingestion Pipeline, Evidence Ledger, Multi-Index Store, Context Compiler, Artifact Registry, Composable Retriever, Claim Ledger, Governance Gate, Raw Retrieval Fallback, Review UI, and agent-native memory lifecycle services for extraction, storage, update, retrieval, consolidation, forgetting, evaluation, and promotion.
+
+Relationship to Cluster 13:
+
+Cluster 5 owns memory substrate behavior. Cluster 13 owns the universal graph intelligence that connects memory to code, workflows, policy, tools, models, experts, devices, releases, dreams, and operational consequences.
+
+Relationship to Cluster 9:
+
+This memory expansion requires more O/AO/Expert lanes. Seed candidates, not final approved roster, include `AgentNativeMemoryOrchestrator`, `MemoryEvolutionOrchestrator`, `ContextRepositoryOrchestrator`, `MemoryQualityAO`, `MemoryExtractionAO`, `MemoryRoutingAO`, `TemporalMemoryAO`, `MemoryMaintenanceAO`, `MultimodalMemoryAO`, `SleepConsolidationAO`, `MemoryPrivacyAO`, `MemoryEvalAO`, `MemoryCompressionExpert`, `ContradictionResolutionExpert`, `SelectiveForgettingExpert`, `ProceduralMemoryExpert`, `EpisodicMemoryExpert`, `SemanticMemoryExpert`, `TemporalGraphMemoryExpert`, `HotMemory/EngramExpert`, and `MemoryBenchmarkExpert`.
 
 Gates:
 
 - Field-level citations, source hashes, freshness metadata, RBAC/privacy tags, conflict objects, and replayable query events.
 - Unsupported claims stay candidate, research-only, or blocked pending evidence.
 - Any artifact recommending a runtime, teacher, expert, skill, or route change becomes a candidate delta, not an automatic mutation.
+- Every memory write/update requires a `MemoryEvolutionPassport` with `memory_id`, `memory_type`, `source_ref`, `source_hash`, `privacy_class`, `owner`, `valid_time`, `observed_time`, `confidence`, `contradiction_refs`, `staleness_state`, `retrieval_eval_delta`, `behavior_eval_delta`, `teacher_review`, `privacy_review`, `rollback_ref`, and `promotion_state`.
 
 ## Cluster 6: Evaluation, Observability, And Evidence
 
@@ -430,15 +461,21 @@ Representative targets:
 - Medical reasoning benchmarks/models
 - Finance/quant benchmarks and tools
 - Quantum research/code benchmarks
+- Root NexusBrain, O-level Orchestrators, Assistant Orchestrators, Experts, core nodes, temporary live-problem experts, memory/graph lanes, and birth/merge/split/retire flows
 
 What NexusNet should assimilate:
 
 - Dynamic teacher roster with current-source refresh, capability cards, license status, distillation rights, hardware fit, and domain scorecards.
+- `TeacherCapabilityPassport` and `ExpertDomainPassport` records instead of a fixed roster.
+- At least two teachers for every Expert, Assistant Orchestrator, Orchestrator, and core node before birth verification or distillation is treated as legitimate.
+- Teacher roles including generator, critic, verifier, simulator, retriever, judge, compact apprentice, runtime teacher, safety reviewer, and domain specialist.
+- Open-world O/AO/Expert domain atlas that can birth, merge, split, retire, archive, or refresh entries when evidence requires it.
 - Leanstral as a formal-methods and Lean 4 theorem-proving teacher: proof repair, formal specification, theorem decomposition, proof-driven code contracts, and mathematical rigor for expert/AO training.
 - Medical teachers as evidence-gated clinical reasoning curriculum and eval resources, not autonomous care providers.
 - Finance and crypto teachers as data, risk, market-simulation, and quant-research experts, not autonomous trading authority.
 - Quantum teachers as Qiskit/quantum-code/circuit-reasoning evaluators and research assistants, not hardware truth or physics oracle.
 - Domain teachers for holistic medicine, law, cybersecurity, hardware, biology, chemistry, creative work, education, robotics, logistics, and other expert areas through a common expert-pack contract.
+- Memory and graph teacher panels for agent-native memory, temporal graph memory, graph query, graph evolution, graph safety, GraphRAG planning, graph replay, graph privacy, and graph eval specialists.
 
 What NexusNet rejects or blocks:
 
@@ -447,6 +484,8 @@ What NexusNet rejects or blocks:
 - Closed or unclear-rights outputs used for training/distillation.
 - Medical, financial, legal, or safety-critical production advice without regulatory/compliance/human-review gates.
 - Replacing the mother brain with a teacher model.
+- Treating the current examples as a complete O/AO/Expert inventory.
+- Production birth, merge, split, retirement, or parent replacement from one teacher or one eval.
 
 Native NexusNet output:
 
@@ -462,6 +501,7 @@ Gates:
 - Child-vs-parent scorecard.
 - Archive-not-delete retirement.
 - Human/operator approval before permanent promotion or parent retirement.
+- Cluster 5 memory expansion and Cluster 13 graph expansion require a follow-up O/AO/Expert reconciliation pass before any final roster is claimed.
 
 ## Cluster 10: Domain Expert Packs
 
@@ -483,6 +523,8 @@ What NexusNet should assimilate:
 
 - A repeatable expert-pack schema: domain scope, contraindications, allowed actions, disallowed actions, teacher set, eval set, knowledge sources, required human gates, output style, confidence policy, and escalation path.
 - Evidence grading and source ranking per domain.
+- Auto-research for new domains, subdomains, and live-problem gaps.
+- Auto-discovery of teacher models, validators, datasets, simulators, tools, and source authorities.
 - Domain simulators and benchmark datasets where licenses allow.
 - Expert merge/split rules when domains overlap, such as medical + pharmacology, finance + crypto, law + tax, cybersecurity + software engineering, or quantum + chemistry.
 - Holistic medicine as an evidence-graded wellness research lane with interaction/risk warnings, not as medical authority.
@@ -493,6 +535,7 @@ What NexusNet rejects or blocks:
 - High-risk domain outputs without citations, confidence, disclaimers, and escalation gates.
 - Autonomous trading, diagnosis, legal filing, or security exploitation without scoped permission and human approval.
 - Domain packs that cannot be evaluated.
+- The Forge mutating production state by itself.
 
 Native NexusNet output:
 
@@ -505,6 +548,7 @@ Gates:
 - Domain pack cannot activate fully until it has a minimum source set, eval set, risk policy, and teacher pairings.
 - Live problem spawn is temporary by default.
 - Permanent expert creation requires retention review.
+- The mother brain owns promotion, and production mutation requires eval evidence, teacher review, rollback, and governance approval.
 
 ## Cluster 11: UI, Visualizer, Companion, And Product Shell
 
@@ -522,6 +566,8 @@ What NexusNet should assimilate:
 
 - Live hive visualizer with brain, O, AO, expert, skill, model, memory, runtime, eval, and dream state.
 - Deep replay drilldown for traces, decisions, promotions, denials, rollback, and expert creation.
+- Workflow Graph Studio and node UX owned by NexusNet, not delegated to external builders.
+- Teacher registry, expert pack radar, runtime/model controls, and skill manager surfaces.
 - Mobile companion app for local model loading, edge inference, offline mode, device-to-host communication, and hive participation under mother-brain governance.
 - First-run `init`, `doctor`, model-fit recommendations, hardware status, and safe-mode reporting.
 - User-visible controls for workflow graph, skills, teachers, experts, and runtime routes.
@@ -532,6 +578,7 @@ What NexusNet rejects or blocks:
 - Companion app as independent brain owner.
 - UI-only evidence of implementation.
 - Product shell that hides readiness gaps.
+- Raw private trace sync to companion devices without explicit authorization and redaction.
 
 Native NexusNet output:
 
@@ -541,9 +588,11 @@ This combines live visualizer, workflow graph studio, model/runtime controls, sk
 
 Gates:
 
-- UI labels must distinguish verified implementation, shadow candidate, planned placeholder, blocked item, and research-only target.
+- UI labels must distinguish verified implementation, shadow candidate, planned placeholder, blocked item, stale item, production-active item, and research-only target.
 - Read-only replay must not mutate runtime.
+- Companion devices are subordinate hive participants only.
 - Companion devices cannot receive private raw traces unless explicitly authorized and redacted.
+- Mobile and edge participation requires a permission envelope, redacted sync, device trust state, rollback, and offline-safe behavior.
 
 ## Cluster 12: Productization, Ops, And Worktree Governance
 
@@ -559,25 +608,36 @@ Representative targets:
 
 What NexusNet should assimilate:
 
-- First-run diagnostics, doctor reports, preset bundles, scheduled monitors, and local-first recommendations.
-- Worktree-per-agent or sandbox-per-agent execution for risky work.
-- GitNexus-first code navigation, impact analysis, and change detection.
-- Feature flags for prompts, routers, skills, models, policies, and UI behavior.
-- Reversible transaction logs and rollback receipts for state changes.
-- Deterministic replay for incident analysis and eval reproduction.
+- `Workspace Alignment Spine`: canonical branch, worktree registry, dirty-tree classifier, preserved artifact index, merge queue, branch ancestry, and enforcement that dirty work is never assumed to be clean baseline.
+- `Agent Workcell Factory`: worktree-per-agent and sandbox-per-agent execution with owner, goal, base commit, permissions, created artifacts, exit state, review state, merge state, and rollback receipt.
+- `Release And Rollout Spine`: stable, candidate, shadow, and canary channels for prompts, routers, skills, policies, models, runtimes, dreams, expert packs, UI, and federation updates.
+- `Operational Evidence Spine`: proofpacks, command receipts, GitNexus status, impact analysis, detect-changes, source-health snapshots, eval results, artifact scans, replay links, and approval receipts.
+- `First-Run And Doctor Spine`: bootstrap, local-first setup, dependency checks, model/runtime fit, hardware readiness, safe mode, preset bundles, scheduler setup, and honest readiness labels.
+- `Incident Replay And Rollback Spine`: deterministic event histories, replay snapshots, reversible transaction logs, rollback tests, incident timelines, and post-incident promotion holds.
+- `Telemetry And SLO Spine`: traces, metrics, logs, model calls, tool calls, agent/workflow/runtime health, latency, cost, energy, memory, failures, eval drift, and user-visible health.
+- `Supply Chain And Provenance Spine`: signing, source provenance, build provenance, artifact attestations, SBOMs, dependency/license/security scans, and artifact trust.
+- `Model/Data/Artifact Registry Spine`: model lifecycle records, dataset and experiment versioning, model card metadata, model aliases, champion/challenger routing, rollbackable datasets, and release manifests.
+- `Ops Scheduler And Monitor Spine`: scheduled jobs, monitors, workflow runs, recurring source/model scans, dependency update reviews, hardware checks, source radar, and assimilation radar.
+- `Auto-Update And Assimilation CI`: research new releases, model cards, papers, security advisories, benchmarks, and dependency updates, then produce candidate updates only.
+- `Disaster Recovery Spine`: backups, restore points, state snapshots, offline-safe mode, failed-update recovery, companion-device resync rules, and historical artifact retention.
 
 What NexusNet rejects or blocks:
 
 - Another product shell that becomes the real system.
 - Untracked dirty work becoming assumed baseline.
+- Deleting preserved worktrees, historical refs, or artifacts just to reduce confusion.
 - Branch/worktree confusion.
-- Feature rollout without rollback and monitoring.
+- Feature rollout without flags, monitoring, rollback, owner, and evidence.
+- Dependency, model, data, skill, prompt, router, policy, runtime, dream, or expert-pack upgrades without license, provenance, eval, security, and rollback review.
+- Replay paths that mutate live state.
+- CI-green-only release readiness.
+- Mixing research, dream, shadow, canary, blocked, stale, placeholder, and production-active states.
 
 Native NexusNet output:
 
 `NexusNet Operational Spine`
 
-This keeps future work aligned: canonical branch, GitNexus status, source-of-truth docs, preserved artifacts, worktree hygiene, evidence packets, and rollback-ready changes.
+This keeps future work aligned: canonical branch, GitNexus status, source-of-truth docs, preserved artifacts, worktree hygiene, evidence packets, release channels, registries, monitors, and rollback-ready changes.
 
 Gates:
 
@@ -585,6 +645,7 @@ Gates:
 - Preserve historical refs and artifacts unless explicitly approved for deletion.
 - Before code symbol edits, run GitNexus impact analysis.
 - Before commits, run GitNexus detect-changes.
+- Every operational change needs an `OperationalChangePassport` with owner, goal, source, base state, branch/worktree, affected surfaces, data class, permissions, feature flag, rollout stage, evidence packet, eval result, telemetry plan, rollback plan, approval state, and expiry or review date.
 
 ## Cluster 13: Mother Brain Graph Intelligence
 
@@ -593,26 +654,37 @@ Representative targets:
 - GitNexus codegraph indexing and MCP query patterns
 - NexusNet `CodegraphGate`
 - Knowledge graphs, GraphRAG, Neo4j-style relationship modeling, and provenance DAGs
+- Agentic GraphRAG, Graph-R1-style graph environments, LazyGraphRAG, LightRAG, HippoRAG, and temporal graph memory
 - Workflow, skill, model, runtime, policy, eval, memory, expert, teacher, device, and federation graphs
 - Control Panel deep replay graph and pathway ledgers
 - Every current and future NexusNet-connected artifact, signal, source, system, environment, user-approved device, and external service
 
 What NexusNet should assimilate:
 
-- Persistent graph indexing for every permitted connected thing. Examples include code symbols, files, imports, calls, tests, execution flows, APIs, docs, chats, workflows, skills, tools, prompts, models, runtimes, policies, evals, memories, teachers, experts, user contexts, devices, permissions, external services, knowledge domains, market feeds, research feeds, environment signals, and replay artifacts.
-- Query/context retrieval that answers what exists, where it came from, how it connects, what changed, what is stale, what is trusted, what is blocked, and which flows, agents, experts, policies, systems, devices, or external surfaces are affected.
-- Impact analysis before mutations across any internal or external connected surface, including code, workflow nodes, prompts, skills, model routes, runtime packs, expert registries, teacher pairings, memory artifacts, policy rules, connectors, devices, datasets, knowledge artifacts, and user-facing automations.
-- Detect-changes style post-mutation mapping from changed artifacts to every affected graph neighborhood: symbols, workflows, experts, AOs, skills, evals, policies, routes, devices, datasets, connectors, memories, Control Panel surfaces, and external commitments.
-- Freshness and provenance gates that bind every graph fact to source refs, commit/artifact versions, model passports, timestamps, permissions, and confidence.
-- Self-improvement support: use the graph to decide when to create, split, merge, retire, or sandbox experts, AOs, skills, workflows, and adapters during a live problem.
-- Creator-facing replay: expose graph paths, impact radius, evidence packets, and unresolved blockers in the Control Panel without leaking raw private content.
+- `Universal Graph Registry`: typed nodes and edges for code, docs, workflows, skills, tools, prompts, models, runtimes, memories, policies, evals, experts, teachers, devices, releases, dreams, incidents, source feeds, market feeds, medical/science/quantum knowledge, user/org context, federation, and external permitted signals.
+- `Codegraph Cortex`: GitNexus-like indexing, query, impact analysis, stale-index gates, detect-changes, affected-neighborhood views, replayable codegraph evidence, and patterns from SCIP/LSIF, Tree-sitter, and CodeQL.
+- `Agentic Evolving GraphRAG Cortex`: graph planner, subgraph search, tool/retriever actions, multi-hop reasoning, contradiction checks, source/eval checks, graph update proposals, shadow graph deltas, teacher/eval review, and rollback.
+- `Agentic Memory Evolution Cortex`: links Cluster 5 memory evolution into the graph, including memory deltas, stale facts, contradictions, retrieval-policy changes, sleep consolidation, and memory-driven expert birth/merge/split triggers.
+- `Capability Graph`: maps which Orchestrator, Assistant Orchestrator, Expert, skill, tool, model, runtime, workflow, connector, or device can act on each surface under which authority and permission envelope.
+- `Policy And Risk Graph`: permissions, privacy class, authority, high-risk domain rules, human gates, blocked actions, escalation paths, and protected surfaces.
+- `Operational Dependency Graph`: worktrees, branches, rollouts, feature flags, evidence packets, source-health records, release manifests, incident replay, rollback receipts, and operational passports from Cluster 12.
+- `Memory And Dream Graph`: failures, successes, dream proposals, dream reviews, memory deltas, teacher disagreements, eval outcomes, and self-improvement candidates.
+- `Federation And Device Graph`: companion devices, local nodes, hive participants, trust state, redaction state, contribution lineage, and data-sharing boundaries.
+- `Mutation Impact Engine`: pre-change impact, post-change detect scope, affected-neighborhood view, rollback path, and Control Panel replay.
+- Agentic evolving GraphRAG loop: `task/stuck signal -> graph planner -> subgraph search -> tool/retriever actions -> multi-hop reasoning -> contradiction check -> source/eval check -> graph update proposal -> shadow graph delta -> teacher/eval review -> promotion or rollback`.
 
 What NexusNet rejects or blocks:
 
 - Treating GitNexus, a graph database, a vector store, or any external index as the mother brain.
 - Letting graph output replace direct source reading, tests, evals, red-team review, rights review, or human/governance approval.
+- Static GraphRAG as enough.
+- Inferred edges treated as verified facts.
+- Graph or memory poisoning promoted without quarantine.
+- Dream-generated graph edges treated as facts.
 - Stale graph facts, uncited graph facts, hidden graph state, or graph paths that cannot be replayed.
 - Stuffing the full graph into model context instead of using progressive disclosure and typed graph queries.
+- Separate silo graphs for code, memory, tools, workflows, models, runtime, policy, evals, and operations with no mother-brain visibility.
+- Private, regulated, or federated graph leakage across users, devices, organizations, or permission boundaries.
 - Direct runtime mutation from graph conclusions without sandbox, eval, policy, rollback, and promotion gates.
 
 Native NexusNet output:
@@ -628,6 +700,11 @@ Gates:
 - Non-code mutations across any connected surface require the same pattern: pre-change impact, policy/eval gate, sandbox or shadow run, post-change detect scope, rollback proof, and replay evidence.
 - Graph-driven expert birth, merge, split, retirement, dream proposal, or skill promotion remains shadow-only until teacher/eval/governance approval passes.
 - Control Panel graph views must label verified implementation, planned placeholder, blocked item, research-only target, and stale evidence distinctly.
+- Every graph node and edge needs a `GraphFactPassport`.
+- Every graph query needs a `GraphQueryPassport`.
+- Every proposed graph delta needs a `GraphEvolutionPassport`.
+- `MemoryEvolutionPassport` links in from Cluster 5 for memory-specific writes and updates.
+- Cluster 5 memory expansion and Cluster 13 graph expansion require a follow-up Cluster 9 O/AO/Expert reconciliation pass before any final roster is claimed.
 
 ## Consolidated Final Outputs
 
@@ -672,14 +749,13 @@ These are not legitimate rejects:
 5. Research-only targets kept as future options.
 6. GitNexus-style graph intelligence preserved as a planned native mother-brain capability across everything NexusNet is permitted to connect to while the current adapter/gate remains external.
 
-## Next Documentation Work
+## Next Documentation And Implementation Work
 
-Recommended next docs after this review:
+Approved follow-up queue after this review:
 
-1. Add or update ledger rows for these native subsystems where a row does not already exist.
-2. Keep the machine-readable assimilation cluster registry synchronized as cluster rulings change.
-3. Refresh source status for stale OpenClaw links and any 401/403/429 gated links manually.
-4. Build a teacher/expert taxonomy document that expands Orchestrators, Assistant Orchestrators, Experts, teachers, domain packs, and live-problem spawn/merge rules without putting the whole taxonomy into model context at once.
-5. Build a model/source radar job that watches model cards, papers, GitHub releases, licenses, and benchmark deltas, then proposes updates through the mother-brain governance queue.
-6. Specify the `NexusGraph Intelligence Fabric` schema, adapters, graph query contracts, impact-analysis contracts, detect-scope contracts, privacy filters, and Control Panel graph replay.
-7. Continue converting the 195-source raw corpus into reviewable target-level batches when a source file contains a distinct target not already represented in the detailed rulings.
+1. Specify `NexusNet Knowledge Forge And Agent-Native Memory OS` schemas, `MemoryEvolutionPassport`, memory eval policy, privacy policy, and forgetting policy.
+2. Reconcile Cluster 9 graph/memory O/AO/Expert seed candidates into the open-world teacher/expert atlas before any final roster is claimed.
+3. Specify the `NexusNet Operational Spine`, including `OperationalChangePassport`, worktree registry, release-channel policy, disaster recovery policy, model/data/artifact registries, scheduler contracts, monitor contracts, and Control Panel projection.
+4. Specify the `NexusGraph Intelligence Fabric` schema, adapters, graph query contracts, impact-analysis contracts, detect-scope contracts, privacy filters, mutability labels, graph delta storage, poisoning defenses, ontology evolution policy, and Control Panel graph replay.
+5. Build a model/source radar job that watches model cards, papers, GitHub releases, licenses, source liveness, and benchmark deltas, then proposes updates through the mother-brain governance queue.
+6. Continue converting the 195-source raw corpus into reviewable target-level batches when a source file contains a distinct target not already represented in the detailed rulings.

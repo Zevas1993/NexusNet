@@ -3,8 +3,10 @@
   "status": "documentation_only_review_registry",
   "branch": "codex/all-worktrees-integration",
   "source_docs": [
+    "docs/assimilation/ASSIMILATION_REVIEW_LIVE_NOTES_2026-07-04.md",
     "docs/assimilation/ASSIMILATION_TARGET_CLUSTER_REVIEW_2026-07-04.md",
     "docs/assimilation/ASSIMILATION_TARGET_DETAILED_RULINGS_2026-07-04.md",
+    "docs/assimilation/CLUSTER_9_BROAD_MODEL_TEACHER_RESEARCH_2026-07-04.md",
     "docs/assimilation/NEXUSNET_ALL_ASSIMILATION_TARGETS_CONSOLIDATED_2026-05-31.md",
     "docs/assimilation/ASSIMILATION_TARGET_SOURCE_REVERIFICATION_2026-05-31.md"
   ],
@@ -13,6 +15,8 @@
     "External targets are pattern sources, optional adapter candidates, teacher candidates, eval fixtures, runtime references, UX references, or research prompts.",
     "No external product, framework, model, database, workflow builder, codegraph, or runtime becomes the NexusNet brain or final control plane.",
     "NexusGraph Intelligence Fabric spans everything NexusNet is permitted to perceive, connect to, learn from, reason over, govern, or mutate.",
+    "NexusNet Knowledge Forge And Agent-Native Memory OS owns governed memory extraction, update, retrieval, consolidation, forgetting, evaluation, and promotion.",
+    "GraphRAG and memory are agentic and evolutionary, but production graph or memory mutation requires passports, evals, rollback, and mother-brain promotion.",
     "Source liveness is not implementation proof, and source-health failure is not automatic rejection.",
     "Promotion requires source, license, provenance, security, privacy, local-eval, rollback, and governance gates."
   ],
@@ -56,11 +60,11 @@
     {
       "id": 5,
       "name": "Knowledge, Retrieval, And Memory",
-      "native_output": "NexusNet Knowledge Forge",
-      "representative_targets": ["Pinecone Nexus", "Pinecone Assistant", "LlamaIndex", "LangChain retrieval", "Microsoft GraphRAG", "Neo4j", "Qdrant", "Weaviate", "Chroma", "pgvector", "FAISS", "semantic caches", "provenance crates", "evidence DAGs"],
-      "assimilate": ["context compiler", "artifact-first knowledge", "grounded QA UX", "loaders and retrievers", "hybrid search", "graph extraction", "raw retrieval fallback", "claim ledgers"],
-      "reject": ["vendor-owned knowledge brain", "raw retrieval removed entirely", "uncited synthesized facts as trusted knowledge", "knowledge artifact mutating runtime directly"],
-      "gates": ["field citations", "source hashes", "freshness metadata", "RBAC/privacy tags", "conflict objects", "replayable query events"]
+      "native_output": "NexusNet Knowledge Forge And Agent-Native Memory OS",
+      "representative_targets": ["Pinecone Nexus", "Pinecone Assistant", "LlamaIndex", "LangChain retrieval", "Microsoft GraphRAG", "Neo4j", "Qdrant", "Weaviate", "Chroma", "pgvector", "FAISS", "semantic caches", "provenance crates", "evidence DAGs", "MIRIX", "A-MEM", "MemoryOS", "Mem0", "MemInsight", "Cognitive Weave", "Graphiti/Zep", "LangMem", "Letta/MemGPT", "context repositories", "Titans", "Engram", "M+", "LongMemEval", "LoCoMo-Plus", "MemoryAgentBench", "BEAM", "MemoryArena", "STATE-Bench"],
+      "assimilate": ["context compiler", "artifact-first knowledge", "grounded QA UX", "loaders and retrievers", "hybrid search", "graph extraction", "raw retrieval fallback", "claim ledgers", "Memory OS tiers", "memory extraction pipeline", "memory router", "memory maintenance loop", "temporal memory layer", "agentic memory evolution", "multimodal memory", "sleep-time consolidation", "memory eval harness", "model-native memory watchlist"],
+      "reject": ["vendor-owned knowledge brain", "static vector memory as enough", "raw transcript hoarding", "raw retrieval removed entirely", "uncited synthesized facts as trusted knowledge", "silent memory overwrite", "memory writes without consent/privacy labels", "dream output promoted as memory fact", "cross-user or federated memory leakage", "knowledge or memory artifact mutating runtime directly"],
+      "gates": ["field citations", "source hashes", "freshness metadata", "RBAC/privacy tags", "conflict objects", "replayable query events", "NexusGraph ownership and mutability labels", "memory-specific evals", "MemoryEvolutionPassport"]
     },
     {
       "id": 6,
@@ -93,46 +97,46 @@
       "id": 9,
       "name": "Teacher Council And Expert Expansion",
       "native_output": "Teacher Council And Expert Birth Registry",
-      "representative_targets": ["Leanstral", "Nemotron", "Keye-VL", "LFM", "MiniCPM", "Qwen", "DeepSeek", "Kimi", "Mistral", "Devstral", "medical teachers", "finance teachers", "quant teachers", "quantum teachers"],
-      "assimilate": ["dynamic teacher roster", "capability cards", "license status", "distillation rights", "hardware fit", "domain scorecards", "multi-teacher disagreement capture"],
-      "reject": ["fixed stale roster", "single god teacher", "unclear-rights outputs for training", "high-risk advice without human gates", "teacher replacing mother brain"],
-      "gates": ["source/license/provenance review", "distillation-rights review", "domain evals", "child-vs-parent scorecard", "archive-not-delete retirement", "human approval"]
+      "representative_targets": ["Leanstral", "Nemotron", "Keye-VL", "LFM", "MiniCPM", "Qwen", "DeepSeek", "Kimi", "Mistral", "Devstral", "medical teachers", "finance teachers", "quant teachers", "quantum teachers", "root NexusBrain", "O-level Orchestrators", "Assistant Orchestrators", "Experts", "core nodes", "memory teachers", "graph teachers"],
+      "assimilate": ["dynamic teacher roster", "TeacherCapabilityPassport", "ExpertDomainPassport", "capability cards", "license status", "distillation rights", "hardware fit", "domain scorecards", "multi-teacher disagreement capture", "2+ teachers for every Expert/AO/O/core node before birth verification", "open-world domain atlas", "temporary live-problem experts", "memory and graph teacher panels"],
+      "reject": ["fixed stale roster", "single god teacher", "unclear-rights outputs for training", "high-risk advice without human gates", "teacher replacing mother brain", "current examples as complete O/AO/Expert inventory", "production lifecycle mutation from one teacher or one eval"],
+      "gates": ["source/license/provenance review", "distillation-rights review", "domain evals", "2+ teacher panel", "multi-teacher disagreement capture", "child-vs-parent scorecard", "archive-not-delete retirement", "human approval", "graph/memory O/AO/Expert reconciliation"]
     },
     {
       "id": 10,
       "name": "Domain Expert Packs",
       "native_output": "Expert Pack Radar And Domain Curriculum Forge",
       "representative_targets": ["medicine", "holistic medicine", "finance", "quant", "crypto", "law", "policy", "compliance", "cybersecurity", "mathematics", "formal methods", "quantum", "physics", "chemistry", "biology", "robotics", "education", "psychology", "business operations", "mobile", "privacy"],
-      "assimilate": ["expert-pack schema", "domain source ranking", "domain evals", "simulators", "merge/split rules", "risk policies", "escalation paths"],
-      "reject": ["giant static expert list in context", "uncited high-risk outputs", "autonomous trading/diagnosis/legal filing/security exploitation", "un-evaluable domain packs"],
-      "gates": ["minimum source set", "minimum eval set", "risk policy", "teacher pairings", "temporary live-problem spawn by default", "retention review for permanence"]
+      "assimilate": ["expert-pack schema", "domain source ranking", "auto-research for domains/subdomains/live gaps", "auto-discovery of teachers/validators/datasets/simulators/tools/source authorities", "domain evals", "simulators", "merge/split rules", "risk policies", "escalation paths"],
+      "reject": ["giant static expert list in context", "uncited high-risk outputs", "autonomous trading/diagnosis/legal filing/security exploitation", "un-evaluable domain packs", "domain pack mutating production state by itself"],
+      "gates": ["minimum source set", "minimum eval set", "risk policy", "teacher pairings", "temporary live-problem spawn by default", "retention review for permanence", "mother-brain promotion", "rollback and governance approval"]
     },
     {
       "id": 11,
       "name": "UI, Visualizer, Companion, And Product Shell",
       "native_output": "NexusNet Control Panel And Companion",
       "representative_targets": ["static diagrams", "Three.js/control-panel visualizer", "PocketPal", "Open WebUI", "LocalAI WebUI", "Dify UX", "Langflow UX", "Flowise UX", "OpenJarvis productization"],
-      "assimilate": ["live hive visualizer", "deep replay drilldown", "mobile companion", "first-run init/doctor", "model-fit recommendations", "user-visible workflow/skill/teacher/expert/runtime controls"],
-      "reject": ["static image as final UI", "companion app as independent brain", "UI-only implementation proof", "product shell hiding readiness gaps"],
-      "gates": ["verified/planned/blocked/research labels", "read-only replay", "redacted companion sync", "permissioned device participation"]
+      "assimilate": ["live hive visualizer", "deep replay drilldown", "Workflow Graph Studio", "teacher registry", "expert pack radar", "runtime/model controls", "skill manager", "mobile companion", "first-run init/doctor", "model-fit recommendations", "user-visible workflow/skill/teacher/expert/runtime controls"],
+      "reject": ["static image as final UI", "companion app as independent brain", "UI-only implementation proof", "product shell hiding readiness gaps", "raw private trace sync without authorization and redaction"],
+      "gates": ["verified/shadow/planned placeholder/blocked/stale/research-only/production-active labels", "read-only replay", "redacted companion sync", "permissioned device participation", "subordinate companion devices", "offline-safe mobile behavior"]
     },
     {
       "id": 12,
       "name": "Productization, Ops, And Worktree Governance",
       "native_output": "NexusNet Operational Spine",
       "representative_targets": ["OpenJarvis", "Goose", "Sandcastle/worktree-per-agent", "GitNexus codegraph gate", "feature flags", "reversible patch transaction logs", "deterministic replay snapshots"],
-      "assimilate": ["first-run diagnostics", "doctor reports", "preset bundles", "worktree-per-agent", "GitNexus-first navigation", "impact analysis", "change detection", "rollback receipts"],
-      "reject": ["another product shell as real system", "dirty work as baseline", "branch/worktree confusion", "rollout without monitoring and rollback"],
-      "gates": ["canonical branch", "preserved historical refs", "GitNexus impact before symbol edits", "detect-changes before commit", "re-index after commit"]
+      "assimilate": ["Workspace Alignment Spine", "Agent Workcell Factory", "Release And Rollout Spine", "Operational Evidence Spine", "First-Run And Doctor Spine", "Incident Replay And Rollback Spine", "Telemetry And SLO Spine", "Supply Chain And Provenance Spine", "Model/Data/Artifact Registry Spine", "Ops Scheduler And Monitor Spine", "Auto-Update And Assimilation CI", "Disaster Recovery Spine"],
+      "reject": ["another product shell as real system", "dirty work as baseline", "deleting preserved worktrees or artifacts to reduce confusion", "branch/worktree confusion", "rollout without flags/monitoring/owner/evidence/rollback", "dependency/model/data/skill/prompt/router/policy/runtime/dream/expert-pack upgrade without review", "replay path mutating live state", "CI-green-only readiness", "mixed research/dream/shadow/canary/blocked/stale/placeholder/production-active states"],
+      "gates": ["canonical branch", "preserved historical refs", "GitNexus impact before symbol edits", "detect-changes before commit", "re-index after commit", "OperationalChangePassport"]
     },
     {
       "id": 13,
       "name": "Mother Brain Graph Intelligence",
       "native_output": "NexusGraph Intelligence Fabric",
-      "representative_targets": ["GitNexus", "CodegraphGate", "knowledge graphs", "GraphRAG", "Neo4j-style relationship modeling", "workflow graphs", "skill graphs", "model/runtime graphs", "policy/eval graphs", "replay ledgers", "all permitted connected state"],
-      "assimilate": ["persistent graph indexing for every permitted connected thing", "context query", "impact analysis", "post-change detect scope", "freshness and provenance gates", "self-improvement support", "creator-facing replay"],
-      "reject": ["external graph as mother brain", "graph output replacing source reading/tests/evals/review", "stale or uncited graph facts", "full graph stuffed into model context", "direct mutation from graph conclusions"],
-      "gates": ["source refs on nodes and edges", "artifact or signal version", "freshness state", "permissions", "privacy class", "ownership", "mutability", "confidence", "sandbox/eval/rollback/replay for mutations"]
+      "representative_targets": ["GitNexus", "CodegraphGate", "knowledge graphs", "GraphRAG", "agentic GraphRAG", "Graph-R1", "LazyGraphRAG", "LightRAG", "HippoRAG", "Neo4j-style relationship modeling", "temporal graph memory", "workflow graphs", "skill graphs", "model/runtime graphs", "policy/eval graphs", "memory/dream graphs", "federation/device graphs", "replay ledgers", "all permitted connected state"],
+      "assimilate": ["Universal Graph Registry", "Codegraph Cortex", "Agentic Evolving GraphRAG Cortex", "Agentic Memory Evolution Cortex", "Capability Graph", "Policy And Risk Graph", "Operational Dependency Graph", "Memory And Dream Graph", "Federation And Device Graph", "Mutation Impact Engine", "graph update proposals", "shadow graph deltas", "creator-facing replay"],
+      "reject": ["external graph as mother brain", "static GraphRAG as enough", "graph output replacing source reading/tests/evals/review", "inferred edges treated as verified facts", "graph or memory poisoning without quarantine", "dream-generated graph edges treated as facts", "stale or uncited graph facts", "full graph stuffed into model context", "siloed graphs without mother-brain visibility", "private/federated graph leakage", "direct mutation from graph conclusions"],
+      "gates": ["GraphFactPassport", "GraphQueryPassport", "GraphEvolutionPassport", "MemoryEvolutionPassport for memory writes/updates", "source refs on nodes and edges", "artifact or signal version", "freshness state", "permissions", "privacy class", "ownership", "mutability", "confidence", "sandbox/eval/rollback/replay for mutations", "graph/memory O/AO/Expert reconciliation"]
     }
   ],
   "focused_follow_up": [
@@ -140,6 +144,9 @@
     "Review skill marketplaces and connector catalogs with current source/license/security checks.",
     "Refresh teacher/model roster before training or teaching use.",
     "Create high-risk domain eval and escalation policies for medicine, finance, legal, cyber, and robotics.",
-    "Specify NexusGraph Intelligence Fabric schema, query contracts, adapters, privacy filters, mutability labels, and Control Panel replay."
+    "Specify NexusNet Knowledge Forge And Agent-Native Memory OS schemas, MemoryEvolutionPassport implementation, memory eval policy, privacy policy, and forgetting policy.",
+    "Reconcile Cluster 9 graph/memory O/AO/Expert seed candidates before any final roster is claimed.",
+    "Specify NexusNet Operational Spine OperationalChangePassport, worktree registry, release-channel policy, disaster recovery policy, and scheduler/monitor contracts.",
+    "Specify NexusGraph Intelligence Fabric schema, query contracts, adapters, privacy filters, mutability labels, GraphFactPassport, GraphQueryPassport, GraphEvolutionPassport, graph delta storage, poisoning defenses, ontology evolution policy, and Control Panel replay."
   ]
 }
