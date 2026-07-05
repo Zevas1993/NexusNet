@@ -218,6 +218,8 @@ const state = {
   releaseWrapperStatus: null,
   releaseWrapperLastAction: null,
   releaseWrapperRuntime: null,
+  releaseHarnessRuntime: null,
+  cluster9TeacherReconciliation: null,
   releaseWrapperReadiness: null,
   releaseWrapperTelemetry: null,
   releaseWrapperSessionLifecycle: null,
@@ -3213,7 +3215,8 @@ function releaseWrapperActionButton(action, label, ref) {
 
 function renderAutonomousUpdatesScorecard() {
   const scorecard = state.autonomousUpdates || {};
-  const releaseRuntime = state.releaseWrapperRuntime || {};
+  const releaseRuntime = state.releaseHarnessRuntime || state.releaseWrapperRuntime || {};
+  const releaseHarness = releaseRuntime.release_harness || {};
   const releaseReadiness = state.releaseWrapperReadiness || {};
   const releaseTelemetry = state.releaseWrapperTelemetry || releaseRuntime.live_wrapper_telemetry || {};
   const forwardPassCoverage = releaseRuntime.forward_pass_coverage || releaseTelemetry.forward_pass_coverage || {};
@@ -3239,6 +3242,10 @@ function renderAutonomousUpdatesScorecard() {
   const canonicalAoCoverage = releaseRuntime.canonical_ao_coverage || {};
   const domainAoRouting = releaseRuntime.domain_ao_routing || {};
   const domainTeacherEval = releaseRuntime.domain_teacher_eval_handoff || {};
+  const cluster9TeacherReconciliation = releaseRuntime.cluster9_teacher_reconciliation
+    || state.cluster9TeacherReconciliation
+    || state.controlPanel?.cluster9_teacher_reconciliation
+    || {};
   const contextWindowPosture = releaseRuntime.context_window_posture || {};
   const contextCapability = releaseRuntime.context_capability_envelope || {};
   const providerReadiness = releaseRuntime.provider_readiness || {};
@@ -3381,12 +3388,16 @@ function renderAutonomousUpdatesScorecard() {
   fill(dom.autonomousUpdatesScorecard, `
     <article class="runtime-scorecard-card">
       <div class="metric-head">
-        <strong>Release wrapper runtime</strong>
+        <strong>Release Harness runtime</strong>
         <span class="state-pill ${escapeHtml(entrypoint.runtime_state || "static-canon")}">${escapeHtml(pretty(entrypoint.runtime_state || "static-canon"))}</span>
       </div>
-      <small>${escapeHtml(releaseRuntime.honest_status_label || "bootable-wrapper-entrypoint-awaiting-live-use")}</small>
+      <small>${escapeHtml(releaseHarness.terminology_boundary || releaseRuntime.honest_status_label || "bootable-harness-entrypoint-awaiting-live-use")}</small>
       <div class="mini-metrics">
         <span><strong>${escapeHtml(entrypoint.boot_target || "/ui/wrapper/")}</strong><small>entrypoint</small></span>
+        <span><strong>${escapeHtml(releaseHarness.surface_id || "release-harness-runtime")}</strong><small>Harness surface</small></span>
+        <span><strong>${escapeHtml(releaseHarness.legacy_surface_id || releaseRuntime.surface_id || "release-wrapper-runtime")}</strong><small>legacy compatibility key</small></span>
+        <span><strong>${escapeHtml(cluster9TeacherReconciliation.node_count || 0)}</strong><small>Cluster 9 role nodes</small></span>
+        <span><strong>${escapeHtml(cluster9TeacherReconciliation.pairing_gap_count || 0)}</strong><small>teacher pairing gaps</small></span>
         <span><strong>${escapeHtml(globalGrowth.global_captures || 0)}</strong><small>growth captures</small></span>
         <span><strong>${escapeHtml(globalGrowth.runtime_interaction_count || 0)}</strong><small>runtime growth bridge</small></span>
         <span><strong>${escapeHtml(latestRuntimeGrowthReceipt.surface_id || "no-runtime-growth-receipt")}</strong><small>latest runtime growth receipt</small></span>
@@ -3645,6 +3656,24 @@ function renderAutonomousUpdatesScorecard() {
         state: event.raw_content_included ? "blocked" : "live-bound",
       })))}
     </article>
+    <article class="runtime-scorecard-card release-harness-cluster9-teacher-reconciliation">
+      <div class="metric-head">
+        <strong>Cluster 9 teacher reconciliation</strong>
+        <span class="state-pill ${cluster9TeacherReconciliation.birth_blocking_issue_count ? "blocked" : "shadow-only"}">${escapeHtml(cluster9TeacherReconciliation.birth_blocking_issue_count ? "blocked" : "paired")}</span>
+      </div>
+      <small>${escapeHtml(cluster9TeacherReconciliation.autonomy_rule || "birth, merge, split, retire, and live-problem temporary experts require eval evidence, rollback, and NexusBrain approval")}</small>
+      <div class="mini-metrics">
+        <span><strong>${escapeHtml(cluster9TeacherReconciliation.node_count || 0)}</strong><small>role nodes</small></span>
+        <span><strong>${escapeHtml(cluster9TeacherReconciliation.node_type_counts?.orchestrator || 0)}</strong><small>orchestrators</small></span>
+        <span><strong>${escapeHtml(cluster9TeacherReconciliation.node_type_counts?.assistant_orchestrator || 0)}</strong><small>AOs</small></span>
+        <span><strong>${escapeHtml(cluster9TeacherReconciliation.node_type_counts?.expert || 0)}</strong><small>experts</small></span>
+        <span><strong>${escapeHtml(cluster9TeacherReconciliation.node_type_counts?.temporary_expert || 0)}</strong><small>temporary experts</small></span>
+        <span><strong>${escapeHtml(cluster9TeacherReconciliation.pairing_gap_count || 0)}</strong><small>pairing gaps</small></span>
+        <span><strong>${escapeHtml(cluster9TeacherReconciliation.birth_blocking_issue_count || 0)}</strong><small>birth blockers</small></span>
+        <span><strong>${escapeHtml(cluster9TeacherReconciliation.live_problem_temporary_experts?.shadow_only ? "shadow-only" : "blocked")}</strong><small>live-problem experts</small></span>
+      </div>
+      <div class="completion-scope">cluster9_teacher_reconciliation | ${escapeHtml(cluster9TeacherReconciliation.mother_brain_authority || "NexusBrain")} owns hive authority | raw content ${escapeHtml(cluster9TeacherReconciliation.raw_content_included ? "included" : "redacted")} | active mutation ${escapeHtml(cluster9TeacherReconciliation.active_production_mutation_allowed ? "allowed" : "blocked")}</div>
+    </article>
     <article class="runtime-scorecard-card release-wrapper-session-lifecycle">
       <div class="metric-head">
         <strong>Release wrapper session lifecycle</strong>
@@ -3806,6 +3835,10 @@ function renderReleaseWrapperStatusFallback(statusCard, sessionLifecycle) {
   state.releaseWrapperStatus = statusCard;
   state.autonomousUpdates = statusCard.autonomous_updates || state.autonomousUpdates;
   state.releaseWrapperRuntime = statusCard.runtime || state.releaseWrapperRuntime;
+  state.releaseHarnessRuntime = statusCard.runtime || state.releaseHarnessRuntime;
+  state.cluster9TeacherReconciliation = statusCard.cluster9_teacher_reconciliation
+    || statusCard.runtime?.cluster9_teacher_reconciliation
+    || state.cluster9TeacherReconciliation;
   state.releaseWrapperTelemetry = statusCard.runtime?.live_wrapper_telemetry || state.releaseWrapperTelemetry;
   state.releaseWrapperReadiness = statusCard.readiness || state.releaseWrapperReadiness;
   if (sessionLifecycle) {
@@ -5296,6 +5329,11 @@ async function loadControlPanel() {
   state.artifactTrustRegistry = state.controlPanel.artifact_trust_registry_scorecard || null;
   state.autonomousUpdates = state.controlPanel.autonomous_update_scorecard || null;
   state.releaseWrapperRuntime = state.controlPanel.release_wrapper_runtime || null;
+  state.releaseHarnessRuntime = state.controlPanel.release_harness_runtime || state.releaseWrapperRuntime || null;
+  state.cluster9TeacherReconciliation = state.controlPanel.cluster9_teacher_reconciliation
+    || state.releaseHarnessRuntime?.cluster9_teacher_reconciliation
+    || state.releaseWrapperRuntime?.cluster9_teacher_reconciliation
+    || null;
   state.releaseWrapperTelemetry = state.controlPanel.release_wrapper_telemetry || state.releaseWrapperRuntime?.live_wrapper_telemetry || null;
   state.releaseWrapperReadiness = state.controlPanel.release_wrapper_readiness || null;
   if (releaseWrapperSessionLifecycle) {
@@ -5305,6 +5343,10 @@ async function loadControlPanel() {
     state.releaseWrapperStatus = releaseWrapperStatus;
     state.autonomousUpdates = releaseWrapperStatus.autonomous_updates || state.autonomousUpdates;
     state.releaseWrapperRuntime = releaseWrapperStatus.runtime || state.releaseWrapperRuntime;
+    state.releaseHarnessRuntime = releaseWrapperStatus.runtime || state.releaseHarnessRuntime;
+    state.cluster9TeacherReconciliation = releaseWrapperStatus.cluster9_teacher_reconciliation
+      || releaseWrapperStatus.runtime?.cluster9_teacher_reconciliation
+      || state.cluster9TeacherReconciliation;
     state.releaseWrapperTelemetry = releaseWrapperStatus.runtime?.live_wrapper_telemetry || state.releaseWrapperTelemetry;
     state.releaseWrapperReadiness = releaseWrapperStatus.readiness || state.releaseWrapperReadiness;
   }
@@ -5346,6 +5388,10 @@ async function loadReleaseWrapperStatusCard(session) {
   state.releaseWrapperStatus = card;
   state.autonomousUpdates = card.autonomous_updates || state.autonomousUpdates;
   state.releaseWrapperRuntime = card.runtime || state.releaseWrapperRuntime;
+  state.releaseHarnessRuntime = card.runtime || state.releaseHarnessRuntime;
+  state.cluster9TeacherReconciliation = card.cluster9_teacher_reconciliation
+    || card.runtime?.cluster9_teacher_reconciliation
+    || state.cluster9TeacherReconciliation;
   state.releaseWrapperTelemetry = card.runtime?.live_wrapper_telemetry || state.releaseWrapperTelemetry;
   state.releaseWrapperReadiness = card.readiness || state.releaseWrapperReadiness;
   return card;

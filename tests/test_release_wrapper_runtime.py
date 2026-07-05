@@ -5314,7 +5314,7 @@ def test_release_runtime_surfaces_in_wrapper_and_visualizer_control_panel(tmp_pa
     app_js = (project_root / "ui" / "control-panel" / "app.js").read_text(encoding="utf-8")
     wrapper_html = (project_root / "ui" / "wrapper" / "index.html").read_text(encoding="utf-8")
     visualizer_js = (project_root / "ui" / "visualizer" / "app.js").read_text(encoding="utf-8")
-    assert "Release wrapper runtime" in app_js
+    assert "Release Harness runtime" in app_js
     assert "context window posture" in app_js
     assert "context capability" in app_js
     assert "Release readiness" in app_js
@@ -5324,6 +5324,66 @@ def test_release_runtime_surfaces_in_wrapper_and_visualizer_control_panel(tmp_pa
     assert "Context Capability" in wrapper_html
     assert "Wrapper effective ctx tokens" in visualizer_js
     assert "Wrapper context cap" in visualizer_js
+
+
+def test_cluster9_teacher_reconciliation_and_harness_aliases_reach_release_surfaces(tmp_path: Path):
+    project_root = make_project(tmp_path)
+    client = TestClient(create_app(str(project_root)))
+    session_id = "cluster9-harness-surface"
+
+    runtime = client.get("/ops/wrapper/release-runtime", params={"session_id": session_id}).json()
+    status_card = client.get("/ops/wrapper/status-card", params={"session_id": session_id}).json()
+    visualizer = client.get("/ops/brain/visualizer/state", params={"session_id": session_id}).json()
+    wrapper = client.get("/ops/brain/wrapper-surface", params={"session_id": session_id}).json()
+
+    cluster9 = runtime["cluster9_teacher_reconciliation"]
+    assert cluster9["surface_id"] == "cluster9-teacher-expert-reconciliation"
+    assert cluster9["node_count"] >= 30
+    assert cluster9["pairing_gap_count"] == 0
+    assert cluster9["birth_blocking_issue_count"] == 0
+    assert cluster9["mother_brain_authority"] == "NexusBrain"
+    assert cluster9["raw_content_included"] is False
+    assert cluster9["active_production_mutation_allowed"] is False
+    assert cluster9["live_problem_temporary_experts"]["shadow_only"] is True
+
+    harness = runtime["release_harness"]
+    assert harness["surface_id"] == "release-harness-runtime"
+    assert harness["legacy_surface_id"] == "release-wrapper-runtime"
+    assert harness["product_surface"] == "harness"
+    assert harness["legacy_product_surface"] == "wrapper"
+    assert harness["runtime_ref"] == "/ops/wrapper/release-runtime"
+    assert harness["control_panel_ref"] == "/ui/control-panel/"
+
+    assert status_card["product_surface"] == "wrapper"
+    assert status_card["harness_product_surface"] == "harness"
+    assert status_card["legacy_product_surface"] == "wrapper"
+    assert status_card["runtime"]["release_harness"] == harness
+    assert status_card["runtime"]["cluster9_teacher_reconciliation"] == cluster9
+    assert status_card["cluster9_teacher_reconciliation"] == cluster9
+
+    control_panel = visualizer["overlay_state"]["control_panel"]
+    assert control_panel["release_harness_runtime"] == control_panel["release_wrapper_runtime"]
+    assert control_panel["release_harness_runtime"]["release_harness"] == harness
+    assert control_panel["cluster9_teacher_reconciliation"] == cluster9
+    assert (
+        control_panel["live_refs"]["cluster9_teacher_reconciliation"]
+        == "overlay.control_panel.cluster9_teacher_reconciliation"
+    )
+    assert (
+        control_panel["live_refs"]["release_harness_runtime"]
+        == "overlay.control_panel.release_harness_runtime"
+    )
+
+    labels = {mode["mode_id"]: mode["label"] for mode in wrapper["state"]["modes"]}
+    assert labels["standard-chat"] == "Standard Harness"
+    assert labels["openclaw"] == "OpenClaw Harness"
+
+    app_js = (project_root / "ui" / "control-panel" / "app.js").read_text(encoding="utf-8")
+    index_html = (project_root / "ui" / "control-panel" / "index.html").read_text(encoding="utf-8")
+    assert "Release Harness runtime" in app_js
+    assert "Cluster 9 teacher reconciliation" in app_js
+    assert "Release wrapper runtime" not in app_js
+    assert ">Harness<" in index_html
 
 
 def test_project_heartbeat_drives_release_runtime_readiness_status_and_control_panel(tmp_path: Path):

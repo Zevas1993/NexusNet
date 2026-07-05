@@ -255,6 +255,7 @@ class Cluster9TeacherReconciliationRegistry:
         node_type_counts: dict[str, int] = {}
         for node in nodes:
             node_type_counts[node.node_type] = node_type_counts.get(node.node_type, 0) + 1
+        temporary_experts = [node for node in nodes if node.node_type == "temporary_expert"]
         return {
             "surface_id": "cluster9-teacher-expert-reconciliation",
             "node_count": len(nodes),
@@ -269,6 +270,18 @@ class Cluster9TeacherReconciliationRegistry:
                 "cluster9-reconciliation-is-a-shadow-first-roster-and-passport-surface; "
                 "birth-merge-split-retire-requires-eval-teacher-rollback-and-mother-brain-approval"
             ),
+            "teacher_pairing_policy": "every-orchestrator-ao-expert-and-temporary-expert-requires-two-plus-teachers",
+            "live_problem_temporary_experts": {
+                "count": len(temporary_experts),
+                "shadow_only": all(
+                    node.lifecycle_state == "shadow" and not node.production_mutation_allowed
+                    for node in temporary_experts
+                ),
+                "retirement_policy": "ttl-expiry-merge-retire-or-promote-only-after-eval-and-mother-brain-approval",
+            },
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "privacy_boundary": "cluster9-roster-counts-ids-teacher-refs-and-policy-status-only-no-prompts-outputs-or-private-data",
         }
 
     def _required_node(self, node_id: str) -> Cluster9RoleNode:

@@ -27,6 +27,7 @@ from nexusnet.canon.contracts import (
     empty_canon_contract_ledger,
 )
 from nexusnet.growth import NexusNetProductionSpine
+from nexusnet.experts import build_default_cluster9_teacher_reconciliation_registry
 from nexusnet.hive.dreaming import run_dream_episode
 from nexusnet.hive import HiveForwardPassRequest, HiveNeuralSubstrate
 from nexusnet.hive.continuous_assimilation import ContinuousAssimilationLoop
@@ -9230,6 +9231,9 @@ class ReleaseWrapperRuntime:
         teacher_expert_birth_registry = self._teacher_expert_birth_registry_summary(
             session_ref_digest=session_ref_digest
         )
+        cluster9_teacher_reconciliation = _cluster9_teacher_reconciliation_summary(
+            session_ref_digest=session_ref_digest
+        )
         developmental_growth_promotion = self._developmental_growth_promotion_summary(
             session_ref_digest=session_ref_digest
         )
@@ -9358,6 +9362,7 @@ class ReleaseWrapperRuntime:
             restored["release_manifest_status_rollup"] = release_manifest_status_rollup
             restored["production_spine_release_lifecycle"] = production_spine_release_lifecycle
             restored["teacher_expert_birth_registry"] = teacher_expert_birth_registry
+            restored["cluster9_teacher_reconciliation"] = cluster9_teacher_reconciliation
             restored["developmental_growth_promotion"] = developmental_growth_promotion
             restored["developmental_release_contract"] = _restore_developmental_release_contract(
                 restored.get("developmental_release_contract"),
@@ -9576,6 +9581,7 @@ class ReleaseWrapperRuntime:
                 self.artifacts_dir.parent,
                 restored,
             )
+            restored["release_harness"] = _release_harness_runtime_alias(restored)
             return restored
         active_interactions = self._interactions_for_session(session_ref_digest)
         active_federated_packets = self._federated_packets_for_interactions(active_interactions)
@@ -9833,6 +9839,7 @@ class ReleaseWrapperRuntime:
             "release_manifest_status_rollup": release_manifest_status_rollup,
             "production_spine_release_lifecycle": production_spine_release_lifecycle,
             "teacher_expert_birth_registry": teacher_expert_birth_registry,
+            "cluster9_teacher_reconciliation": cluster9_teacher_reconciliation,
             "developmental_growth_promotion": developmental_growth_promotion,
             "developmental_release_contract": developmental_release_contract,
             "project_heartbeat": project_heartbeat,
@@ -9879,6 +9886,7 @@ class ReleaseWrapperRuntime:
             self.artifacts_dir.parent,
             summary,
         )
+        summary["release_harness"] = _release_harness_runtime_alias(summary)
         return summary
 
     def release_readiness_manifest(self, *, session_id: str | None = None) -> dict[str, Any]:
@@ -10221,6 +10229,11 @@ class ReleaseWrapperRuntime:
             runtime.get("teacher_expert_birth_registry")
             if isinstance(runtime.get("teacher_expert_birth_registry"), dict)
             else self._teacher_expert_birth_registry_summary(session_ref_digest=session_ref_digest)
+        )
+        cluster9_teacher_reconciliation = (
+            runtime.get("cluster9_teacher_reconciliation")
+            if isinstance(runtime.get("cluster9_teacher_reconciliation"), dict)
+            else _cluster9_teacher_reconciliation_summary(session_ref_digest=session_ref_digest)
         )
         developmental_growth_promotion = (
             runtime.get("developmental_growth_promotion")
@@ -11328,6 +11341,7 @@ class ReleaseWrapperRuntime:
                     "mutation_boundary": production_spine.get("mutation_boundary"),
                 },
                 "teacher_expert_birth_registry": teacher_expert_birth_registry,
+                "cluster9_teacher_reconciliation": cluster9_teacher_reconciliation,
                 "developmental_growth_promotion": developmental_growth_promotion,
                 "developmental_release_contract": developmental_release_contract,
                 "authority_evidence_tool_governance": authority_evidence_tool_governance,
@@ -11502,6 +11516,11 @@ class ReleaseWrapperRuntime:
             runtime.get("domain_teacher_eval_handoff")
             if isinstance(runtime.get("domain_teacher_eval_handoff"), dict)
             else _empty_domain_teacher_eval_handoff(session_ref_digest=session_ref_digest)
+        )
+        cluster9_teacher_reconciliation = (
+            runtime.get("cluster9_teacher_reconciliation")
+            if isinstance(runtime.get("cluster9_teacher_reconciliation"), dict)
+            else _cluster9_teacher_reconciliation_summary(session_ref_digest=session_ref_digest)
         )
         proposals = (
             autonomous_updates.get("proposals")
@@ -11722,6 +11741,8 @@ class ReleaseWrapperRuntime:
             or runtime.get("honest_status_label")
             or "bootable-wrapper-entrypoint-awaiting-live-use",
             "product_surface": "wrapper",
+            "harness_product_surface": "harness",
+            "legacy_product_surface": "wrapper",
             "runtime": runtime,
             "readiness": readiness,
             "release_manifest_status_rollup": release_manifest_status_rollup,
@@ -11750,6 +11771,7 @@ class ReleaseWrapperRuntime:
             "developmental_release_contract": runtime.get("developmental_release_contract")
             if isinstance(runtime.get("developmental_release_contract"), dict)
             else _empty_developmental_release_contract(session_ref_digest=session_ref_digest),
+            "cluster9_teacher_reconciliation": cluster9_teacher_reconciliation,
             "whole_system_forward_pass_enforcement_matrix": whole_system_forward_pass_enforcement_matrix,
             "release_readiness_evidence_runner": release_readiness_evidence_runner,
             "native_runtime_growth_governance": native_runtime_growth_governance,
@@ -11978,6 +12000,13 @@ class ReleaseWrapperRuntime:
             if isinstance(runtime.get("domain_teacher_eval_handoff"), dict)
             else _empty_domain_teacher_eval_handoff(session_ref_digest=session_ref_digest)
         )
+        cluster9_teacher_reconciliation = (
+            status_card.get("cluster9_teacher_reconciliation")
+            if isinstance(status_card.get("cluster9_teacher_reconciliation"), dict)
+            else runtime.get("cluster9_teacher_reconciliation")
+            if isinstance(runtime.get("cluster9_teacher_reconciliation"), dict)
+            else _cluster9_teacher_reconciliation_summary(session_ref_digest=session_ref_digest)
+        )
         whole_system_forward_pass_enforcement_matrix = (
             status_card.get("whole_system_forward_pass_enforcement_matrix")
             if isinstance(status_card.get("whole_system_forward_pass_enforcement_matrix"), dict)
@@ -12067,6 +12096,7 @@ class ReleaseWrapperRuntime:
             "production_spine_release_lifecycle": production_spine_release_lifecycle,
             "developmental_release_contract": developmental_release_contract,
             "domain_teacher_eval_handoff": domain_teacher_eval_handoff,
+            "cluster9_teacher_reconciliation": cluster9_teacher_reconciliation,
             "whole_system_forward_pass_enforcement_matrix": whole_system_forward_pass_enforcement_matrix,
             "release_readiness_evidence_runner": release_readiness_evidence_runner,
             "endpoint_refs": endpoint_refs,
@@ -21595,6 +21625,51 @@ def _empty_domain_teacher_eval_handoff(*, session_ref_digest: str | None) -> dic
         "active_production_mutation_allowed": False,
         "promotion_use_requires_operator_approval": True,
         "runtime_boundary": "domain-teacher-eval-handoff-records-teacher-and-eval-refs-only-no-raw-prompts-or-session-ids",
+    }
+
+
+def _cluster9_teacher_reconciliation_summary(*, session_ref_digest: str | None) -> dict[str, Any]:
+    summary = build_default_cluster9_teacher_reconciliation_registry().summary()
+    return {
+        **summary,
+        "session_ref_digest": session_ref_digest,
+        "runtime_state": "shadow-only",
+        "release_surface": "release-harness-runtime",
+        "legacy_release_surface": "release-wrapper-runtime",
+    }
+
+
+def _release_harness_runtime_alias(runtime: dict[str, Any]) -> dict[str, Any]:
+    entrypoint = runtime.get("entrypoint") if isinstance(runtime.get("entrypoint"), dict) else {}
+    cluster9 = (
+        runtime.get("cluster9_teacher_reconciliation")
+        if isinstance(runtime.get("cluster9_teacher_reconciliation"), dict)
+        else {}
+    )
+    return {
+        "surface_id": "release-harness-runtime",
+        "legacy_surface_id": runtime.get("surface_id") or "release-wrapper-runtime",
+        "authority": runtime.get("authority") or "NexusBrain",
+        "status_label": runtime.get("status_label") or "LOCKED CANON",
+        "honest_status_label": str(runtime.get("honest_status_label") or "").replace("wrapper", "harness"),
+        "status_source": runtime.get("status_source") or "unknown",
+        "runtime_state": entrypoint.get("runtime_state") or "static-canon",
+        "product_surface": "harness",
+        "legacy_product_surface": entrypoint.get("product_surface") or "wrapper",
+        "boot_target": entrypoint.get("boot_target") or "/ui/wrapper/",
+        "runtime_ref": "/ops/wrapper/release-runtime",
+        "status_card_ref": "/ops/wrapper/status-card",
+        "control_panel_ref": entrypoint.get("control_panel_ref") or "/ui/control-panel/",
+        "visualizer_ref": entrypoint.get("visualizer_ref") or "/ui/visualizer/",
+        "cluster9_teacher_reconciliation_surface_id": cluster9.get("surface_id"),
+        "cluster9_pairing_gap_count": int(cluster9.get("pairing_gap_count") or 0),
+        "cluster9_node_count": int(cluster9.get("node_count") or 0),
+        "raw_content_included": False,
+        "active_production_mutation_allowed": False,
+        "terminology_boundary": (
+            "Harness is the user-facing release surface; release-wrapper keys and /ops/wrapper endpoints "
+            "remain legacy compatibility aliases until dependent contracts migrate."
+        ),
     }
 
 

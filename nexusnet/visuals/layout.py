@@ -1334,6 +1334,16 @@ class NexusVisualizerService:
         agents = snapshot.get("agents") or {}
         core_execution = snapshot.get("core_execution") or {}
         release_wrapper_runtime = snapshot.get("release_runtime") or {}
+        release_harness_runtime = release_wrapper_runtime
+        cluster9_teacher_reconciliation = release_wrapper_runtime.get("cluster9_teacher_reconciliation") or {
+            "surface_id": "cluster9-teacher-expert-reconciliation",
+            "node_count": 0,
+            "pairing_gap_count": 0,
+            "birth_blocking_issue_count": 0,
+            "mother_brain_authority": "NexusBrain",
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+        }
         project_heartbeat = release_wrapper_runtime.get("project_heartbeat") or {
             "schema_version": "nexusnet-project-heartbeat-v1",
             "surface_id": "nexusnet-project-heartbeat",
@@ -2752,6 +2762,8 @@ class NexusVisualizerService:
             "artifact_trust_registry_scorecard": artifact_trust_registry,
             "autonomous_update_scorecard": autonomous_updates,
             "release_wrapper_runtime": release_wrapper_runtime,
+            "release_harness_runtime": release_harness_runtime,
+            "cluster9_teacher_reconciliation": cluster9_teacher_reconciliation,
             "release_wrapper_privacy_consent": release_wrapper_privacy_consent,
             "release_wrapper_privacy_consent_enforcement": release_wrapper_privacy_consent_enforcement,
             "release_wrapper_privacy_retention_enforcement": release_wrapper_privacy_retention_enforcement,
@@ -2797,6 +2809,10 @@ class NexusVisualizerService:
                 "project_heartbeat": "overlay.control_panel.project_heartbeat",
                 "project_heartbeat_native_replay_status": (
                     "overlay.control_panel.project_heartbeat_native_replay_status"
+                ),
+                "release_harness_runtime": "overlay.control_panel.release_harness_runtime",
+                "cluster9_teacher_reconciliation": (
+                    "overlay.control_panel.cluster9_teacher_reconciliation"
                 ),
                 "release_wrapper_telemetry": "overlay.control_panel.release_wrapper_telemetry",
                 "release_wrapper_privacy_consent": "overlay.control_panel.release_wrapper_privacy_consent",

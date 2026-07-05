@@ -18,25 +18,25 @@ def default_wrapper_modes() -> list[WrapperMode]:
     return [
         WrapperMode(
             mode_id="standard-chat",
-            label="Standard Wrapper",
-            description="Direct wrapped-model interaction through the NexusNet cognition layer.",
+            label="Standard Harness",
+            description="Direct model interaction through the NexusNet cognition layer.",
             status_label="LOCKED CANON",
         ),
         WrapperMode(
             mode_id="openclaw",
-            label="OpenClaw Surface",
-            description="Agentic wrapper mode for tool-heavy task execution and operator-style flows.",
+            label="OpenClaw Harness",
+            description="Agentic harness mode for tool-heavy task execution and operator-style flows.",
             status_label="STRONG ACCEPTED DIRECTION",
         ),
         WrapperMode(
             mode_id="hermes-agent",
-            label="Hermes Agent Surface",
-            description="Agentic wrapper mode for guided task execution and broader assistant workflows.",
+            label="Hermes Agent Harness",
+            description="Agentic harness mode for guided task execution and broader assistant workflows.",
             status_label="STRONG ACCEPTED DIRECTION",
         ),
         WrapperMode(
             mode_id="scheduled-monitor",
-            label="Scheduled Monitor Surface",
+            label="Scheduled Monitor Harness",
             description="Persistent monitoring workflow with memory, traceability, and governed approvals.",
             status_label="STRONG ACCEPTED DIRECTION",
         ),
