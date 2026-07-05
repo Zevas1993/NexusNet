@@ -5169,11 +5169,11 @@ def test_wrapper_product_surface_uses_openai_compatible_chat_models_and_status_c
     assert "runtime.global_growth" in html
     assert "Forward Pass Coverage" in html
     assert "forward_pass_coverage" in html
-    assert "Release wrapper boot supervisor" in html
+    assert "Release Harness boot supervisor" in html
     assert "release-wrapper-boot-supervisor" in html
     assert "boot_supervisor" in html
     assert "boot_manifest" in html
-    assert "Send Through Wrapper" in html
+    assert "Send Through Harness" in html
     assert "/chat\"" not in html
 
     response = client.post(
@@ -5322,8 +5322,125 @@ def test_release_runtime_surfaces_in_wrapper_and_visualizer_control_panel(tmp_pa
     assert "release_wrapper_runtime" in app_js
     assert "Context Window Posture" in wrapper_html
     assert "Context Capability" in wrapper_html
-    assert "Wrapper effective ctx tokens" in visualizer_js
-    assert "Wrapper context cap" in visualizer_js
+    assert "Harness effective ctx tokens" in visualizer_js
+    assert "Harness context cap" in visualizer_js
+
+
+def test_visible_release_surfaces_use_harness_copy_without_renaming_legacy_routes(tmp_path: Path):
+    project_root = make_project(tmp_path)
+    client = TestClient(create_app(str(project_root)))
+
+    wrapper = client.get("/ui/wrapper/")
+
+    assert wrapper.status_code == 200
+    wrapper_html = wrapper.text
+    control_panel_js = (project_root / "ui" / "control-panel" / "app.js").read_text(encoding="utf-8")
+    visualizer_js = (project_root / "ui" / "visualizer" / "app.js").read_text(encoding="utf-8")
+    visualizer_html = (project_root / "ui" / "visualizer" / "index.html").read_text(encoding="utf-8")
+
+    for expected in [
+        "NexusNet Harness Surface",
+        "Chat Through The Harness",
+        "Harness navigation",
+        "Harness runtime status",
+        "Send Through Harness",
+        "Ask through the release harness",
+        "Loading harness status card",
+        "Release Harness boot supervisor",
+        "Harness Entrypoint",
+        "Harness First Run",
+    ]:
+        assert expected in wrapper_html
+    for stale in [
+        "NexusNet Wrapper Surface",
+        "Chat Through The Wrapper",
+        "Wrapper navigation",
+        "Wrapper runtime status",
+        "Send Through Wrapper",
+        "Ask through the release wrapper",
+        "Loading wrapper status card",
+        "Release wrapper boot supervisor",
+        "Wrapper Entrypoint",
+        "Wrapper First Run",
+    ]:
+        assert stale not in wrapper_html
+
+    for expected in [
+        "Release Harness runtime",
+        "Release Harness boot supervisor",
+        "Release Harness live telemetry",
+        "Release Harness session lifecycle",
+        "Release Harness self repair ledger",
+        "Release Harness admin lane",
+        "Release Harness status-card fallback",
+        "Running Release Harness",
+    ]:
+        assert expected in control_panel_js
+    for stale in [
+        "Release wrapper boot supervisor",
+        "Release wrapper live telemetry",
+        "Release wrapper session lifecycle",
+        "Release wrapper self repair ledger",
+        "Release wrapper admin lane",
+        "Release wrapper status-card fallback",
+        "Running release wrapper",
+    ]:
+        assert stale not in control_panel_js
+
+    for expected in [
+        "Release Harness telemetry",
+        "Harness forward coverage receipts",
+        "Harness effective ctx tokens",
+        "Harness context cap",
+        "Harness developmental release contract",
+        "Harness first-run readiness",
+        "Harness release manifest rollup",
+        "Harness developmental cortex",
+        "Harness boot supervisor",
+        "Harness product path",
+        "Release Harness self repair actions",
+        "Harness AO guard receipts",
+        "Harness authority receipts",
+        "Harness federated packets",
+        "Harness packet outbox",
+        "Harness packet inbox",
+        "Harness growth captures",
+    ]:
+        assert expected in visualizer_js
+    for stale in [
+        "Release wrapper telemetry",
+        "Wrapper forward coverage receipts",
+        "Wrapper effective ctx tokens",
+        "Wrapper context cap",
+        "Wrapper developmental release contract",
+        "Wrapper first-run readiness",
+        "Wrapper release manifest rollup",
+        "Wrapper developmental cortex",
+        "Wrapper boot supervisor",
+        "Wrapper product path",
+        "Release wrapper self repair actions",
+        "Wrapper AO guard receipts",
+        "Wrapper authority receipts",
+        "Wrapper federated packets",
+        "Wrapper packet outbox",
+        "Wrapper packet inbox",
+        "Wrapper growth captures",
+    ]:
+        assert stale not in visualizer_js
+
+    assert "Return To Harness Surface" in visualizer_html
+    assert "Return To Wrapper Surface" not in visualizer_html
+
+    for legacy_contract in [
+        "/ops/wrapper/status-card",
+        "/ops/wrapper/release-runtime",
+        "/ops/wrapper/session-lifecycle",
+    ]:
+        assert legacy_contract in wrapper_html
+    assert "/ops/wrapper/status-card" in control_panel_js
+    assert "/ops/wrapper/session-lifecycle" in control_panel_js
+    assert "release_wrapper_runtime" in control_panel_js
+    assert "release_wrapper_runtime" in visualizer_js
 
 
 def test_cluster9_teacher_reconciliation_and_harness_aliases_reach_release_surfaces(tmp_path: Path):
@@ -5643,14 +5760,14 @@ def test_release_wrapper_live_telemetry_surfaces_in_control_panel_and_visualizer
 
     control_panel_js = (project_root / "ui" / "control-panel" / "app.js").read_text(encoding="utf-8")
     visualizer_js = (project_root / "ui" / "visualizer" / "app.js").read_text(encoding="utf-8")
-    assert "Release wrapper live telemetry" in control_panel_js
+    assert "Release Harness live telemetry" in control_panel_js
     assert "release-wrapper-live-telemetry" in control_panel_js
     assert "live_wrapper_telemetry" in control_panel_js
     assert "forward coverage" in control_panel_js
     assert "forward_pass_coverage" in control_panel_js
     assert "recent_events" in control_panel_js
-    assert "Release wrapper telemetry" in visualizer_js
-    assert "Wrapper forward coverage receipts" in visualizer_js
+    assert "Release Harness telemetry" in visualizer_js
+    assert "Harness forward coverage receipts" in visualizer_js
     assert "live_wrapper_telemetry" in visualizer_js
     assert "release-wrapper-live-telemetry" in visualizer_js
 
@@ -6908,7 +7025,7 @@ def test_release_wrapper_developmental_packet_feeds_governed_update_surfaces(tmp
     visualizer_js = (project_root / "ui" / "visualizer" / "app.js").read_text(encoding="utf-8")
     assert "developmental cortex assessment" in control_panel_js
     assert "developmental promotion case" in control_panel_js
-    assert "Wrapper developmental cortex" in visualizer_js
+    assert "Harness developmental cortex" in visualizer_js
 
     serialized = json.dumps(
         {
@@ -8110,14 +8227,14 @@ def test_release_wrapper_boot_supervisor_manifest_replays_in_runtime_status_and_
 
     control_panel_js = (project_root / "ui" / "control-panel" / "app.js").read_text(encoding="utf-8")
     visualizer_js = (project_root / "ui" / "visualizer" / "app.js").read_text(encoding="utf-8")
-    assert "Release wrapper boot supervisor" in control_panel_js
+    assert "Release Harness boot supervisor" in control_panel_js
     assert "release-wrapper-boot-supervisor" in control_panel_js
     assert "boot_supervisor" in control_panel_js
     assert "release product path" in control_panel_js
     assert "product-path federation" in control_panel_js
-    assert "Wrapper boot supervisor" in visualizer_js
+    assert "Harness boot supervisor" in visualizer_js
     assert "release-wrapper-boot-supervisor" in visualizer_js
-    assert "Wrapper product path" in visualizer_js
+    assert "Harness product path" in visualizer_js
 
     serialized = json.dumps(
         {
@@ -8995,7 +9112,7 @@ def test_release_wrapper_session_lifecycle_proves_live_use_and_admin_update_path
     assert "release-wrapper-session-lifecycle" in html
     assert "/ops/wrapper/session-lifecycle" in control_panel_js
     assert "releaseWrapperSessionLifecycle" in control_panel_js
-    assert "Release wrapper session lifecycle" in control_panel_js
+    assert "Release Harness session lifecycle" in control_panel_js
 
 
 def test_release_wrapper_self_repair_ledger_records_admin_path_and_replays_by_session(tmp_path: Path):
@@ -9169,10 +9286,10 @@ def test_release_wrapper_self_repair_ledger_records_admin_path_and_replays_by_se
     assert "self_repair_ledger" in control_panel_js
     assert "ao_guard_passed_count" in control_panel_js
     assert "authority effect receipts" in control_panel_js
-    assert "Release wrapper self repair" in visualizer_js
+    assert "Release Harness self repair" in visualizer_js
     assert "release-wrapper-self-repair-ledger" in visualizer_js
-    assert "Wrapper AO guard receipts" in visualizer_js
-    assert "Wrapper authority receipts" in visualizer_js
+    assert "Harness AO guard receipts" in visualizer_js
+    assert "Harness authority receipts" in visualizer_js
 
 
 def test_release_wrapper_safe_apply_requires_ao_guard_receipts(tmp_path: Path):

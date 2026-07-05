@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>NexusNet Wrapper Surface</title>
+  <title>NexusNet Harness Surface</title>
   <style>
     :root {
       color-scheme: light dark;
@@ -78,13 +78,13 @@
 </head>
 <body>
   <main class="shell">
-    <section class="workspace" aria-label="NexusNet wrapper product surface">
+    <section class="workspace" aria-label="NexusNet harness product surface">
       <header>
         <div>
-          <h1>Chat Through The Wrapper</h1>
+          <h1>Chat Through The Harness</h1>
           <div class="subtitle">Local/API model access with live growth routing, federated packet emission, and governed update proposals.</div>
         </div>
-        <nav class="nav" aria-label="Wrapper navigation">
+        <nav class="nav" aria-label="Harness navigation">
           <a class="button-link secondary" href="/ui/control-panel/">Control Panel</a>
           <a class="button-link secondary" href="/ui/visualizer/">Visualizer</a>
           <a class="button-link secondary" href="/ops/wrapper/release-runtime" target="_blank" rel="noreferrer">Runtime JSON</a>
@@ -108,37 +108,37 @@
         <section class="log" id="wrapperChatLog" aria-live="polite">
           <article class="entry assistant">
             <div class="entry-head">
-              <span class="role">Wrapper</span>
+              <span class="role">Harness</span>
               <span class="meta">boot surface</span>
             </div>
-            <div class="content">Send a message to exercise the OpenAI-compatible wrapper path. The status panel updates from sanitized runtime telemetry.</div>
+            <div class="content">Send a message to exercise the OpenAI-compatible Harness path. The status panel updates from sanitized runtime telemetry.</div>
           </article>
         </section>
 
         <form class="composer" id="wrapperComposer">
           <label for="wrapperPrompt">
             Prompt
-            <textarea id="wrapperPrompt" name="prompt" placeholder="Ask through the release wrapper..."></textarea>
+            <textarea id="wrapperPrompt" name="prompt" placeholder="Ask through the release harness..."></textarea>
           </label>
           <div class="composer-actions">
             <span class="hint">Requests go through <code>/v1/chat/completions</code>; status comes from <code>/ops/wrapper/status-card</code>.</span>
-            <button class="primary" id="wrapperSend" type="submit">Send Through Wrapper</button>
+            <button class="primary" id="wrapperSend" type="submit">Send Through Harness</button>
           </div>
         </form>
       </section>
     </section>
 
-    <aside aria-label="Wrapper runtime status">
+    <aside aria-label="Harness runtime status">
       <div class="status-head">
         <div>
           <div class="status-title">Release Status</div>
-          <div class="subtitle">Honest live indicators from wrapper runtime endpoints.</div>
+          <div class="subtitle">Honest live indicators from Harness runtime endpoints.</div>
         </div>
         <span class="pill warn" id="wrapperStatusPill">Loading</span>
       </div>
       <div class="status-body">
         <section class="status-card wrapper-product-status-card" id="wrapperStatusCard">
-          <div class="empty">Loading wrapper status card...</div>
+          <div class="empty">Loading harness status card...</div>
         </section>
       </div>
     </aside>
@@ -239,7 +239,7 @@
       const productionSpineReleaseLifecycleRollback = productionSpineReleaseLifecycle.latest_rollback || {};
       const firstRunProduction = firstRunReadiness.production_spine || {};
       const firstRunScope = firstRunReadiness.product_scope || "wrapper-session";
-      const firstRunScopeLabel = firstRunScope === "whole-system" ? "Whole-System First Run" : "Wrapper First Run";
+      const firstRunScopeLabel = firstRunScope === "whole-system" ? "Whole-System First Run" : "Harness First Run";
       const bootSupervisor = runtime.boot_supervisor || card.boot_supervisor || {};
       const bootProductPath = bootSupervisor.evidence && bootSupervisor.evidence.release_product_path || {};
       const bootProductPathAdmin = bootProductPath.admin_action_statuses || {};
@@ -282,7 +282,7 @@
           <div class="metric"><strong>${countOrZero(growth.global_captures || growth.global_event_count)}</strong><span>global growth captures</span></div>
         </div>
         <section class="release-runtime-summary">
-          <div class="status-row"><strong>Wrapper Entrypoint</strong><span>${escapeHtml(runtime.entrypoint && runtime.entrypoint.boot_target || "/ui/wrapper/")}</span></div>
+          <div class="status-row"><strong>Harness Entrypoint</strong><span>${escapeHtml(runtime.entrypoint && runtime.entrypoint.boot_target || "/ui/wrapper/")}</span></div>
           <div class="status-row"><strong>Runtime Summary</strong><span>${escapeHtml(runtime.honest_status_label || runtime.status || runtime.readiness || "unknown")}</span></div>
           <div class="status-row"><strong>Runtime Evidence</strong><span><a href="${escapeHtml(runtimeLink)}" target="_blank" rel="noreferrer"><code>${escapeHtml(runtimeLink)}</code></a></span></div>
           <div class="status-row release-wrapper-session-history"><strong>Session History</strong><span>${escapeHtml(`${sessionHistory.event_count || 0} session events / ${sessionHistory.global_event_count || 0} global`)}</span></div>
@@ -307,7 +307,7 @@
           <div class="status-row release-wrapper-session-lifecycle"><strong>Session Lifecycle</strong><span><a href="${escapeHtml(lifecycleLink)}" target="_blank" rel="noreferrer"><code>${escapeHtml(lifecycleLink)}</code></a></span></div>
         </section>
         <section class="release-wrapper-boot-supervisor">
-          <div class="status-row"><strong>Release wrapper boot supervisor</strong><span>${escapeHtml(bootSupervisor.latest_status || "not-run")}</span></div>
+          <div class="status-row"><strong>Release Harness boot supervisor</strong><span>${escapeHtml(bootSupervisor.latest_status || "not-run")}</span></div>
           <div class="status-row"><strong>Boot Checks</strong><span>${escapeHtml(`${bootSupervisor.pass_count || 0}/${bootSupervisor.check_count || 0} pass | ${bootSupervisor.failed_count || 0} blocked`)}</span></div>
           <div class="status-row"><strong>Forward Smoke</strong><span>${escapeHtml(bootSupervisor.evidence && bootSupervisor.evidence.forward_pass_coverage && bootSupervisor.evidence.forward_pass_coverage.latest_status || "not-run")}</span></div>
           <div class="status-row"><strong>Readiness Smoke</strong><span>${escapeHtml(bootSupervisor.evidence && bootSupervisor.evidence.release_readiness && bootSupervisor.evidence.release_readiness.go_no_go || "no-go")}</span></div>
@@ -376,7 +376,7 @@
           approval_ref: "operator-ui::release-wrapper-readiness-runner",
         };
       }
-      throw new Error(`Unknown admin action for ${endpoint || "wrapper"}.`);
+      throw new Error(`Unknown admin action for ${endpoint || "harness"}.`);
     }
 
     async function performAdminAction(action) {
@@ -476,7 +476,7 @@
         await loadStatusCard();
       } catch (error) {
         setPill("error", "bad");
-        addEntry("error", "Error", error.message, "wrapper request");
+        addEntry("error", "Error", error.message, "harness request");
       } finally {
         dom.send.disabled = false;
         dom.prompt.focus();

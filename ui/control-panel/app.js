@@ -3542,7 +3542,7 @@ function renderAutonomousUpdatesScorecard() {
     </article>
     <article class="runtime-scorecard-card release-wrapper-boot-supervisor">
       <div class="metric-head">
-        <strong>Release wrapper boot supervisor</strong>
+        <strong>Release Harness boot supervisor</strong>
         <span class="state-pill ${escapeHtml(bootSupervisor.runtime_state || "not-run")}">${escapeHtml(pretty(bootSupervisor.latest_status || "not-run"))}</span>
       </div>
       <small>${escapeHtml(bootSupervisor.privacy_boundary || "sanitized-boot-refs-status-counts-digests-only-no-raw-prompts-outputs-session-ids")}</small>
@@ -3573,7 +3573,7 @@ function renderAutonomousUpdatesScorecard() {
     </article>
     <article class="runtime-scorecard-card release-wrapper-operation-receipts">
       <div class="metric-head">
-        <strong>Release wrapper operation receipts</strong>
+        <strong>Release Harness operation receipts</strong>
         <span class="state-pill ${operationReceiptRows.length && operationReceiptRows.length === coveredOperationReceiptRows.length ? "live-bound" : "shadow-only"}">${escapeHtml(pretty(operationReceiptRows.length ? `${coveredOperationReceiptRows.length}/${operationReceiptRows.length} covered` : "not-recorded"))}</span>
       </div>
       <small>Runtime receipts for federated import, admin approval, sandbox, safe apply, and rollback; diagnostic only and not a readiness authority.</small>
@@ -3637,7 +3637,7 @@ function renderAutonomousUpdatesScorecard() {
     </article>
     <article class="runtime-scorecard-card release-wrapper-live-telemetry">
       <div class="metric-head">
-        <strong>Release wrapper live telemetry</strong>
+        <strong>Release Harness live telemetry</strong>
         <span class="state-pill ${escapeHtml(releaseTelemetry.runtime_state || "static-canon")}">${escapeHtml(pretty(releaseTelemetry.runtime_state || "static-canon"))}</span>
       </div>
       <small>${escapeHtml(releaseTelemetry.privacy_boundary || "sanitized-digests-refs-counts-and-status-only-no-raw-prompts-outputs-session-ids")}</small>
@@ -3676,7 +3676,7 @@ function renderAutonomousUpdatesScorecard() {
     </article>
     <article class="runtime-scorecard-card release-wrapper-session-lifecycle">
       <div class="metric-head">
-        <strong>Release wrapper session lifecycle</strong>
+        <strong>Release Harness session lifecycle</strong>
         <span class="state-pill ${releaseLifecycle.readiness?.go_no_go === "go" ? "live-bound" : "shadow-only"}">${escapeHtml(pretty(releaseLifecycle.runtime_state || "static-canon"))}</span>
       </div>
       <small>${escapeHtml(releaseLifecycle.privacy_boundary || "sanitized-session-lifecycle-digests-refs-status-only-no-raw-prompts-outputs-session-ids")}</small>
@@ -3700,7 +3700,7 @@ function renderAutonomousUpdatesScorecard() {
     </article>
     <article class="runtime-scorecard-card release-wrapper-self-repair-ledger">
       <div class="metric-head">
-        <strong>Release wrapper self repair ledger</strong>
+        <strong>Release Harness self repair ledger</strong>
         <span class="state-pill ${selfRepairLedger.repair_count ? "live-bound" : "shadow-only"}">${escapeHtml(pretty(selfRepairLedger.latest_status || "not-run"))}</span>
       </div>
       <small>${escapeHtml(selfRepairLedger.privacy_boundary || "sanitized-update-session-digests-and-evidence-refs-only-no-raw-prompts-outputs-session-ids")}</small>
@@ -3750,10 +3750,10 @@ function renderAutonomousUpdatesScorecard() {
     <div class="completion-scope">${escapeHtml(latest.update_id || scorecard.self_improvement_boundary || "No autonomous update proposals recorded")}</div>
     <article class="runtime-scorecard-card release-wrapper-admin-action-lane">
       <div class="metric-head">
-        <strong>Release wrapper admin lane</strong>
+        <strong>Release Harness admin lane</strong>
         <span class="state-pill ${releaseActionStatuses.apply === "applied-shadow-safe-file" ? "live-bound" : "shadow-only"}">${escapeHtml(pretty(releaseActionStatuses.proposal || "not-generated"))}</span>
       </div>
-      <small>${escapeHtml(releaseActionLane.proposal_update_id || "No release-wrapper proposal available")}</small>
+      <small>${escapeHtml(releaseActionLane.proposal_update_id || "No release Harness proposal available")}</small>
       <div class="surface-action-row">
         ${releaseWrapperActionButton("admin_approval", "Approve", releaseActionLane.admin_approval_ref)}
         ${releaseWrapperActionButton("sandbox_tests", "Sandbox", releaseActionLane.sandbox_tests_ref)}
@@ -3859,10 +3859,10 @@ function renderReleaseWrapperStatusFallback(statusCard, sessionLifecycle) {
   fill(dom.runtimeScorecard, `
     <article class="runtime-scorecard-card release-wrapper-status-card-fallback">
       <div class="metric-head">
-        <strong>Release wrapper status-card fallback</strong>
+        <strong>Release Harness status-card fallback</strong>
         <span class="state-pill shadow-only">Loading full visualizer state</span>
       </div>
-      <small>Lightweight wrapper status rendered before the read-only visualizer overlay finishes loading.</small>
+      <small>Lightweight Harness status rendered before the read-only visualizer overlay finishes loading.</small>
       <div class="mini-metrics">
         <span><strong>${escapeHtml(matrix.coverage_status || "partial")}</strong><small>forward-pass matrix</small></span>
         <span><strong>${escapeHtml(`${coveredReceiptRows.length}/${receiptRows.length}`)}</strong><small>operation receipt refs</small></span>
@@ -3878,7 +3878,7 @@ function renderReleaseWrapperStatusFallback(statusCard, sessionLifecycle) {
     </article>
   `);
   renderAutonomousUpdatesScorecard();
-  setConnection("shadow-only", "Loading full visualizer state | wrapper status-card fallback rendered");
+  setConnection("shadow-only", "Loading full visualizer state | Harness status-card fallback rendered");
 }
 
 function renderBlackBoxRecorder() {
@@ -5536,7 +5536,7 @@ async function runReleaseWrapperAdminAction(event) {
     try {
       button.disabled = true;
       await refreshReleaseWrapperStatusCard();
-      setConnection("connected", "Release wrapper status refreshed");
+      setConnection("connected", "Release Harness status refreshed");
     } catch (error) {
       setConnection("error", error.message);
     } finally {
@@ -5560,12 +5560,12 @@ async function runReleaseWrapperAdminAction(event) {
   };
   const endpoint = lane[refByAction[action]];
   if (!endpoint) {
-    setConnection("error", `Release wrapper action is unavailable: ${action || "unknown"}`);
+    setConnection("error", `Release Harness action is unavailable: ${action || "unknown"}`);
     return;
   }
   try {
     button.disabled = true;
-    setConnection("", `Running release wrapper ${pretty(action)}`);
+    setConnection("", `Running Release Harness ${pretty(action)}`);
     const payload = await fetchJSON(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -5573,7 +5573,7 @@ async function runReleaseWrapperAdminAction(event) {
     });
     state.releaseWrapperLastAction = payload;
     await refreshReleaseWrapperStatusCard();
-    setConnection("connected", `Release wrapper ${pretty(action)} recorded`);
+    setConnection("connected", `Release Harness ${pretty(action)} recorded`);
   } catch (error) {
     setConnection("error", error.message);
   } finally {
