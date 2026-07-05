@@ -228,7 +228,7 @@ What NexusNet rejects or blocks:
 
 - Any single runtime as mandatory.
 - Ollama-only assumptions.
-- A UI wrapper becoming the brain or primary router.
+- A UI shell becoming the brain or primary router.
 - Unscreened model downloads, unverified quantizations, unknown licenses, or untracked runtime binaries.
 - Training/distillation from any model output without rights review.
 

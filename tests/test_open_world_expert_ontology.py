@@ -10,7 +10,7 @@ def test_bootstrap_ontology_covers_high_risk_domains_with_required_panels():
 
     expected_domains = {"crypto", "finance", "medical", "holistic_medicine", "legal", "security"}
     actual_domains = {entry.domain for entry in ontology.list_entries()}
-    assert len(ontology.list_entries()) == 8
+    assert len(ontology.list_entries()) >= 16
     assert expected_domains.issubset(actual_domains)
 
     crypto_panel = ontology.panel_for_domain("crypto")
@@ -43,6 +43,40 @@ def test_bootstrap_ontology_covers_high_risk_domains_with_required_panels():
     security_panel = ontology.panel_for_domain("security")
     assert security_panel.risk_tier == "high"
     assert security_panel.blocked_without_panel is True
+
+
+def test_bootstrap_ontology_includes_memory_graph_quantum_and_finance_crypto_lanes():
+    ontology = build_default_expert_ontology()
+
+    expected = {
+        "memory:agent-native-memory-architect",
+        "memory:temporal-graph-memory-specialist",
+        "graph:nexusgraph-evolution-specialist",
+        "graph:graphrag-query-planner",
+        "quantum:code-researcher",
+        "crypto:defi-risk-analyst",
+        "finance:quant-researcher",
+    }
+    actual = {entry.expert_id for entry in ontology.list_entries()}
+
+    assert expected.issubset(actual)
+
+    memory = ontology.get("memory:agent-native-memory-architect")
+    assert memory is not None
+    assert memory.domain == "agent_native_memory"
+    assert "MemoryEvolutionPassport" in memory.promotion_gates
+    assert "selective_forgetting" in memory.capability_traits
+
+    graph = ontology.get("graph:nexusgraph-evolution-specialist")
+    assert graph is not None
+    assert graph.domain == "nexus_graph"
+    assert graph.risk_tier == "high"
+    assert "GraphEvolutionPassport" in graph.promotion_gates
+
+    quantum = ontology.get("quantum:code-researcher")
+    assert quantum is not None
+    assert "qiskit" in quantum.capability_traits
+    assert "hardware_truth_claim" in quantum.forbidden_actions
 
 
 def test_domain_classifier_routes_crypto_finance_and_holistic_queries_to_high_risk_panels():

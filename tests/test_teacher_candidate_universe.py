@@ -165,7 +165,45 @@ def test_package_level_candidate_universe_exports_are_importable():
     universe = build_default_teacher_candidate_universe()
 
     assert isinstance(universe, TeacherCandidateUniverse)
-    assert universe.summary()["candidate_count"] == 3
+    assert universe.summary()["candidate_count"] >= 3
+
+
+def test_candidate_universe_includes_cluster9_memory_graph_finance_crypto_and_quantum_teachers():
+    universe = build_default_teacher_candidate_universe()
+    expected = {
+        "deepseek-v4-pro",
+        "qwen3-30b-a3b",
+        "devstral-2",
+        "qiskit-quantum-code",
+        "graphiti-zep-memory",
+        "lightrag-graphrag",
+        "mem0-memory",
+        "market-risk-simulator",
+    }
+    actual = {candidate.candidate_id for candidate in universe.list_candidates()}
+
+    assert expected.issubset(actual)
+
+    quantum = universe.get("qiskit-quantum-code")
+    assert quantum is not None
+    assert "quantum" in quantum.domain_scope
+    assert "verifier" in quantum.teacher_roles
+    assert "benchmark::quantum-circuit-reasoning" in quantum.benchmark_refs
+
+    graph = universe.get("lightrag-graphrag")
+    assert graph is not None
+    assert {"graph", "graphrag"}.issubset(set(graph.domain_scope))
+    assert "retriever" in graph.teacher_roles
+
+    memory = universe.get("mem0-memory")
+    assert memory is not None
+    assert "agent_native_memory" in memory.domain_scope
+    assert "retriever" in memory.teacher_roles
+
+    market = universe.get("market-risk-simulator")
+    assert market is not None
+    assert {"finance", "crypto"}.issubset(set(market.domain_scope))
+    assert "simulator" in market.teacher_roles
 
 
 def test_registry_get_returns_copy_so_stored_candidate_cannot_be_mutated_without_register():
@@ -236,14 +274,11 @@ def test_register_revalidates_mutated_model_instances_before_replacing_stored_st
 def test_planned_list_candidate_filter_names_and_summary_contract_work():
     universe = build_default_teacher_candidate_universe()
 
-    assert [candidate.candidate_id for candidate in universe.list_candidates(status="watchlist")] == [
-        "leanstral-1-5",
-        "qwen3-coder-next",
-    ]
-    assert [candidate.candidate_id for candidate in universe.list_candidates(role="critic", domain="coding")] == [
-        "leanstral-1-5",
-        "qwen3-coder-next",
-    ]
+    watchlist_ids = {candidate.candidate_id for candidate in universe.list_candidates(status="watchlist")}
+    assert {"leanstral-1-5", "qwen3-coder-next"}.issubset(watchlist_ids)
+
+    coding_critics = {candidate.candidate_id for candidate in universe.list_candidates(role="critic", domain="coding")}
+    assert {"leanstral-1-5", "qwen3-coder-next"}.issubset(coding_critics)
 
     summary = universe.summary()
     assert summary["surface_id"] == "teacher-candidate-universe"

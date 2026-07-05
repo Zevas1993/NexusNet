@@ -27,7 +27,7 @@ class AssistantOrchestrator:
     def plan(self, *, request: OperatorRequest, expert: str | None, wrapper_mode: str | None) -> AOPlan:
         reason = f"{self.name} selected via heuristic routing."
         if wrapper_mode and wrapper_mode != "standard-chat":
-            reason += f" Wrapper mode '{wrapper_mode}' remained inside the AO envelope."
+            reason += f" Harness mode '{wrapper_mode}' remained inside the AO envelope."
         if expert:
             reason += f" Expert hint '{expert}' informed routing."
         return AOPlan(
@@ -185,7 +185,7 @@ def build_default_ao_registry(*, artifacts_dir: Path | None = None) -> Assistant
     orchestrators = [
         AssistantOrchestrator(
             name="PlanningAO",
-            description="Default executive planner for user-serving wrapper sessions.",
+            description="Default executive planner for user-serving Harness sessions.",
             responsibilities=["classify request", "set success conditions", "coordinate the brain path"],
             keywords=["plan", "organize", "route", "help"],
         ),
@@ -210,10 +210,125 @@ def build_default_ao_registry(*, artifacts_dir: Path | None = None) -> Assistant
             keywords=["memory", "remember", "recall", "context"],
         ),
         AssistantOrchestrator(
+            name="MemoryQualityAO",
+            description="Quality owner for agent-native memory writes, retrieval quality, and contradiction handling.",
+            responsibilities=["memory quality", "retrieval eval", "contradiction review", "MemoryEvolutionPassport"],
+            keywords=["memory quality", "memory eval", "contradiction", "memory passport"],
+            risk_tier="high",
+        ),
+        AssistantOrchestrator(
+            name="MemoryExtractionAO",
+            description="Extraction owner for cited memory candidates from chats, docs, tools, and runtime traces.",
+            responsibilities=["memory extraction", "source refs", "privacy class", "candidate memory delta"],
+            keywords=["extract memory", "memory source", "memory candidate", "memory delta"],
+            risk_tier="high",
+        ),
+        AssistantOrchestrator(
+            name="MemoryRoutingAO",
+            description="Routing owner for hot, episodic, semantic, procedural, and graph memory lanes.",
+            responsibilities=["memory routing", "hot memory", "episodic memory", "semantic memory"],
+            keywords=["memory route", "episodic", "semantic memory", "procedural memory"],
+        ),
+        AssistantOrchestrator(
+            name="TemporalMemoryAO",
+            description="Temporal owner for valid-time, observed-time, stale fact, and contradiction semantics.",
+            responsibilities=["valid time", "observed time", "stale fact review", "temporal memory"],
+            keywords=["temporal memory", "stale fact", "valid time", "observed time"],
+            risk_tier="high",
+        ),
+        AssistantOrchestrator(
+            name="MemoryMaintenanceAO",
+            description="Maintenance owner for memory merge, split, retirement, compaction, and forgetting proposals.",
+            responsibilities=["memory merge", "memory split", "forgetting policy", "memory compaction"],
+            keywords=["forget memory", "merge memory", "memory maintenance", "memory cleanup"],
+            risk_tier="high",
+        ),
+        AssistantOrchestrator(
+            name="MultimodalMemoryAO",
+            description="Memory owner for visual, audio, video, code, document, and sensor memory candidates.",
+            responsibilities=["multimodal memory", "vision memory", "audio memory", "video memory"],
+            keywords=["multimodal memory", "image memory", "video memory", "audio memory"],
+        ),
+        AssistantOrchestrator(
+            name="SleepConsolidationAO",
+            description="Owner for downtime consolidation, replay, and sleep-time memory improvement candidates.",
+            responsibilities=["sleep consolidation", "replay consolidation", "memory abstraction", "downtime improvement"],
+            keywords=["sleep", "consolidate", "replay memory", "downtime"],
+        ),
+        AssistantOrchestrator(
+            name="MemoryPrivacyAO",
+            description="Privacy owner for consent, redaction, forgetting, and exposure boundaries in memory flows.",
+            responsibilities=["privacy review", "consent check", "redaction", "forgetting enforcement"],
+            keywords=["memory privacy", "privacy review", "consent", "redaction", "forgetting"],
+            risk_tier="high",
+        ),
+        AssistantOrchestrator(
+            name="MemoryEvalAO",
+            description="Evaluation owner for memory retrieval, recall, contradiction, and behavior-delta benchmarks.",
+            responsibilities=["memory benchmarks", "retrieval eval", "behavior delta", "memory regression"],
+            keywords=["memory benchmark", "memory regression", "retrieval eval", "memory score"],
+            risk_tier="high",
+        ),
+        AssistantOrchestrator(
             name="DreamAO",
             description="Executive owner for recursive neural dreaming and scenario rehearsal.",
             responsibilities=["dream seeds", "failure replay", "counterfactual rehearsal", "promotion candidates"],
             keywords=["dream", "simulate", "what if", "scenario", "counterfactual"],
+        ),
+        AssistantOrchestrator(
+            name="DreamReviewAO",
+            description="Review owner for high-temperature recursive dreams before any improvement proposal advances.",
+            responsibilities=["dream reviewer", "dream risk review", "novelty check", "eval handoff"],
+            keywords=["dream reviewer", "dream review", "high temperature", "novelty"],
+            risk_tier="high",
+        ),
+        AssistantOrchestrator(
+            name="GraphRegistryAO",
+            description="Registry owner for typed graph nodes, edges, mutability labels, and graph provenance.",
+            responsibilities=["graph registry", "graph node schema", "graph edge schema", "GraphFactPassport"],
+            keywords=["graph registry", "graph schema", "graph fact", "graph node"],
+            risk_tier="high",
+        ),
+        AssistantOrchestrator(
+            name="GraphQueryAO",
+            description="Query owner for replayable GraphRAG plans, graph query profiles, and source-grounded retrieval.",
+            responsibilities=["graph query", "GraphQueryPassport", "multi-hop retrieval", "query replay"],
+            keywords=["graph query", "graphrag", "multi-hop", "query replay"],
+            risk_tier="high",
+        ),
+        AssistantOrchestrator(
+            name="GraphEvolutionAO",
+            description="Evolution owner for shadow graph deltas, ontology changes, and rollback-ready graph promotion.",
+            responsibilities=["graph delta review", "GraphEvolutionPassport", "ontology evolution", "graph rollback"],
+            keywords=["graph delta review", "graph evolution", "ontology evolution", "graph rollback"],
+            risk_tier="high",
+        ),
+        AssistantOrchestrator(
+            name="GraphSafetyAO",
+            description="Safety owner for graph poisoning checks, permission envelopes, and risky graph mutations.",
+            responsibilities=["graph poisoning check", "permission envelope", "risk review", "unsafe edge rejection"],
+            keywords=["graph safety", "graph poison", "unsafe edge", "permission graph"],
+            risk_tier="high",
+        ),
+        AssistantOrchestrator(
+            name="GraphPrivacyAO",
+            description="Privacy owner for private subgraphs, redacted graph replay, and cross-device graph boundaries.",
+            responsibilities=["graph privacy", "private subgraph", "redacted replay", "privacy filter"],
+            keywords=["graph privacy", "private graph", "privacy filter", "redacted graph"],
+            risk_tier="high",
+        ),
+        AssistantOrchestrator(
+            name="GraphReplayAO",
+            description="Replay owner for graph query traces, graph delta history, and Control Panel graph evidence.",
+            responsibilities=["graph replay", "delta history", "query trace", "control panel evidence"],
+            keywords=["graph replay", "delta history", "query trace", "graph evidence"],
+        ),
+        AssistantOrchestrator(
+            name="GraphEvalAO",
+            description="Evaluation owner for GraphRAG, graph query, graph delta, and graph impact benchmarks.",
+            responsibilities=["graph eval", "graphrag benchmark", "impact benchmark", "graph regression"],
+            keywords=["graph eval", "graphrag benchmark", "impact eval", "graph regression"],
+            risk_tier="high",
         ),
         AssistantOrchestrator(
             name="CritiqueAO",
@@ -239,6 +354,34 @@ def build_default_ao_registry(*, artifacts_dir: Path | None = None) -> Assistant
             description="Executive owner for governed architecture evolution and candidate mutation proposals.",
             responsibilities=["evolution candidates", "mutation proposals", "architecture deltas", "rollback-aware growth"],
             keywords=["evolution", "mutate", "architecture change", "candidate mutation", "growth proposal"],
+            risk_tier="high",
+        ),
+        AssistantOrchestrator(
+            name="ExpertForgeAO",
+            description="Forge owner for shadow-first expert creation when NexusNet is stuck or a domain is uncovered.",
+            responsibilities=["expert birth", "expert candidate", "teacher pairings", "sandbox eval"],
+            keywords=["expert forge", "birth expert", "new expert", "stuck problem"],
+            risk_tier="high",
+        ),
+        AssistantOrchestrator(
+            name="ExpertMergeAO",
+            description="Merge owner for overlapping experts, duplicate capability lanes, and parent-child consolidation.",
+            responsibilities=["expert merge", "overlap detection", "parent child review", "merge rollback"],
+            keywords=["merge expert", "expert overlap", "combine experts", "parent child"],
+            risk_tier="high",
+        ),
+        AssistantOrchestrator(
+            name="ExpertSplitAO",
+            description="Split owner for overloaded experts that need safer subdomain separation.",
+            responsibilities=["expert split", "subdomain separation", "risk partition", "split eval"],
+            keywords=["split expert", "subdomain", "expert overload", "separate expert"],
+            risk_tier="high",
+        ),
+        AssistantOrchestrator(
+            name="ExpertRetirementAO",
+            description="Retirement owner for stale, failed, superseded, or unsafe experts.",
+            responsibilities=["expert retirement", "archive", "fallback review", "retirement rollback"],
+            keywords=["retire expert", "archive expert", "stale expert", "unsafe expert"],
             risk_tier="high",
         ),
         AssistantOrchestrator(
@@ -373,7 +516,7 @@ def build_default_ao_registry(*, artifacts_dir: Path | None = None) -> Assistant
         ),
         AssistantOrchestrator(
             name="PackagingAO",
-            description="Executive owner for wrapper packaging, installer evidence, and buyer-facing release bundles.",
+            description="Executive owner for Harness packaging, installer evidence, and buyer-facing release bundles.",
             responsibilities=["packaging", "installer readiness", "buyer release evidence", "distribution manifest"],
             status_label="STRONG ACCEPTED DIRECTION",
             keywords=["packaging", "package", "bundle", "installer", "buyer"],

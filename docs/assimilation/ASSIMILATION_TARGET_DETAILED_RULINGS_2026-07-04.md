@@ -92,7 +92,7 @@ Native output: `NexusNet Runtime Ladder And Model Passport Registry`
 | TensorRT-LLM | NVIDIA acceleration path where hardware and license fit. | Making NVIDIA stack mandatory. | `adapter_candidate` |
 | MLC-LLM | Cross-device packaging, WebGPU/mobile/native deployment lessons. | Untested mobile runtime promotion. | `adapter_candidate` |
 | mistral.rs | Rust inference runtime pattern, local serving and quant support lessons. | Runtime import without maintenance/security review. | `adapter_candidate` |
-| LocalAI | OpenAI-compatible local endpoint and admin UX patterns. | UI/server wrapper as brain. | `adapter_candidate` |
+| LocalAI | OpenAI-compatible local endpoint and admin UX patterns. | UI/server shell as brain. | `adapter_candidate` |
 | Open WebUI | Local model catalog and admin interaction UX. | Product shell hiding readiness gaps. | `native_pattern` |
 | LM Studio | Local model browsing/loading UX and OpenAI-compatible endpoint lessons. | Desktop app as internal engine. | `native_pattern` |
 | PocketPal | Mobile local-model loading, quant choice, offline UX, device constraints. | Companion app as independent brain owner. | `native_pattern` |
@@ -217,7 +217,7 @@ Native output: `NexusNet Control Panel And Companion`
 | Interactive Three.js/control-panel visualizer | Live hive graph, replay, runtime state, expert/teacher/skill controls. | Visual-only proof of implementation. | `native_pattern` |
 | PocketPal | Mobile local-model loading, offline UX, companion constraints. | Companion as independent brain. | `native_pattern` |
 | Open WebUI | Model catalog, local admin, conversation UX references. | WebUI as brain or route authority. | `native_pattern` |
-| LocalAI WebUI | Local endpoint/admin ergonomics. | Runtime wrapper hiding model/passport truth. | `native_pattern` |
+| LocalAI WebUI | Local endpoint/admin ergonomics. | Runtime Harness hiding model/passport truth. | `native_pattern` |
 | Dify/Langflow/Flowise UX | Workflow/app graph ergonomics and packaging ideas. | External product shell as final UI. | `native_pattern` |
 | OpenJarvis productization | First-run init, doctor, preset bundles, local-first recommendations. | Product shell that masks readiness gaps. | `native_pattern` |
 | Workflow Graph Studio surface | Native NexusNet-owned node UX linked to workflow, skill, teacher, expert, runtime, and evidence surfaces. | External builder owning workflow state or authority. | `native_pattern` |
@@ -229,7 +229,7 @@ Native output: `NexusNet Operational Spine`
 
 | Target | Assimilate | Reject or block | Status |
 | --- | --- | --- | --- |
-| OpenJarvis ops patterns | First-run diagnostics, doctor reports, presets, scheduled monitors. | Wrapper product as system owner. | `native_pattern` |
+| OpenJarvis ops patterns | First-run diagnostics, doctor reports, presets, scheduled monitors. | Harness product as system owner. | `native_pattern` |
 | Goose operator/runtime patterns | Recipes, local automation, bounded subagents, operator workflows. | Goose as permanent control plane. | `native_pattern` |
 | Sandcastle/worktree-per-agent | Isolated workspaces, AFK sandbox agent factories, reproducible receipts. | Dirty work becoming baseline or hidden side effects. | `native_pattern` |
 | GitNexus codegraph gate | Code navigation, impact analysis, stale-index checks, detect-changes. | GitNexus as final mother brain. | `locked_clarification` |

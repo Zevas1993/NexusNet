@@ -57,7 +57,7 @@ The Orchestrator layer should include at least these logical orchestrators:
 
 - **CoreMissionOrchestrator**: owns top-level goal decomposition and mission policy.
 - **HiveMindOrchestrator**: routes across brain, AO, and expert layers.
-- **WrapperOrchestrator**: handles operator-facing release-wrapper and runtime governance.
+- **HarnessOrchestrator**: handles operator-facing release harness and runtime governance.
 - **TeacherLifecycleOrchestrator**: scouts, evaluates, promotes, demotes, retires, and replaces teacher models.
 - **ResearchAssimilationOrchestrator**: discovers papers, models, tools, datasets, benchmarks, and source-health changes.
 - **ExpertEvolutionOrchestrator**: creates, merges, splits, retires, and promotes experts.

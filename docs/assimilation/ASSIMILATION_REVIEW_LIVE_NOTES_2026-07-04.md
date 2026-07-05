@@ -210,7 +210,7 @@ This section backfills the first eight cluster notes so future continuation does
   - device-fit metadata;
   - KV-cache, speculative decoding, structured decoding, kernel, and quantization scorecards.
 - Still open: the complete runtime adapter universe needs more review and current research before final agreement. DeepSeek-specific items are accepted, but the whole inference fabric is not yet finalized.
-- Reject or block: single-runtime lock-in, Ollama-only assumptions, UI wrapper as brain, unscreened downloads, unknown licenses, untracked binaries, and benchmark-free promotion.
+- Reject or block: single-runtime lock-in, Ollama-only assumptions, UI shell as brain, unscreened downloads, unknown licenses, untracked binaries, and benchmark-free promotion.
 - Required gates: model card review, license review, hardware benchmarks, thermal and memory thresholds, tool-call tests, privacy classification, rollback to known-good runtime, and NexusNet runtime passports.
 
 ### Cluster 5: Knowledge, Retrieval, And Memory
