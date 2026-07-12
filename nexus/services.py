@@ -148,6 +148,29 @@ from research.red_team.refusal_circuit_review import RefusalCircuitReviewService
 from research.attention_providers import AttentionBenchmarkSuite, AttentionProviderRegistry
 
 
+def _universal_evolution_prerequisite_evidence(
+    hive_substrate: Any,
+) -> dict[str, str]:
+    evidence = {
+        "canon": "service:NexusNetCanonRegistry",
+        "mother_brain_authority": "brain:NexusBrain",
+        "isolation": "service:SandboxPolicyService",
+        "evidence": "service:EvidenceStore",
+        "governance": "service:GovernanceService",
+    }
+    optional_interfaces = {
+        "checkpoint": "rewind_checkpoint",
+        "replay": "replay",
+        "rollback": "rollback_governed_route_candidate",
+    }
+    for prerequisite, interface_name in optional_interfaces.items():
+        if callable(getattr(hive_substrate, interface_name, None)):
+            evidence[prerequisite] = (
+                f"service:HiveNeuralSubstrate:{interface_name}"
+            )
+    return evidence
+
+
 @dataclass
 class NexusServices:
     version: str
@@ -752,18 +775,9 @@ def build_services(project_root: str | None = None) -> NexusServices:
     brain_evolution = UniversalEvolutionService(
         artifacts_dir=paths.artifacts_dir,
         owner_brain_ref="brain:NexusBrain",
-        prerequisite_evidence={
-            "canon": "service:NexusNetCanonRegistry",
-            "mother_brain_authority": "brain:NexusBrain",
-            "isolation": "service:SandboxPolicyService",
-            "evidence": "service:EvidenceStore",
-            "checkpoint": "service:HiveNeuralSubstrate:rewind_checkpoint",
-            "replay": "service:HiveNeuralSubstrate:replay",
-            "governance": "service:GovernanceService",
-            "rollback": (
-                "service:HiveNeuralSubstrate:rollback_governed_route_candidate"
-            ),
-        },
+        prerequisite_evidence=_universal_evolution_prerequisite_evidence(
+            brain_hive_substrate
+        ),
         legacy_engine=default_engine(),
     )
     brain_eval_federation = EvalFederationRegistry(artifacts_dir=paths.artifacts_dir)

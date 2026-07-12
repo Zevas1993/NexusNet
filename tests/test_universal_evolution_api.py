@@ -2,7 +2,9 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from nexus import services as services_module
 from nexus.api.app import create_app
+from nexusnet.evolution import FoundationVerifier
 from tests.test_nexus_phase1_foundation import make_project
 
 
@@ -66,3 +68,22 @@ def test_wrapper_status_projects_sanitized_evolution_without_session_identifier(
     assert card["evolution"]["authority"] == "NexusBrain"
     assert card["evolution"]["coverage"]["universal_coverage_complete"] is False
     assert "private-user-123" not in str(card["evolution"])
+
+
+def test_optional_hive_prerequisites_remain_unverified_without_callable_interfaces():
+    class IncompleteHiveSubstrate:
+        rewind_checkpoint = None
+        replay = "not-callable"
+
+    evidence = services_module._universal_evolution_prerequisite_evidence(
+        IncompleteHiveSubstrate()
+    )
+    checks = {
+        check.prerequisite: check
+        for check in FoundationVerifier(evidence).verify()
+    }
+
+    for prerequisite in ("checkpoint", "replay", "rollback"):
+        assert prerequisite not in evidence
+        assert checks[prerequisite].status == "unverified"
+        assert checks[prerequisite].evidence_ref is None
