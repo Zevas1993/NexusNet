@@ -8,6 +8,7 @@ from nexusnet.evolution.contracts import (
     GrowthPressure,
     sanitize_reference,
 )
+from nexusnet.evolution.registry import EvolvableUnitRegistry
 from nexusnet.evolution.store import EvolutionEventStore, EvolutionIntegrityError
 
 __all__ = [
@@ -20,5 +21,6 @@ __all__ = [
     "GrowthPressure",
     "EvolutionEventStore",
     "EvolutionIntegrityError",
+    "EvolvableUnitRegistry",
     "sanitize_reference",
 ]
