@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from nexusnet.evolution.contracts import (
     EVOLUTION_SCHEMA_VERSION,
     EvolvableUnit,
+    FoundationCheck,
     GenomeRef,
     GrowthPressure,
     sanitize_reference,
@@ -59,6 +60,12 @@ def test_unknown_kind_requires_schema_eval_privacy_authority_and_rollback():
         "Bearer abcdef",
         "-----BEGIN PRIVATE KEY-----",
         "evidence:line-one\nline-two",
+        "\\\\server\\share\\private.txt",
+        "/home/chris/private.txt",
+        "ChrisBoyd",
+        "user:ChrisBoyd",
+        "raw private prompt output",
+        "evidence:sk-secret-token",
     ],
 )
 def test_reference_sanitizer_rejects_private_or_secret_material(unsafe: str):
@@ -89,3 +96,45 @@ def test_genome_and_pressure_use_refs_not_raw_content():
     )
     assert genome.family == "runtime"
     assert pressure.recurrence == 3
+
+
+def test_owner_brain_is_always_nexus_brain():
+    with pytest.raises(ValidationError, match="brain:NexusBrain"):
+        _unit(owner_brain_ref="brain:OtherBrain")
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "parent_unit_refs",
+        "child_unit_refs",
+        "capability_refs",
+        "genome_refs",
+        "implementation_refs",
+        "dependency_refs",
+        "pathway_refs",
+        "checkpoint_refs",
+        "health_refs",
+        "workload_refs",
+        "eval_suite_refs",
+        "invariant_refs",
+        "growth_pressure_refs",
+        "candidate_refs",
+        "rollback_refs",
+        "improvement_strategy_refs",
+    ],
+)
+def test_evolvable_unit_reference_collections_reject_raw_content(field_name: str):
+    with pytest.raises(ValidationError, match="unsafe reference"):
+        _unit(**{field_name: ["raw private prompt output"]})
+
+
+def test_narrative_fields_are_not_normalized_as_references():
+    claim_boundary = "  reference presence is not semantic proof  "
+    check = FoundationCheck(
+        foundation_id="foundation:canon",
+        status="verified",
+        evidence_ref="evidence:canon:book-v1",
+        claim_boundary=claim_boundary,
+    )
+    assert check.claim_boundary == claim_boundary
