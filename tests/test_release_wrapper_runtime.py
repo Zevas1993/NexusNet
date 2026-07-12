@@ -4704,15 +4704,19 @@ def test_release_readiness_runner_drives_governed_evidence_path(tmp_path: Path):
 
     control_panel_js = (project_root / "ui" / "control-panel" / "app.js").read_text(encoding="utf-8")
     visualizer_js = (project_root / "ui" / "visualizer" / "app.js").read_text(encoding="utf-8")
-    assert "Release wrapper operation receipts" in control_panel_js
+    assert "Release Harness operation receipts" in control_panel_js
     assert "operation receipt refs" in control_panel_js
     assert "federated import receipt" in control_panel_js
     assert "self-repair operation receipt" in control_panel_js
     assert "renderReleaseWrapperStatusFallback" in control_panel_js
     assert "release-wrapper-status-card-fallback" in control_panel_js
     assert "Loading full visualizer state" in control_panel_js
-    assert "Wrapper operation receipts" in visualizer_js
-    assert "Wrapper import receipt" in visualizer_js
+    assert "Universal Evolution" in control_panel_js
+    assert "legacy-lane-coverage-is-not-universal-organism-coverage" in control_panel_js
+    assert "universal_coverage_complete" in control_panel_js
+    assert "evolution-prerequisite-gaps" in control_panel_js
+    assert "Harness operation receipts" in visualizer_js
+    assert "Harness import receipt" in visualizer_js
 
 
 def test_release_readiness_blocks_go_without_accepted_peer_federation_import(tmp_path: Path):
