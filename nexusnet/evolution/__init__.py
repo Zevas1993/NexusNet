@@ -12,6 +12,7 @@ from nexusnet.evolution.registry import EvolvableUnitRegistry
 from nexusnet.evolution.foundation import FoundationVerifier
 from nexusnet.evolution.pressure import GrowthPressureMap
 from nexusnet.evolution.store import EvolutionEventStore, EvolutionIntegrityError
+from nexusnet.evolution.service import UniversalEvolutionService
 
 __all__ = [
     "EVOLUTION_SCHEMA_VERSION",
@@ -26,5 +27,6 @@ __all__ = [
     "EvolutionEventStore",
     "EvolutionIntegrityError",
     "EvolvableUnitRegistry",
+    "UniversalEvolutionService",
     "sanitize_reference",
 ]

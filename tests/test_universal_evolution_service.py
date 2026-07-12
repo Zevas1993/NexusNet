@@ -11,6 +11,7 @@ from nexusnet.evolution.contracts import (
 from nexusnet.evolution.foundation import FoundationVerifier
 from nexusnet.evolution.pressure import GrowthPressureMap
 from nexusnet.evolution.registry import EvolvableUnitRegistry
+from nexusnet.evolution.service import UniversalEvolutionService
 from nexusnet.evolution.store import EvolutionEventStore
 from nexusnet.hive.self_improvement_engine import IMPROVABLE_ASPECTS, default_engine
 
@@ -82,6 +83,113 @@ def _organism_unit() -> EvolvableUnit:
         rollback_refs=["checkpoint:organism-baseline-v1"],
         improvement_strategy_refs=["strategy:organism-evolution-v1"],
     )
+
+
+def test_service_projects_sanitized_restart_replayable_everything_state(
+    tmp_path: Path,
+):
+    service = UniversalEvolutionService(
+        artifacts_dir=tmp_path,
+        owner_brain_ref="brain:NexusBrain",
+        prerequisite_evidence={
+            "mother_brain_authority": "evidence:brain:identity"
+        },
+        legacy_engine=default_engine(),
+    )
+    first = service.everything_state()
+
+    restarted = UniversalEvolutionService(
+        artifacts_dir=tmp_path,
+        owner_brain_ref="brain:NexusBrain",
+        prerequisite_evidence={
+            "mother_brain_authority": "evidence:brain:identity"
+        },
+        legacy_engine=default_engine(),
+    )
+    second = restarted.everything_state()
+
+    assert first["content_sha256"] == second["content_sha256"]
+    assert second["authority"] == "NexusBrain"
+    assert second["coverage"]["universal_coverage_complete"] is False
+    assert "ChrisBoyd" not in str(second)
+
+
+def test_service_exposes_compact_claim_bounded_projections(tmp_path: Path):
+    service = UniversalEvolutionService(
+        artifacts_dir=tmp_path,
+        owner_brain_ref="brain:NexusBrain",
+        prerequisite_evidence={"canon": None},
+        legacy_engine=default_engine(),
+    )
+    unit = _runtime_unit(improvement_strategy_refs=["strategy:runtime-v1"])
+    pressure = GrowthPressure(
+        pressure_id="pressure:service:latency",
+        target_unit_refs=[unit.unit_id],
+        source_evidence_refs=["evidence:bench:service-latency"],
+        problem_class="latency",
+        severity=0.8,
+        recurrence=4,
+        quality_risk=0.1,
+        safety_risk=0.0,
+        opportunity_score=0.9,
+        expected_value=0.9,
+        research_budget_request=0.3,
+        affected_workloads=["workload:interactive"],
+        status="open",
+    )
+
+    assert service.register_unit(unit) == unit
+    assert service.record_pressure(pressure) == pressure
+
+    state = service.everything_state()
+    units = service.evolvable_units()
+    pressures = service.growth_pressure()
+    status = service.status()
+
+    assert state["claim_boundary"] == (
+        "registry-and-evidence-state-only; no candidate, experiment, promotion, "
+        "native-model-birth, or frontier-superiority claim"
+    )
+    assert next(
+        item for item in state["units"] if item["unit_id"] == unit.unit_id
+    ) == unit.model_dump(mode="json")
+    assert state["open_pressures"][0]["pressure_id"] == pressure.pressure_id
+    assert next(
+        item for item in units["items"] if item["unit_id"] == unit.unit_id
+    ) == unit.model_dump(mode="json")
+    assert pressures["items"][0]["pressure_id"] == pressure.pressure_id
+    assert status["unit_count"] == len(units["items"])
+    assert status["open_pressure_count"] == 1
+    assert status["missing_or_unverified_prerequisites"] == [
+        "canon",
+        "checkpoint",
+        "evidence",
+        "governance",
+        "hive_blackboard",
+        "isolation",
+        "mother_brain_authority",
+        "neural_bus",
+        "replay",
+        "rollback",
+    ]
+    assert status["mutation_boundary"] == "read-only-no-protected-state-mutation"
+    assert set(status["endpoint_refs"]) == {
+        "everything_state",
+        "evolvable_units",
+        "growth_pressure",
+        "status",
+    }
+    assert "payload" not in status
+
+
+def test_service_rejects_non_nexusbrain_ownership(tmp_path: Path):
+    with pytest.raises(ValueError, match="owner_brain_ref must be brain:NexusBrain"):
+        UniversalEvolutionService(
+            artifacts_dir=tmp_path,
+            owner_brain_ref="brain:OtherBrain",
+            prerequisite_evidence={},
+            legacy_engine=default_engine(),
+        )
 
 
 def test_legacy_lanes_become_registry_units_without_claiming_universal_completion(
