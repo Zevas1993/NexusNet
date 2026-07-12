@@ -315,10 +315,17 @@ class FoundationCheck(_FrozenSanitizedModel):
     evidence_ref: str | None = None
     claim_boundary: Literal["reference-presence-is-not-semantic-proof"]
 
+    @property
+    def prerequisite(self) -> str:
+        return self.foundation_id.removeprefix("foundation:")
+
     @field_validator("foundation_id")
     @classmethod
     def validate_foundation_id(cls, value: str) -> str:
-        return sanitize_reference(value)
+        sanitized = sanitize_reference(value)
+        if not sanitized.startswith("foundation:"):
+            raise ValueError("foundation_id must use foundation scheme")
+        return sanitized
 
     @field_validator("evidence_ref")
     @classmethod

@@ -9,6 +9,8 @@ from nexusnet.evolution.contracts import (
     sanitize_reference,
 )
 from nexusnet.evolution.registry import EvolvableUnitRegistry
+from nexusnet.evolution.foundation import FoundationVerifier
+from nexusnet.evolution.pressure import GrowthPressureMap
 from nexusnet.evolution.store import EvolutionEventStore, EvolutionIntegrityError
 
 __all__ = [
@@ -17,8 +19,10 @@ __all__ = [
     "EverythingStateSnapshot",
     "EvolvableUnit",
     "FoundationCheck",
+    "FoundationVerifier",
     "GenomeRef",
     "GrowthPressure",
+    "GrowthPressureMap",
     "EvolutionEventStore",
     "EvolutionIntegrityError",
     "EvolvableUnitRegistry",

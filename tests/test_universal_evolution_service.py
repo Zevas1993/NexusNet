@@ -2,7 +2,14 @@ from pathlib import Path
 
 import pytest
 
-from nexusnet.evolution.contracts import EvolvableUnit, GenomeRef
+from nexusnet.evolution.contracts import (
+    EvolvableUnit,
+    FoundationCheck,
+    GenomeRef,
+    GrowthPressure,
+)
+from nexusnet.evolution.foundation import FoundationVerifier
+from nexusnet.evolution.pressure import GrowthPressureMap
 from nexusnet.evolution.registry import EvolvableUnitRegistry
 from nexusnet.evolution.store import EvolutionEventStore
 from nexusnet.hive.self_improvement_engine import IMPROVABLE_ASPECTS, default_engine
@@ -241,3 +248,148 @@ def test_failed_genome_append_does_not_mutate_registry_and_retry_persists(
     assert EvolvableUnitRegistry(EvolutionEventStore(tmp_path)).list_genomes() == [
         genome
     ]
+
+
+def test_pressure_ranking_respects_value_priority_and_health_limits(tmp_path: Path):
+    pressure_map = GrowthPressureMap(EvolutionEventStore(tmp_path))
+    pressure_map.record(
+        GrowthPressure(
+            pressure_id="pressure:latency:1",
+            target_unit_refs=["unit:runtime:a"],
+            source_evidence_refs=["evidence:bench:1"],
+            problem_class="latency",
+            severity=0.8,
+            recurrence=4,
+            quality_risk=0.1,
+            safety_risk=0.0,
+            opportunity_score=0.9,
+            expected_value=0.9,
+            research_budget_request=0.3,
+            affected_workloads=["workload:interactive"],
+            status="open",
+        )
+    )
+    pressure_map.record(
+        GrowthPressure(
+            pressure_id="pressure:safety:1",
+            target_unit_refs=["unit:model:a"],
+            source_evidence_refs=["evidence:eval:2"],
+            problem_class="safety",
+            severity=1.0,
+            recurrence=1,
+            quality_risk=0.8,
+            safety_risk=1.0,
+            opportunity_score=1.0,
+            expected_value=1.0,
+            research_budget_request=1.0,
+            affected_workloads=["workload:protected"],
+            status="open",
+        )
+    )
+
+    ranked = pressure_map.ranked(
+        workload_priority={
+            "workload:interactive": 1.0,
+            "workload:protected": 1.0,
+        },
+        system_health_limit=0.5,
+    )
+
+    assert ranked[0]["pressure_id"] == "pressure:latency:1"
+    assert ranked[0]["priority_score"] == 0.82
+    assert ranked[0]["executable_research_budget"] == 0.3
+    assert ranked[1]["blocked_reason"] == (
+        "safety-or-quality-risk-exceeds-system-health-limit"
+    )
+    assert ranked[1]["executable_research_budget"] == 0.0
+
+
+def test_pressure_map_replays_open_pressure_and_summarizes_budget(tmp_path: Path):
+    pressure = GrowthPressure(
+        pressure_id="pressure:memory:1",
+        target_unit_refs=["unit:runtime:a"],
+        source_evidence_refs=["evidence:bench:memory-1"],
+        problem_class="memory",
+        severity=0.7,
+        recurrence=2,
+        quality_risk=0.1,
+        safety_risk=0.0,
+        opportunity_score=0.8,
+        expected_value=0.7,
+        research_budget_request=0.25,
+        affected_workloads=["workload:interactive"],
+        status="open",
+    )
+    GrowthPressureMap(EvolutionEventStore(tmp_path)).record(pressure)
+
+    restarted = GrowthPressureMap(EvolutionEventStore(tmp_path))
+    summary = restarted.summary(
+        workload_priority={"workload:interactive": 1.0},
+        system_health_limit=0.5,
+    )
+
+    assert summary["open_pressure_count"] == 1
+    assert summary["blocked_pressure_count"] == 0
+    assert summary["executable_research_budget_total"] == 0.25
+    assert summary["pressures"][0]["pressure_id"] == pressure.pressure_id
+
+
+def test_foundation_verifier_labels_unknowns_instead_of_inventing_proof():
+    checks = FoundationVerifier(
+        {
+            "mother_brain_authority": "evidence:brain:identity",
+            "governance": "evidence:governance:service",
+        }
+    ).verify()
+    by_name = {check.prerequisite: check for check in checks}
+
+    assert len(checks) == 10
+    assert by_name["mother_brain_authority"].status == "verified"
+    assert by_name["neural_bus"].status == "unverified"
+    assert by_name["hive_blackboard"].status == "unverified"
+    assert all(
+        check.claim_boundary == "reference-presence-is-not-semantic-proof"
+        for check in checks
+    )
+
+
+def test_foundation_verifier_distinguishes_explicit_missing_from_absent():
+    checks = FoundationVerifier(
+        {
+            "canon": None,
+            "mother_brain_authority": "  evidence:brain:identity  ",
+        }
+    ).verify()
+    by_name = {check.prerequisite: check for check in checks}
+
+    assert by_name["canon"].status == "missing"
+    assert by_name["canon"].evidence_ref is None
+    assert by_name["mother_brain_authority"].status == "verified"
+    assert by_name["mother_brain_authority"].evidence_ref == (
+        "evidence:brain:identity"
+    )
+    assert by_name["isolation"].status == "unverified"
+
+
+def test_foundation_check_preserves_durable_id_serialization_contract():
+    check = FoundationCheck(
+        foundation_id="foundation:canon",
+        status="verified",
+        evidence_ref="evidence:canon:1",
+        claim_boundary="reference-presence-is-not-semantic-proof",
+    )
+
+    assert check.prerequisite == "canon"
+    assert check.model_dump() == {
+        "schema_version": "nexusnet-evolution-v1",
+        "foundation_id": "foundation:canon",
+        "status": "verified",
+        "evidence_ref": "evidence:canon:1",
+        "claim_boundary": "reference-presence-is-not-semantic-proof",
+    }
+    with pytest.raises(ValueError, match="foundation_id must use foundation scheme"):
+        FoundationCheck(
+            foundation_id="evidence:not-foundation",
+            status="unverified",
+            claim_boundary="reference-presence-is-not-semantic-proof",
+        )
