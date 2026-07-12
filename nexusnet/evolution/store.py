@@ -37,13 +37,18 @@ METADATA_STRING_KEYS = frozenset(
         "family",
         "problem_class",
         "status",
-        "claim_boundary",
     }
 )
+CONTROLLED_NARRATIVE_KEYS = frozenset({"claim_boundary"})
 REFERENCE_LIST_KEYS = frozenset({"affected_workloads"})
 IDENTIFIER_OR_REFERENCE_LIST_KEYS = frozenset({"affected_hardware_classes"})
 SAFE_TOKEN_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9._-]{0,127}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+ABSOLUTE_PATH_PATTERN = re.compile(r"^(?:[A-Za-z]:[\\/]|[/\\]{2}|/)")
+CONTROL_CHARACTER_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
+SECRET_PATTERN = re.compile(
+    r"(?i)\b(?:sk-[A-Za-z0-9_-]+|bearer\s+\S+|begin private key)\b"
+)
 
 
 class EvolutionIntegrityError(RuntimeError):
@@ -62,6 +67,23 @@ def _sanitize_metadata_token(value: str, *, field_name: str) -> str:
     if not SAFE_TOKEN_PATTERN.fullmatch(value) or value.lower().startswith("sk-"):
         raise ValueError(
             f"unsafe payload metadata: {field_name} must be a bounded safe token"
+        )
+    return value
+
+
+def _sanitize_controlled_narrative(value: Any, *, field_name: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(
+            f"unsafe payload metadata: {field_name} must be controlled narrative"
+        )
+    if (
+        len(value) > 512
+        or ABSOLUTE_PATH_PATTERN.match(value.strip())
+        or CONTROL_CHARACTER_PATTERN.search(value)
+        or SECRET_PATTERN.search(value)
+    ):
+        raise ValueError(
+            f"unsafe payload metadata: {field_name} contains forbidden material"
         )
     return value
 
@@ -98,6 +120,8 @@ def _sanitize_field(field_name: str, value: Any) -> Any:
             else _sanitize_metadata_token(item, field_name=field_name)
             for item in value
         ]
+    if field_name in CONTROLLED_NARRATIVE_KEYS:
+        return _sanitize_controlled_narrative(value, field_name=field_name)
     if field_name in METADATA_STRING_KEYS:
         if not isinstance(value, str):
             raise ValueError(
@@ -139,8 +163,14 @@ def _validate_event_record(record: dict[str, Any], event_number: int) -> None:
     if isinstance(sequence, bool) or not isinstance(sequence, int) or sequence <= 0:
         raise EvolutionIntegrityError(f"event {event_number} has invalid sequence")
     event_type = record["event_type"]
-    if not isinstance(event_type, str) or not SAFE_TOKEN_PATTERN.fullmatch(event_type):
+    if not isinstance(event_type, str):
         raise EvolutionIntegrityError(f"event {event_number} has invalid event_type")
+    try:
+        _sanitize_metadata_token(event_type, field_name="event_type")
+    except ValueError as exc:
+        raise EvolutionIntegrityError(
+            f"event {event_number} has invalid event_type"
+        ) from exc
     recorded_at = record["recorded_at"]
     if not isinstance(recorded_at, str):
         raise EvolutionIntegrityError(f"event {event_number} has invalid recorded_at")
