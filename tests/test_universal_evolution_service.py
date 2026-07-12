@@ -393,3 +393,133 @@ def test_foundation_check_preserves_durable_id_serialization_contract():
             status="unverified",
             claim_boundary="reference-presence-is-not-semantic-proof",
         )
+
+
+def test_identical_pressure_retry_preserves_event_count_and_last_hash(tmp_path: Path):
+    store = EvolutionEventStore(tmp_path)
+    pressure_map = GrowthPressureMap(store)
+    pressure = GrowthPressure(
+        pressure_id="pressure:retry:1",
+        target_unit_refs=["unit:runtime:a"],
+        source_evidence_refs=["evidence:bench:retry-1"],
+        problem_class="latency",
+        severity=0.6,
+        recurrence=2,
+        quality_risk=0.1,
+        safety_risk=0.0,
+        opportunity_score=0.7,
+        expected_value=0.8,
+        research_budget_request=0.2,
+        affected_workloads=["workload:interactive"],
+        status="open",
+    )
+    pressure_map.record(pressure)
+    events_before_retry = store.replay()
+
+    returned = pressure_map.record(pressure)
+    events_after_retry = store.replay()
+
+    assert returned == pressure
+    assert len(events_before_retry) == len(events_after_retry) == 1
+    assert events_after_retry[-1]["event_sha256"] == events_before_retry[-1][
+        "event_sha256"
+    ]
+
+
+def test_changed_pressure_appends_once_and_replay_uses_latest_state(tmp_path: Path):
+    store = EvolutionEventStore(tmp_path)
+    pressure_map = GrowthPressureMap(store)
+    pressure = GrowthPressure(
+        pressure_id="pressure:lifecycle:1",
+        target_unit_refs=["unit:runtime:a"],
+        source_evidence_refs=["evidence:bench:lifecycle-1"],
+        problem_class="latency",
+        severity=0.4,
+        recurrence=1,
+        quality_risk=0.1,
+        safety_risk=0.0,
+        opportunity_score=0.6,
+        expected_value=0.6,
+        research_budget_request=0.2,
+        affected_workloads=["workload:interactive"],
+        status="open",
+    )
+    changed = pressure.model_copy(update={"severity": 0.9, "recurrence": 5})
+
+    pressure_map.record(pressure)
+    pressure_map.record(changed)
+
+    assert len(store.replay()) == 2
+    replayed = GrowthPressureMap(EvolutionEventStore(tmp_path)).ranked(
+        workload_priority={"workload:interactive": 1.0},
+        system_health_limit=0.5,
+    )
+    assert len(replayed) == 1
+    assert replayed[0]["pressure_id"] == pressure.pressure_id
+    assert replayed[0]["severity"] == 0.9
+    assert replayed[0]["recurrence"] == 5
+
+
+def test_pressure_ranking_uses_pressure_id_as_final_tie_break(tmp_path: Path):
+    pressure_map = GrowthPressureMap(EvolutionEventStore(tmp_path))
+    pressure = GrowthPressure(
+        pressure_id="pressure:tie:b",
+        target_unit_refs=["unit:runtime:a"],
+        source_evidence_refs=["evidence:bench:tie"],
+        problem_class="latency",
+        severity=0.5,
+        recurrence=2,
+        quality_risk=0.1,
+        safety_risk=0.0,
+        opportunity_score=0.5,
+        expected_value=0.5,
+        research_budget_request=0.2,
+        affected_workloads=["workload:interactive"],
+        status="open",
+    )
+    pressure_map.record(pressure)
+    pressure_map.record(
+        pressure.model_copy(update={"pressure_id": "pressure:tie:a"})
+    )
+
+    ranked = pressure_map.ranked(
+        workload_priority={"workload:interactive": 1.0},
+        system_health_limit=0.5,
+    )
+
+    assert [item["pressure_id"] for item in ranked] == [
+        "pressure:tie:a",
+        "pressure:tie:b",
+    ]
+
+
+def test_pressure_ranking_excludes_non_open_pressures(tmp_path: Path):
+    pressure_map = GrowthPressureMap(EvolutionEventStore(tmp_path))
+    open_pressure = GrowthPressure(
+        pressure_id="pressure:status:open",
+        target_unit_refs=["unit:runtime:a"],
+        source_evidence_refs=["evidence:bench:status"],
+        problem_class="latency",
+        severity=0.5,
+        recurrence=2,
+        quality_risk=0.1,
+        safety_risk=0.0,
+        opportunity_score=0.5,
+        expected_value=0.5,
+        research_budget_request=0.2,
+        affected_workloads=["workload:interactive"],
+        status="open",
+    )
+    pressure_map.record(open_pressure)
+    pressure_map.record(
+        open_pressure.model_copy(
+            update={"pressure_id": "pressure:status:closed", "status": "closed"}
+        )
+    )
+
+    ranked = pressure_map.ranked(
+        workload_priority={"workload:interactive": 1.0},
+        system_health_limit=0.5,
+    )
+
+    assert [item["pressure_id"] for item in ranked] == ["pressure:status:open"]

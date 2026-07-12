@@ -20,7 +20,11 @@ class GrowthPressureMap:
                 self._pressures[pressure.pressure_id] = pressure
 
     def record(self, pressure: GrowthPressure) -> GrowthPressure:
-        self._store.append("pressure.recorded", pressure.model_dump(mode="json"))
+        payload = pressure.model_dump(mode="json")
+        current = self._pressures.get(pressure.pressure_id)
+        if current is not None and current.model_dump(mode="json") == payload:
+            return current
+        self._store.append("pressure.recorded", payload)
         self._pressures[pressure.pressure_id] = pressure
         return pressure
 
