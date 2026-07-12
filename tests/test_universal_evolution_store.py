@@ -25,14 +25,16 @@ def _mutate_first_record(tmp_path: Path, mutation) -> EvolutionEventStore:
     return store
 
 
+def _canonical_hash(value) -> str:
+    canonical = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    return sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def _event_hash(record: dict) -> str:
     record_without_hash = {
         key: value for key, value in record.items() if key != "event_sha256"
     }
-    canonical = json.dumps(
-        record_without_hash, sort_keys=True, separators=(",", ":")
-    )
-    return sha256(canonical.encode("utf-8")).hexdigest()
+    return _canonical_hash(record_without_hash)
 
 
 def test_events_restart_replay_with_hash_chain(tmp_path: Path):
@@ -163,6 +165,14 @@ def test_store_rejects_unsafe_controlled_claim_boundary(
         )
 
 
+def test_store_rejects_wrong_safe_claim_boundary_token(tmp_path: Path):
+    store = EvolutionEventStore(tmp_path)
+    with pytest.raises(ValueError, match="claim_boundary"):
+        store.append(
+            "foundation.recorded", {"claim_boundary": "some-other-token"}
+        )
+
+
 @pytest.mark.parametrize("missing_key", ["schema_version", "payload_sha256"])
 def test_replay_rejects_missing_event_schema_keys(
     tmp_path: Path, missing_key: str
@@ -198,6 +208,22 @@ def test_replay_rejects_hash_consistent_secret_event_type(tmp_path: Path):
     store.path.write_text(json.dumps(record) + "\n", encoding="utf-8")
 
     with pytest.raises(EvolutionIntegrityError, match="event_type"):
+        store.replay()
+
+
+def test_replay_rejects_rehashed_wrong_claim_boundary_token(tmp_path: Path):
+    store = EvolutionEventStore(tmp_path)
+    store.append(
+        "foundation.recorded",
+        {"claim_boundary": "reference-presence-is-not-semantic-proof"},
+    )
+    record = json.loads(store.path.read_text(encoding="utf-8"))
+    record["payload"]["claim_boundary"] = "some-other-token"
+    record["payload_sha256"] = _canonical_hash(record["payload"])
+    record["event_sha256"] = _event_hash(record)
+    store.path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    with pytest.raises(EvolutionIntegrityError, match="claim_boundary"):
         store.replay()
 
 

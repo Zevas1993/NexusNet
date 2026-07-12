@@ -12,6 +12,7 @@ from nexusnet.evolution.contracts import sanitize_reference
 
 
 EVENT_SCHEMA_VERSION = "nexusnet-evolution-event-v1"
+CLAIM_BOUNDARY_TOKEN = "reference-presence-is-not-semantic-proof"
 EVENT_KEYS = frozenset(
     {
         "schema_version",
@@ -37,7 +38,6 @@ METADATA_STRING_KEYS = frozenset(
         "family",
         "problem_class",
         "status",
-        "claim_boundary",
     }
 )
 REFERENCE_LIST_KEYS = frozenset({"affected_workloads"})
@@ -73,6 +73,12 @@ def _sanitize_reference_list(value: Any, *, field_name: str) -> list[str]:
 
 
 def _sanitize_field(field_name: str, value: Any) -> Any:
+    if field_name == "claim_boundary":
+        if value != CLAIM_BOUNDARY_TOKEN:
+            raise ValueError(
+                "unsafe payload metadata: claim_boundary must use the controlled token"
+            )
+        return value
     if field_name.endswith("_id"):
         if not isinstance(value, str):
             raise ValueError(f"unsafe payload metadata: {field_name} must be a reference")
@@ -234,7 +240,7 @@ class EvolutionEventStore:
                     sanitized_payload = _sanitize_payload(payload)
                 except ValueError as exc:
                     raise EvolutionIntegrityError(
-                        f"event {expected_sequence} has unsafe payload metadata"
+                        f"event {expected_sequence} has unsafe payload metadata: {exc}"
                     ) from exc
                 if sanitized_payload != payload:
                     raise EvolutionIntegrityError(
