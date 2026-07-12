@@ -129,8 +129,8 @@ def test_evolvable_unit_reference_collections_reject_raw_content(field_name: str
         _unit(**{field_name: ["raw private prompt output"]})
 
 
-def test_narrative_fields_are_not_normalized_as_references():
-    claim_boundary = "  reference presence is not semantic proof  "
+def test_foundation_claim_boundary_requires_controlled_token():
+    claim_boundary = "reference-presence-is-not-semantic-proof"
     check = FoundationCheck(
         foundation_id="foundation:canon",
         status="verified",
@@ -138,3 +138,34 @@ def test_narrative_fields_are_not_normalized_as_references():
         claim_boundary=claim_boundary,
     )
     assert check.claim_boundary == claim_boundary
+
+    with pytest.raises(
+        ValidationError, match="reference-presence-is-not-semantic-proof"
+    ):
+        FoundationCheck(
+            foundation_id="foundation:canon",
+            status="verified",
+            claim_boundary="reference presence is not semantic proof",
+        )
+
+
+@pytest.mark.parametrize(
+    "path_narrative",
+    [
+        "model at C:/private/model.bin is not semantic proof",
+        "model at \\\\server\\share\\private.bin is not semantic proof",
+        "model at /home/private/model.bin is not semantic proof",
+    ],
+    ids=["windows", "unc", "posix"],
+)
+def test_foundation_claim_boundary_rejects_embedded_path_narratives(
+    path_narrative: str,
+):
+    with pytest.raises(
+        ValidationError, match="reference-presence-is-not-semantic-proof"
+    ):
+        FoundationCheck(
+            foundation_id="foundation:canon",
+            status="verified",
+            claim_boundary=path_narrative,
+        )

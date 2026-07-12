@@ -313,7 +313,7 @@ class FoundationCheck(_FrozenSanitizedModel):
     foundation_id: str
     status: Literal["verified", "missing", "unverified"]
     evidence_ref: str | None = None
-    claim_boundary: str
+    claim_boundary: Literal["reference-presence-is-not-semantic-proof"]
 
     @field_validator("foundation_id")
     @classmethod

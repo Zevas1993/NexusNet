@@ -95,7 +95,7 @@ def test_store_rejects_raw_or_local_string_material(
 
 
 def test_store_appends_all_current_contract_model_dumps(tmp_path: Path):
-    claim_boundary = "  reference presence is not semantic proof  "
+    claim_boundary = "reference-presence-is-not-semantic-proof"
     contracts = [
         EvolvableUnit(
             unit_id="unit:runtime:vulkan-pilot",
@@ -144,13 +144,14 @@ def test_store_appends_all_current_contract_model_dumps(tmp_path: Path):
 @pytest.mark.parametrize(
     "unsafe_claim_boundary",
     [
+        "reference presence is not semantic proof",
         "C:/private/model.bin",
         "\\\\server\\share\\private.txt",
         "sk-private-material",
         "line one\nline two",
         "x" * 513,
     ],
-    ids=["absolute", "unc", "secret", "control", "over-limit"],
+    ids=["raw-prose", "absolute", "unc", "secret", "control", "over-limit"],
 )
 def test_store_rejects_unsafe_controlled_claim_boundary(
     tmp_path: Path, unsafe_claim_boundary: str
