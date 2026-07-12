@@ -8,6 +8,7 @@ from nexusnet.evolution.contracts import (
     GrowthPressure,
     sanitize_reference,
 )
+from nexusnet.evolution.store import EvolutionEventStore, EvolutionIntegrityError
 
 __all__ = [
     "EVOLUTION_SCHEMA_VERSION",
@@ -17,5 +18,7 @@ __all__ = [
     "FoundationCheck",
     "GenomeRef",
     "GrowthPressure",
+    "EvolutionEventStore",
+    "EvolutionIntegrityError",
     "sanitize_reference",
 ]
