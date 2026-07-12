@@ -25,6 +25,35 @@ def test_evolution_endpoints_are_nexusbrain_owned_and_read_only(tmp_path: Path):
     assert status.json()["mutation_boundary"] == (
         "read-only-no-protected-state-mutation"
     )
+    prerequisite_checks = {
+        check["foundation_id"].removeprefix("foundation:"): check
+        for check in state.json()["prerequisite_checks"]
+    }
+    assert prerequisite_checks["neural_bus"]["status"] == "unverified"
+    assert prerequisite_checks["hive_blackboard"]["status"] == "unverified"
+    assert status.json()["missing_or_unverified_prerequisites"] == [
+        "hive_blackboard",
+        "neural_bus",
+    ]
+    expected_interfaces = {
+        "checkpoint": "rewind_checkpoint",
+        "rollback": "rollback_governed_route_candidate",
+    }
+    substrate = client.app.state.services.brain_hive_substrate
+    for prerequisite, interface_name in expected_interfaces.items():
+        check = prerequisite_checks[prerequisite]
+        assert check["status"] == "verified"
+        assert check["evidence_ref"] == (
+            f"service:HiveNeuralSubstrate:{interface_name}"
+        )
+        assert callable(getattr(substrate, interface_name, None))
+    evidence_refs = {
+        check["evidence_ref"]
+        for check in prerequisite_checks.values()
+        if check["evidence_ref"] is not None
+    }
+    assert "service:HiveNeuralSubstrate:checkpoint" not in evidence_refs
+    assert "service:HiveNeuralSubstrate:rollback" not in evidence_refs
 
 
 def test_wrapper_status_projects_sanitized_evolution_without_session_identifier(

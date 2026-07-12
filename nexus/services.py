@@ -757,10 +757,12 @@ def build_services(project_root: str | None = None) -> NexusServices:
             "mother_brain_authority": "brain:NexusBrain",
             "isolation": "service:SandboxPolicyService",
             "evidence": "service:EvidenceStore",
-            "checkpoint": "service:HiveNeuralSubstrate:checkpoint",
+            "checkpoint": "service:HiveNeuralSubstrate:rewind_checkpoint",
             "replay": "service:HiveNeuralSubstrate:replay",
             "governance": "service:GovernanceService",
-            "rollback": "service:HiveNeuralSubstrate:rollback",
+            "rollback": (
+                "service:HiveNeuralSubstrate:rollback_governed_route_candidate"
+            ),
         },
         legacy_engine=default_engine(),
     )
