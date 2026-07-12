@@ -4719,6 +4719,98 @@ def test_release_readiness_runner_drives_governed_evidence_path(tmp_path: Path):
     assert "Harness import receipt" in visualizer_js
 
 
+def test_control_panel_evolution_projection_distinguishes_unavailable_telemetry():
+    control_panel_js = (Path(__file__).parents[1] / "ui" / "control-panel" / "app.js").read_text(
+        encoding="utf-8"
+    )
+    assert "function renderUniversalEvolutionCard" in control_panel_js
+    helper_start = control_panel_js.index("function isUniversalEvolutionStatusAvailable")
+    helper_end = control_panel_js.index("function renderAutonomousUpdatesScorecard", helper_start)
+    helper_source = control_panel_js[helper_start:helper_end]
+    node_script = (
+        """
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+"""
+        + helper_source
+        + """
+const unavailable = [
+  renderUniversalEvolutionCard(undefined),
+  renderUniversalEvolutionCard({}),
+  renderUniversalEvolutionCard({ authority: "NexusBrain", coverage: {} }),
+  renderUniversalEvolutionCard({
+    authority: "NexusBrain",
+    open_pressure_count: 0,
+    coverage: {
+      registered_unit_total: -1,
+      covered_unit_total: 0,
+      uncovered_unit_refs: [],
+      universal_coverage_complete: false,
+    },
+    top_pressures: [],
+    missing_or_unverified_prerequisites: [],
+    last_event_sha256: null,
+    claim_boundary: "legacy-lane-coverage-is-not-universal-organism-coverage",
+    mutation_boundary: "read-only-no-protected-state-mutation",
+  }),
+];
+const available = renderUniversalEvolutionCard({
+  authority: "NexusBrain",
+  unit_count: 3,
+  open_pressure_count: 1,
+  coverage: {
+    registered_unit_total: 3,
+    covered_unit_total: 2,
+    uncovered_unit_refs: ["unit:<script>"],
+    universal_coverage_complete: false,
+  },
+  top_pressures: [{ pressure_id: "pressure:<script>" }],
+  missing_or_unverified_prerequisites: ["neural_<script>"],
+  last_event_sha256: "sha256:<script>",
+  claim_boundary: "legacy-lane-coverage-is-not-universal-organism-coverage:<script>",
+  mutation_boundary: "read-only-no-protected-state-mutation:<script>",
+});
+process.stdout.write(JSON.stringify({ unavailable, available }));
+"""
+    )
+    rendered = subprocess.run(
+        ["node", "-e", node_script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    payload = json.loads(rendered.stdout)
+
+    for unavailable in payload["unavailable"]:
+        assert "evolution-status-unavailable" in unavailable
+        assert "telemetry is unavailable/unverified" in unavailable
+        assert "coverage, pressure, and prerequisite state was not observed" in unavailable
+        assert "registered_unit_count" not in unavailable
+        assert "<strong>0</strong>" not in unavailable
+        assert "none-reported" not in unavailable
+        assert "no-open-pressure" not in unavailable
+        assert "no-event-hash" not in unavailable
+        assert "none-observed-in-loaded-status" not in unavailable
+        assert "not-applicable-no-open-pressures" not in unavailable
+        assert "not-recorded-in-loaded-status" not in unavailable
+
+    available = payload["available"]
+    assert "universal-evolution-card" in available
+    assert "evolution-status-unavailable" not in available
+    assert "open pressure count" in available
+    assert "top pressure ID" in available
+    assert "legacy-lane-coverage-is-not-universal-organism-coverage" in available
+    assert "&lt;script&gt;" in available
+    assert "<script>" not in available
+    assert "data-release-wrapper-action" not in available
+
+
 def test_release_readiness_blocks_go_without_accepted_peer_federation_import(tmp_path: Path):
     project_root = make_project(tmp_path)
     sandbox_probe = project_root / "tests" / "release_wrapper_readiness_requires_peer_import_probe_test.py"

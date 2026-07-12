@@ -3213,16 +3213,79 @@ function releaseWrapperActionButton(action, label, ref) {
   return `<button type="button" data-release-wrapper-action="${escapeHtml(action)}"${disabled}>${escapeHtml(label)}</button>`;
 }
 
+function isUniversalEvolutionStatusAvailable(evolution) {
+  if (!evolution || typeof evolution !== "object" || Array.isArray(evolution)) {
+    return false;
+  }
+  const coverage = evolution.coverage;
+  return evolution.authority === "NexusBrain"
+    && coverage
+    && typeof coverage === "object"
+    && !Array.isArray(coverage)
+    && Number.isInteger(coverage.registered_unit_total)
+    && coverage.registered_unit_total >= 0
+    && Number.isInteger(coverage.covered_unit_total)
+    && coverage.covered_unit_total >= 0
+    && coverage.covered_unit_total <= coverage.registered_unit_total
+    && Array.isArray(coverage.uncovered_unit_refs)
+    && coverage.uncovered_unit_refs.every((unitRef) => typeof unitRef === "string")
+    && typeof coverage.universal_coverage_complete === "boolean"
+    && Number.isInteger(evolution.open_pressure_count)
+    && evolution.open_pressure_count >= 0
+    && Array.isArray(evolution.top_pressures)
+    && evolution.top_pressures.every((pressure) => pressure && typeof pressure.pressure_id === "string")
+    && (evolution.open_pressure_count === 0
+      ? evolution.top_pressures.length === 0
+      : evolution.top_pressures.length > 0)
+    && Array.isArray(evolution.missing_or_unverified_prerequisites)
+    && evolution.missing_or_unverified_prerequisites.every((name) => typeof name === "string")
+    && (evolution.last_event_sha256 === null || typeof evolution.last_event_sha256 === "string")
+    && typeof evolution.claim_boundary === "string"
+    && typeof evolution.mutation_boundary === "string";
+}
+
+function renderUniversalEvolutionCard(evolution) {
+  if (!isUniversalEvolutionStatusAvailable(evolution)) {
+    return `
+      <article class="runtime-scorecard-card universal-evolution-card evolution-status-unavailable">
+        <div class="metric-head">
+          <strong>Universal Evolution</strong>
+          <span class="state-pill shadow-only">unavailable / unverified</span>
+        </div>
+        <small>Read-only evolution telemetry is unavailable/unverified.</small>
+        <div class="evolution-prerequisite-gaps">coverage, pressure, and prerequisite state was not observed</div>
+      </article>
+    `;
+  }
+  const coverage = evolution.coverage;
+  const topPressure = evolution.top_pressures[0] || null;
+  const prerequisiteGaps = evolution.missing_or_unverified_prerequisites;
+  return `
+    <article class="runtime-scorecard-card universal-evolution-card">
+      <div class="metric-head">
+        <strong>Universal Evolution</strong>
+        <span class="state-pill shadow-only">${escapeHtml(evolution.authority)}</span>
+      </div>
+      <small>Read-only status projection; legacy-lane-coverage-is-not-universal-organism-coverage.</small>
+      <div class="mini-metrics">
+        <span><strong>${escapeHtml(coverage.registered_unit_total)}</strong><small>registered_unit_count</small></span>
+        <span><strong>${escapeHtml(coverage.covered_unit_total)}</strong><small>covered_unit_count</small></span>
+        <span><strong>${escapeHtml(coverage.uncovered_unit_refs.length)}</strong><small>uncovered_unit_count</small></span>
+        <span><strong>${escapeHtml(evolution.open_pressure_count)}</strong><small>open pressure count</small></span>
+        <span><strong>${escapeHtml(topPressure?.pressure_id || "not-applicable-no-open-pressures")}</strong><small>top pressure ID</small></span>
+        <span><strong>${escapeHtml(evolution.last_event_sha256 || "not-recorded-in-loaded-status")}</strong><small>last event hash</small></span>
+        <span><strong>${escapeHtml(coverage.universal_coverage_complete === false ? "false" : "not-established")}</strong><small>universal_coverage_complete</small></span>
+      </div>
+      <div class="evolution-prerequisite-gaps">missing or unverified prerequisites: ${escapeHtml(prerequisiteGaps.join(", ") || "none-observed-in-loaded-status")}</div>
+      <div class="completion-scope">${escapeHtml(evolution.claim_boundary)} | ${escapeHtml(evolution.mutation_boundary)}</div>
+    </article>
+  `;
+}
+
 function renderAutonomousUpdatesScorecard() {
   const scorecard = state.autonomousUpdates || {};
   const releaseRuntime = state.releaseHarnessRuntime || state.releaseWrapperRuntime || {};
-  const evolution = state.releaseWrapperStatus?.evolution || {};
-  const evolutionCoverage = evolution.coverage || {};
-  const evolutionTopPressures = Array.isArray(evolution.top_pressures) ? evolution.top_pressures : [];
-  const evolutionTopPressure = evolutionTopPressures[0] || {};
-  const evolutionPrerequisiteGaps = Array.isArray(evolution.missing_or_unverified_prerequisites)
-    ? evolution.missing_or_unverified_prerequisites
-    : [];
+  const evolution = state.releaseWrapperStatus?.evolution;
   const releaseHarness = releaseRuntime.release_harness || {};
   const releaseReadiness = state.releaseWrapperReadiness || {};
   const releaseTelemetry = state.releaseWrapperTelemetry || releaseRuntime.live_wrapper_telemetry || {};
@@ -3490,24 +3553,7 @@ function renderAutonomousUpdatesScorecard() {
         <span><strong>${escapeHtml(releaseRuntime.update_boundary || "safe artifact only")}</strong><small>update boundary</small></span>
       </div>
     </article>
-    <article class="runtime-scorecard-card universal-evolution-card">
-      <div class="metric-head">
-        <strong>Universal Evolution</strong>
-        <span class="state-pill shadow-only">${escapeHtml(evolution.authority || "NexusBrain")}</span>
-      </div>
-      <small>Read-only status projection; legacy-lane-coverage-is-not-universal-organism-coverage.</small>
-      <div class="mini-metrics">
-        <span><strong>${escapeHtml(evolutionCoverage.registered_unit_total ?? evolution.unit_count ?? 0)}</strong><small>registered_unit_count</small></span>
-        <span><strong>${escapeHtml(evolutionCoverage.covered_unit_total ?? 0)}</strong><small>covered_unit_count</small></span>
-        <span><strong>${escapeHtml((evolutionCoverage.uncovered_unit_refs || []).length)}</strong><small>uncovered_unit_count</small></span>
-        <span><strong>${escapeHtml(evolution.open_pressure_count ?? evolutionTopPressures.length)}</strong><small>top pressure count</small></span>
-        <span><strong>${escapeHtml(evolutionTopPressure.pressure_id || "no-open-pressure")}</strong><small>top pressure ID</small></span>
-        <span><strong>${escapeHtml(evolution.last_event_sha256 || "no-event-hash")}</strong><small>last event hash</small></span>
-        <span><strong>${escapeHtml(evolutionCoverage.universal_coverage_complete === false ? "false" : "not-established")}</strong><small>universal_coverage_complete</small></span>
-      </div>
-      <div class="evolution-prerequisite-gaps">missing or unverified prerequisites: ${escapeHtml(evolutionPrerequisiteGaps.join(", ") || "none-reported")}</div>
-      <div class="completion-scope">${escapeHtml(evolution.claim_boundary || "legacy-lane-coverage-is-not-universal-organism-coverage")} | ${escapeHtml(evolution.mutation_boundary || "read-only-no-protected-state-mutation")}</div>
-    </article>
+    ${renderUniversalEvolutionCard(evolution)}
     <article class="runtime-scorecard-card release-wrapper-canon-contract-ledger">
       <div class="metric-head">
         <strong>Canon contract ledger</strong>
