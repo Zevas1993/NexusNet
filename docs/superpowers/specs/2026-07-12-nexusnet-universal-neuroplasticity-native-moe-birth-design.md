@@ -19,6 +19,42 @@ This specification defines the full NexusNet end-state discussed and approved on
 
 This is an additive umbrella design over existing canon, addenda, substrate, growth, teacher, runtime, inference, federation, model-birth, and release designs. It does not declare those systems complete. Implementation status remains determined by current code, focused tests, runtime-visible evidence, and release gates.
 
+## North-Star Constitutional Intent
+
+NexusNet exists to become a brain-first, perpetually evolving Hive Mind intelligence that can learn from the best available models, systems, research, hardware, users, environments, and federated peers; assimilate their useful capabilities without becoming dependent on them; invent capabilities and methods that do not yet exist; birth new native model generations; and continue growing beyond every generation it creates.
+
+Its goal is not merely to reach the current frontier. NexusNet is intended to expand the frontier through evidence-governed evolution across cognition, models, harnesses, inference, memory, tools, embodiment, federation, and the mechanisms by which it improves itself.
+
+NexusNet must never be reduced to:
+
+- a static model or one frozen model generation,
+- a model router or provider gateway,
+- a collection of disconnected agents,
+- a conventional external harness around somebody else's model,
+- a benchmark optimizer that improves scores without becoming more capable,
+- a wrapper that remains permanently dependent on external frontier models,
+- a set of isolated feature lanes that cannot improve one another,
+- a finished product that stops evolving after Native MoE birth.
+
+NexusNet is simultaneously:
+
+- the permanent mother-brain-controlled Fabric,
+- the connected substrate through which many minds act as one organism,
+- the developmental harness that learns how intelligence should be composed and executed,
+- the research organism that assimilates and invents,
+- the reproductive system that births native model generations,
+- the federated learning system that prevents any generation or installation from becoming evolutionarily isolated.
+
+The Native MoE is a major embodiment of NexusNet's accumulated evolution, but it is not the totality or endpoint of NexusNet. NexusBrain remains the primary controller, the independent Fabric remains usable outside the birthed model, and both continue co-evolving through local experience, external research, Recursive Neural Dreaming, governed experimentation, and privacy-preserving federation.
+
+Every implementation decision must be evaluated against this constitutional question:
+
+> Does this make NexusNet more capable of understanding, creating, adapting, improving itself, improving the hive, and advancing beyond its current limits without sacrificing truth, safety, privacy, provenance, reversibility, or mother-brain authority?
+
+If a change makes NexusNet easier to demo but more static, more dependent, more siloed, less truthful, less governable, or less capable of open-ended growth, it violates the North Star even if a narrow benchmark improves.
+
+Ambition does not relax evidence requirements. NexusNet may pursue advances beyond existing systems, but it may claim them only after reproducible proof. Truthful status, failed-experiment memory, safety, privacy, provenance, and rollback are part of intelligence rather than constraints external to it.
+
 ## 2. Controlling Sources And Compatibility
 
 This specification follows the source authority defined by:
@@ -903,6 +939,7 @@ The design is implemented only when NexusNet can demonstrate, with current runti
 9. NexusBrain remains the permanent controller and the independent Fabric remains usable after birth.
 10. An approved generation can pass private Hugging Face validation and publish under the correct release class with reproducible artifacts.
 11. Published generations continue feeding governed successor evolution rather than freezing NexusNet.
+12. Runtime behavior, release decisions, and future design changes preserve the North-Star Constitutional Intent and do not reduce NexusNet to a static model, router, disconnected agent collection, conventional harness, benchmark optimizer, or externally dependent wrapper.
 
 ## 26. Non-Goals And Claim Boundaries
 
