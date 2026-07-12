@@ -2067,13 +2067,30 @@ def create_app(project_root: str | None = None) -> FastAPI:
         NexusNet and whether a real improvement lane exists for it. Makes the compute-layer
         self-improvement surface reachable from the running service (torch-free; runs no lanes)."""
         cov = _self_improvement_engine().coverage()
+        evolution_coverage = services.brain_evolution.evolvable_units()["coverage"]
         return {
             "surface_id": "self-improvement-coverage",
             "authority": "NexusBrain",
             "every_aspect_covered": cov["fully_covered"],
             **cov,
-            "claim_boundary": "coverage-attestation-lanes-run-in-the-compute-layer-not-the-web-request",
+            **evolution_coverage,
         }
+
+    @application.get("/ops/brain/evolution/everything-state")
+    def ops_brain_evolution_everything_state():
+        return services.brain_evolution.everything_state()
+
+    @application.get("/ops/brain/evolution/evolvable-units")
+    def ops_brain_evolution_evolvable_units():
+        return services.brain_evolution.evolvable_units()
+
+    @application.get("/ops/brain/evolution/growth-pressure")
+    def ops_brain_evolution_growth_pressure():
+        return services.brain_evolution.growth_pressure()
+
+    @application.get("/ops/brain/evolution/status")
+    def ops_brain_evolution_status():
+        return services.brain_evolution.status()
 
     @application.get("/ops/wrapper/providers")
     def ops_wrapper_providers():
@@ -2114,7 +2131,9 @@ def create_app(project_root: str | None = None) -> FastAPI:
 
     @application.get("/ops/wrapper/status-card")
     def ops_wrapper_status_card(session_id: str | None = None):
-        return release_wrapper_runtime.status_card(session_id=session_id)
+        card = dict(release_wrapper_runtime.status_card(session_id=session_id))
+        card["evolution"] = services.brain_evolution.status()
+        return card
 
     @application.get("/ops/wrapper/privacy-consent")
     def ops_wrapper_privacy_consent(session_id: str | None = None):

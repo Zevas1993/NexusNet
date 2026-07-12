@@ -114,6 +114,8 @@ from nexusnet.authority import AuthorityIntegritySpine
 from nexusnet.developmental import DevelopmentalCortexService
 from nexusnet.evals.federation import EvalFederationRegistry
 from nexusnet.evidence import EvidenceStore
+from nexusnet.evolution import UniversalEvolutionService
+from nexusnet.hive.self_improvement_engine import default_engine
 from nexusnet.runtime.decision_ledger import RuntimeDecisionLedger
 from nexusnet.runtime_optimizer import AdaptiveRuntimeProfiler
 from nexusnet.security import ArtifactTrustRegistry
@@ -278,6 +280,7 @@ class NexusServices:
     brain_developmental_cortex: Any
     brain_authority_spine: Any
     brain_evidence_store: Any
+    brain_evolution: UniversalEvolutionService
     brain_eval_federation: Any
     brain_tool_action_harness: Any
     brain_runtime_decision_ledger: Any
@@ -746,6 +749,21 @@ def build_services(project_root: str | None = None) -> NexusServices:
     brain_developmental_cortex = DevelopmentalCortexService(artifacts_dir=paths.artifacts_dir)
     brain_authority_spine = AuthorityIntegritySpine(artifacts_dir=paths.artifacts_dir)
     brain_evidence_store = EvidenceStore(artifacts_dir=paths.artifacts_dir)
+    brain_evolution = UniversalEvolutionService(
+        artifacts_dir=paths.artifacts_dir,
+        owner_brain_ref="brain:NexusBrain",
+        prerequisite_evidence={
+            "canon": "service:NexusNetCanonRegistry",
+            "mother_brain_authority": "brain:NexusBrain",
+            "isolation": "service:SandboxPolicyService",
+            "evidence": "service:EvidenceStore",
+            "checkpoint": "service:HiveNeuralSubstrate:checkpoint",
+            "replay": "service:HiveNeuralSubstrate:replay",
+            "governance": "service:GovernanceService",
+            "rollback": "service:HiveNeuralSubstrate:rollback",
+        },
+        legacy_engine=default_engine(),
+    )
     brain_eval_federation = EvalFederationRegistry(artifacts_dir=paths.artifacts_dir)
     brain_tool_action_harness = ToolActionHarness(artifacts_dir=paths.artifacts_dir)
     brain_runtime_decision_ledger = RuntimeDecisionLedger(artifacts_dir=paths.artifacts_dir)
@@ -1067,6 +1085,7 @@ def build_services(project_root: str | None = None) -> NexusServices:
         brain_developmental_cortex=brain_developmental_cortex,
         brain_authority_spine=brain_authority_spine,
         brain_evidence_store=brain_evidence_store,
+        brain_evolution=brain_evolution,
         brain_eval_federation=brain_eval_federation,
         brain_tool_action_harness=brain_tool_action_harness,
         brain_runtime_decision_ledger=brain_runtime_decision_ledger,

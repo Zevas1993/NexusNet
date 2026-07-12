@@ -21,3 +21,8 @@ def test_self_improvement_coverage_endpoint_serves_every_aspect(tmp_path: Path):
     assert payload["covered_count"] == payload["total_aspects"]
     assert payload["uncovered"] == []
     assert "efficiency_quant" in payload["covered"] and "wrapper_absorption" in payload["covered"]
+    assert payload["legacy_taxonomy_fully_covered"] is True
+    assert payload["universal_coverage_complete"] is False
+    assert payload["claim_boundary"] == (
+        "legacy-lane-coverage-is-not-universal-organism-coverage"
+    )
