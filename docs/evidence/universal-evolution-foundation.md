@@ -56,7 +56,7 @@ npx gitnexus detect-changes --scope all --repo NexusNet
 - `git diff --check`: exit `0`, no output, `0.052s`.
 - `python -m compileall -q nexusnet/evolution`: exit `0`, no output, `0.049s`.
 - GitNexus all-scope detection: exit `0`, `2.339s`; reported **34 files, 987 symbols, 96 affected processes, CRITICAL**. That broad result reflects the implementation branch relative to the index/main-checkout baseline and includes many pre-existing/shared indexed changes outside this Task 8 documentation slice. It is not a Task 8 production-edit result and is not evidence that 987 symbols changed during this evidence task.
-- After staging only this evidence document, `npx gitnexus detect-changes --scope staged --repo NexusNet` exited `0` in `1.538s` and reported `No changes detected`; direct staged diff showed one new documentation file with 108 inserted lines. This is the known linked-worktree staged-detection limitation described below, not proof of an empty staged change.
+- After staging only this evidence document, `npx gitnexus detect-changes --scope staged --repo NexusNet` exited `0` in `1.564s` and reported `No changes detected`; the final staged diff showed one new documentation file with 109 inserted lines. This is the known linked-worktree staged-detection limitation described below, not proof of an empty staged change.
 
 ## Program A prerequisite evidence
 
