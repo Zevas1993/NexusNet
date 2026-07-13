@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import json
+import math
+import multiprocessing
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256
 from pathlib import Path
 
@@ -14,6 +18,13 @@ from nexusnet.evolution.contracts import (
     GrowthPressure,
 )
 from nexusnet.evolution.store import EvolutionEventStore, EvolutionIntegrityError
+
+
+def _append_from_spawned_process(root: str, unit_id: str, start_barrier) -> None:
+    start_barrier.wait(timeout=10)
+    EvolutionEventStore(Path(root)).append(
+        "unit.registered", {"unit_id": unit_id}
+    )
 
 
 def _mutate_first_record(tmp_path: Path, mutation) -> EvolutionEventStore:
@@ -49,6 +60,59 @@ def test_events_restart_replay_with_hash_chain(tmp_path: Path):
     assert replayed[0]["previous_event_sha256"] is None
     assert replayed[1]["previous_event_sha256"] == first["event_sha256"]
     assert replayed[1]["event_sha256"] == second["event_sha256"]
+
+
+def test_concurrent_store_instances_serialize_head_selection_and_append(
+    tmp_path: Path, monkeypatch
+):
+    stores = [EvolutionEventStore(tmp_path), EvolutionEventStore(tmp_path)]
+    replay_barrier = threading.Barrier(2)
+    original_replay = EvolutionEventStore.replay
+
+    def synchronized_old_head_read(store):
+        replayed = original_replay(store)
+        replay_barrier.wait(timeout=5)
+        return replayed
+
+    monkeypatch.setattr(EvolutionEventStore, "replay", synchronized_old_head_read)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(
+                store.append,
+                "unit.registered",
+                {"unit_id": f"unit:runtime:concurrent-{index}"},
+            )
+            for index, store in enumerate(stores)
+        ]
+        for future in futures:
+            future.result(timeout=10)
+
+    monkeypatch.setattr(EvolutionEventStore, "replay", original_replay)
+    replayed = EvolutionEventStore(tmp_path).replay()
+    assert [record["sequence"] for record in replayed] == [1, 2]
+    assert replayed[1]["previous_event_sha256"] == replayed[0]["event_sha256"]
+
+
+def test_spawned_processes_serialize_append_chain(tmp_path: Path):
+    context = multiprocessing.get_context("spawn")
+    start_barrier = context.Barrier(3)
+    processes = [
+        context.Process(
+            target=_append_from_spawned_process,
+            args=(str(tmp_path), f"unit:runtime:process-{index}", start_barrier),
+        )
+        for index in range(2)
+    ]
+    for process in processes:
+        process.start()
+    start_barrier.wait(timeout=10)
+    for process in processes:
+        process.join(timeout=20)
+        assert process.exitcode == 0
+
+    replayed = EvolutionEventStore(tmp_path).replay()
+    assert [record["sequence"] for record in replayed] == [1, 2]
+    assert replayed[1]["previous_event_sha256"] == replayed[0]["event_sha256"]
 
 
 def test_replay_fails_closed_when_event_is_modified(tmp_path: Path):
@@ -94,6 +158,53 @@ def test_store_rejects_raw_or_local_string_material(
     store = EvolutionEventStore(tmp_path)
     with pytest.raises(ValueError, match="unsafe"):
         store.append("unit.registered", {key: value})
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("C:/Users/private/secret.txt", 1),
+        ("prompt_bytes", [83, 69, 67, 82, 69, 84]),
+        ("private_token", "safe-looking-token"),
+        ("unknown_field", True),
+        ("line\nbreak", 1),
+    ],
+    ids=["path-key", "numeric-byte-list", "secret-key", "unknown-key", "control-key"],
+)
+def test_store_fails_closed_for_unknown_or_unsafe_payload_shapes(
+    tmp_path: Path, key: str, value
+):
+    store = EvolutionEventStore(tmp_path)
+    with pytest.raises(ValueError, match="unsafe payload"):
+        store.append("unit.registered", {key: value})
+
+
+@pytest.mark.parametrize("value", [[1, 2], {"nested": [1.0]}, math.inf, math.nan])
+def test_store_rejects_numeric_containers_and_non_finite_scalars(
+    tmp_path: Path, value
+):
+    store = EvolutionEventStore(tmp_path)
+    with pytest.raises(ValueError, match="unsafe payload"):
+        store.append("pressure.recorded", {"severity": value})
+
+
+def test_replay_rejects_hash_consistent_unknown_or_numeric_payload_shapes(
+    tmp_path: Path,
+):
+    store = EvolutionEventStore(tmp_path)
+    store.append("unit.registered", {"unit_id": "unit:runtime:vulkan"})
+
+    for payload in (
+        {"C:/Users/private/secret.txt": 1},
+        {"prompt_bytes": [83, 69, 67, 82, 69, 84]},
+    ):
+        record = json.loads(store.path.read_text(encoding="utf-8"))
+        record["payload"] = payload
+        record["payload_sha256"] = _canonical_hash(payload)
+        record["event_sha256"] = _event_hash(record)
+        store.path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+        with pytest.raises(EvolutionIntegrityError, match="unsafe payload"):
+            store.replay()
 
 
 def test_store_appends_all_current_contract_model_dumps(tmp_path: Path):

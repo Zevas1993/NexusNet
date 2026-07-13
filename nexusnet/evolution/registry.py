@@ -42,12 +42,16 @@ class EvolvableUnitRegistry:
             )
 
     @staticmethod
+    def _validated_copy(record: Any) -> Any:
+        return type(record).model_validate(record.model_dump(mode="json"))
+
+    @staticmethod
     def _remember(
         records: dict[str, Any], identity: str, record: Any
     ) -> bool:
         existing = records.get(identity)
         if existing is None:
-            records[identity] = record
+            records[identity] = EvolvableUnitRegistry._validated_copy(record)
             return True
         if existing.model_dump(mode="json") != record.model_dump(mode="json"):
             raise ValueError("conflicting evolution identity")
@@ -84,22 +88,30 @@ class EvolvableUnitRegistry:
         return False
 
     def register_unit(self, unit: EvolvableUnit) -> EvolvableUnit:
-        if self._assert_identity_available(self._units, unit.unit_id, unit):
-            self._store.append("unit.registered", unit.model_dump(mode="json"))
-            self._units[unit.unit_id] = unit
-        return unit
+        stored = self._validated_copy(unit)
+        if self._assert_identity_available(self._units, stored.unit_id, stored):
+            self._store.append("unit.registered", stored.model_dump(mode="json"))
+            self._units[stored.unit_id] = stored
+        return self._validated_copy(self._units[stored.unit_id])
 
     def register_genome(self, genome: GenomeRef) -> GenomeRef:
-        if self._assert_identity_available(self._genomes, genome.genome_id, genome):
-            self._store.append("genome.registered", genome.model_dump(mode="json"))
-            self._genomes[genome.genome_id] = genome
-        return genome
+        stored = self._validated_copy(genome)
+        if self._assert_identity_available(self._genomes, stored.genome_id, stored):
+            self._store.append("genome.registered", stored.model_dump(mode="json"))
+            self._genomes[stored.genome_id] = stored
+        return self._validated_copy(self._genomes[stored.genome_id])
 
     def list_units(self) -> list[EvolvableUnit]:
-        return [self._units[unit_id] for unit_id in sorted(self._units)]
+        return [
+            self._validated_copy(self._units[unit_id])
+            for unit_id in sorted(self._units)
+        ]
 
     def list_genomes(self) -> list[GenomeRef]:
-        return [self._genomes[genome_id] for genome_id in sorted(self._genomes)]
+        return [
+            self._validated_copy(self._genomes[genome_id])
+            for genome_id in sorted(self._genomes)
+        ]
 
     @staticmethod
     def _is_legacy(unit: EvolvableUnit) -> bool:

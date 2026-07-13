@@ -20,13 +20,14 @@ class GrowthPressureMap:
                 self._pressures[pressure.pressure_id] = pressure
 
     def record(self, pressure: GrowthPressure) -> GrowthPressure:
-        payload = pressure.model_dump(mode="json")
-        current = self._pressures.get(pressure.pressure_id)
+        stored = GrowthPressure.model_validate(pressure.model_dump(mode="json"))
+        payload = stored.model_dump(mode="json")
+        current = self._pressures.get(stored.pressure_id)
         if current is not None and current.model_dump(mode="json") == payload:
-            return current
+            return GrowthPressure.model_validate(current.model_dump(mode="json"))
         self._store.append("pressure.recorded", payload)
-        self._pressures[pressure.pressure_id] = pressure
-        return pressure
+        self._pressures[stored.pressure_id] = stored
+        return GrowthPressure.model_validate(stored.model_dump(mode="json"))
 
     def ranked(
         self,

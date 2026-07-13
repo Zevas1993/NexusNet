@@ -3239,8 +3239,9 @@ function isUniversalEvolutionStatusAvailable(evolution) {
     && Array.isArray(evolution.missing_or_unverified_prerequisites)
     && evolution.missing_or_unverified_prerequisites.every((name) => typeof name === "string")
     && (evolution.last_event_sha256 === null || typeof evolution.last_event_sha256 === "string")
-    && typeof evolution.claim_boundary === "string"
-    && typeof evolution.mutation_boundary === "string";
+    && evolution.claim_boundary === "registry-and-evidence-state-only; no candidate, experiment, promotion, native-model-birth, or frontier-superiority claim"
+    && evolution.mutation_boundary === "read-only-no-protected-state-mutation"
+    && coverage.claim_boundary === "legacy-lane-coverage-is-not-universal-organism-coverage";
 }
 
 function renderUniversalEvolutionCard(evolution) {

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
+import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
@@ -42,12 +45,122 @@ METADATA_STRING_KEYS = frozenset(
 )
 REFERENCE_LIST_KEYS = frozenset({"affected_workloads"})
 IDENTIFIER_OR_REFERENCE_LIST_KEYS = frozenset({"affected_hardware_classes"})
+NUMERIC_FLOAT_KEYS = frozenset(
+    {
+        "severity",
+        "quality_risk",
+        "safety_risk",
+        "opportunity_score",
+        "expected_value",
+        "research_budget_request",
+    }
+)
+NUMERIC_INTEGER_KEYS = frozenset({"recurrence", "legacy_aspect_total"})
+BOOLEAN_KEYS = frozenset({"legacy_taxonomy_fully_covered"})
+OPTIONAL_REFERENCE_KEYS = frozenset(
+    {"current_release_ref", "registration_schema_ref", "evidence_ref"}
+)
+UNIT_PAYLOAD_KEYS = frozenset(
+    {
+        "schema_version", "unit_id", "unit_kind", "owner_brain_ref",
+        "parent_unit_refs", "child_unit_refs", "capability_refs", "genome_refs",
+        "implementation_refs", "dependency_refs", "pathway_refs", "authority_class",
+        "privacy_class", "license_state", "trust_state", "current_release_ref",
+        "checkpoint_refs", "health_refs", "workload_refs", "eval_suite_refs",
+        "invariant_refs", "growth_pressure_refs", "candidate_refs", "federation_policy",
+        "lifecycle_state", "registration_schema_ref", "rollback_refs",
+        "improvement_strategy_refs",
+    }
+)
+GENOME_PAYLOAD_KEYS = frozenset(
+    {"schema_version", "genome_id", "family", "content_ref", "invariant_refs"}
+)
+PRESSURE_PAYLOAD_KEYS = frozenset(
+    {
+        "schema_version", "pressure_id", "target_unit_refs", "source_evidence_refs",
+        "problem_class", "severity", "recurrence", "affected_workloads",
+        "affected_hardware_classes", "quality_risk", "safety_risk",
+        "opportunity_score", "expected_value", "research_budget_request", "status",
+    }
+)
+FOUNDATION_PAYLOAD_KEYS = frozenset(
+    {"schema_version", "foundation_id", "status", "evidence_ref", "claim_boundary"}
+)
+SNAPSHOT_PAYLOAD_KEYS = frozenset(
+    {
+        "schema_version", "snapshot_id", "registered_unit_refs", "implementation_refs",
+        "dependency_refs", "pathway_refs", "capability_refs", "health_refs",
+        "workload_refs", "resource_refs", "benchmark_refs", "candidate_refs",
+        "governance_refs", "external_alternative_refs", "unresolved_refs",
+    }
+)
+LEGACY_TAXONOMY_PAYLOAD_KEYS = frozenset(
+    {
+        "legacy_taxonomy_id", "legacy_aspect_total",
+        "legacy_taxonomy_fully_covered", "aspect_refs", "covered_refs",
+        "uncovered_refs",
+    }
+)
+CONTRACT_PAYLOAD_SCHEMAS = (
+    UNIT_PAYLOAD_KEYS,
+    GENOME_PAYLOAD_KEYS,
+    PRESSURE_PAYLOAD_KEYS,
+    FOUNDATION_PAYLOAD_KEYS,
+    SNAPSHOT_PAYLOAD_KEYS,
+)
+EVENT_PAYLOAD_SCHEMAS = {
+    "unit.registered": (UNIT_PAYLOAD_KEYS,),
+    "genome.registered": (GENOME_PAYLOAD_KEYS,),
+    "pressure.recorded": (PRESSURE_PAYLOAD_KEYS,),
+    "foundation.recorded": (FOUNDATION_PAYLOAD_KEYS,),
+    "snapshot.recorded": (SNAPSHOT_PAYLOAD_KEYS,),
+    "contract.recorded": CONTRACT_PAYLOAD_SCHEMAS,
+    "legacy-taxonomy.observed": (LEGACY_TAXONOMY_PAYLOAD_KEYS,),
+}
 SAFE_TOKEN_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9._-]{0,127}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_PROCESS_LOCKS_GUARD = threading.Lock()
+_PROCESS_LOCKS: dict[str, threading.RLock] = {}
 
 
 class EvolutionIntegrityError(RuntimeError):
     """Raised when persisted evolution events fail integrity verification."""
+
+
+def _process_lock(path: Path) -> threading.RLock:
+    key = str(path.resolve())
+    with _PROCESS_LOCKS_GUARD:
+        return _PROCESS_LOCKS.setdefault(key, threading.RLock())
+
+
+@contextmanager
+def _exclusive_chain_access(path: Path):
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    process_lock = _process_lock(lock_path)
+    with process_lock:
+        with lock_path.open("a+b") as lock_stream:
+            lock_stream.seek(0, os.SEEK_END)
+            if lock_stream.tell() == 0:
+                lock_stream.write(b"\0")
+                lock_stream.flush()
+                os.fsync(lock_stream.fileno())
+            lock_stream.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(lock_stream.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(lock_stream.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                lock_stream.seek(0)
+                if os.name == "nt":
+                    msvcrt.locking(lock_stream.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(lock_stream.fileno(), fcntl.LOCK_UN)
 
 
 def _canonical_json(value: Any) -> str:
@@ -110,26 +223,44 @@ def _sanitize_field(field_name: str, value: Any) -> Any:
                 f"unsafe payload metadata: {field_name} must be a bounded safe token"
             )
         return _sanitize_metadata_token(value, field_name=field_name)
-    return _sanitize_payload(value)
-
-
-def _sanitize_payload(value: Any) -> Any:
-    if isinstance(value, dict):
-        sanitized: dict[str, Any] = {}
-        for key, nested in value.items():
-            if not isinstance(key, str):
-                raise ValueError("unsafe payload metadata: keys must be strings")
-            sanitized[key] = _sanitize_field(key, nested)
-        return sanitized
-    if isinstance(value, list):
-        return [_sanitize_payload(item) for item in value]
-    if isinstance(value, str):
-        raise ValueError(
-            "unsafe payload metadata: string fields require an allowlisted metadata key"
-        )
-    if value is None or isinstance(value, (bool, int, float)):
+    if field_name in NUMERIC_FLOAT_KEYS:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"unsafe payload metadata: {field_name} must be numeric")
+        if not math.isfinite(value):
+            raise ValueError(f"unsafe payload metadata: {field_name} must be finite")
         return value
-    raise ValueError("unsafe payload metadata: unsupported value type")
+    if field_name in NUMERIC_INTEGER_KEYS:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"unsafe payload metadata: {field_name} must be an integer")
+        return value
+    if field_name in BOOLEAN_KEYS:
+        if not isinstance(value, bool):
+            raise ValueError(f"unsafe payload metadata: {field_name} must be boolean")
+        return value
+    if field_name in OPTIONAL_REFERENCE_KEYS and value is None:
+        return None
+    raise ValueError(f"unsafe payload metadata: unknown field {field_name}")
+
+
+def _payload_schema(event_type: str, payload: dict[str, Any]) -> frozenset[str]:
+    schemas = EVENT_PAYLOAD_SCHEMAS.get(event_type, ())
+    payload_keys = set(payload)
+    matches = [schema for schema in schemas if payload_keys <= schema]
+    if not matches:
+        raise ValueError("unsafe payload metadata: unknown event payload shape")
+    return min(matches, key=len)
+
+
+def _sanitize_payload(event_type: str, value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError("unsafe payload metadata: payload must be an object")
+    allowed_fields = _payload_schema(event_type, value)
+    sanitized: dict[str, Any] = {}
+    for key, nested in value.items():
+        if not isinstance(key, str) or key not in allowed_fields:
+            raise ValueError("unsafe payload metadata: keys must be allowlisted strings")
+        sanitized[key] = _sanitize_field(key, nested)
+    return sanitized
 
 
 def _validate_event_record(record: dict[str, Any], event_number: int) -> None:
@@ -188,27 +319,32 @@ class EvolutionEventStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def append(self, event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
-        replayed = self.replay()
-        _sanitize_metadata_token(event_type, field_name="event_type")
-        sanitized_payload = _sanitize_payload(payload)
-        previous_hash = replayed[-1]["event_sha256"] if replayed else None
-        record = {
-            "schema_version": EVENT_SCHEMA_VERSION,
-            "sequence": len(replayed) + 1,
-            "event_type": event_type,
-            "recorded_at": datetime.now(timezone.utc).isoformat(),
-            "previous_event_sha256": previous_hash,
-            "payload_sha256": _sha256(sanitized_payload),
-            "payload": sanitized_payload,
-        }
-        record["event_sha256"] = _sha256(record)
-        with self.path.open("a", encoding="utf-8", newline="\n") as stream:
-            stream.write(_canonical_json(record) + "\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        return record
+        with _exclusive_chain_access(self.path):
+            replayed = self._replay_unlocked()
+            _sanitize_metadata_token(event_type, field_name="event_type")
+            sanitized_payload = _sanitize_payload(event_type, payload)
+            previous_hash = replayed[-1]["event_sha256"] if replayed else None
+            record = {
+                "schema_version": EVENT_SCHEMA_VERSION,
+                "sequence": len(replayed) + 1,
+                "event_type": event_type,
+                "recorded_at": datetime.now(timezone.utc).isoformat(),
+                "previous_event_sha256": previous_hash,
+                "payload_sha256": _sha256(sanitized_payload),
+                "payload": sanitized_payload,
+            }
+            record["event_sha256"] = _sha256(record)
+            with self.path.open("a", encoding="utf-8", newline="\n") as stream:
+                stream.write(_canonical_json(record) + "\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            return record
 
     def replay(self) -> list[dict[str, Any]]:
+        with _exclusive_chain_access(self.path):
+            return self._replay_unlocked()
+
+    def _replay_unlocked(self) -> list[dict[str, Any]]:
         if not self.path.exists():
             return []
 
@@ -237,7 +373,7 @@ class EvolutionEventStore:
                     )
                 payload = record["payload"]
                 try:
-                    sanitized_payload = _sanitize_payload(payload)
+                    sanitized_payload = _sanitize_payload(record["event_type"], payload)
                 except ValueError as exc:
                     raise EvolutionIntegrityError(
                         f"event {expected_sequence} has unsafe payload metadata: {exc}"

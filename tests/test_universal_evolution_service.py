@@ -85,6 +85,72 @@ def _organism_unit() -> EvolvableUnit:
     )
 
 
+def _runtime_pressure(**overrides) -> GrowthPressure:
+    values = {
+        "pressure_id": "pressure:runtime:isolation",
+        "problem_class": "latency",
+        "severity": 0.8,
+        "recurrence": 2,
+        "quality_risk": 0.1,
+        "safety_risk": 0.0,
+        "opportunity_score": 0.7,
+        "expected_value": 0.8,
+        "research_budget_request": 0.2,
+        "affected_workloads": ["workload:interactive"],
+        "status": "open",
+    }
+    values.update(overrides)
+    return GrowthPressure(**values)
+
+
+def test_registry_defensively_isolates_caller_and_returned_unit_lists(tmp_path: Path):
+    registry = EvolvableUnitRegistry(EvolutionEventStore(tmp_path))
+    unit = _runtime_unit(implementation_refs=["implementation:runtime:vulkan"])
+    registered = registry.register_unit(unit)
+
+    unit.implementation_refs.append("C:/private/caller-owned.bin")
+    registered.implementation_refs.append("C:/private/returned-record.bin")
+    listed = registry.list_units()[0]
+    listed.implementation_refs.append("C:/private/list-result.bin")
+
+    assert registry.list_units()[0].implementation_refs == [
+        "implementation:runtime:vulkan"
+    ]
+
+
+def test_registry_defensively_isolates_caller_and_returned_genome_lists(tmp_path: Path):
+    registry = EvolvableUnitRegistry(EvolutionEventStore(tmp_path))
+    genome = GenomeRef(
+        genome_id="genome:runtime:isolation",
+        family="runtime",
+        content_ref="sha256:" + "a" * 64,
+        invariant_refs=["policy:north-star-v1"],
+    )
+    registered = registry.register_genome(genome)
+
+    genome.invariant_refs.append("C:/private/caller-owned.txt")
+    registered.invariant_refs.append("C:/private/returned-record.txt")
+    listed = registry.list_genomes()[0]
+    listed.invariant_refs.append("C:/private/list-result.txt")
+
+    assert registry.list_genomes()[0].invariant_refs == ["policy:north-star-v1"]
+
+
+def test_pressure_map_defensively_isolates_caller_and_returned_lists(tmp_path: Path):
+    pressure_map = GrowthPressureMap(EvolutionEventStore(tmp_path))
+    pressure = _runtime_pressure()
+    recorded = pressure_map.record(pressure)
+
+    pressure.affected_workloads.append("C:/private/caller-owned.txt")
+    recorded.affected_workloads.append("C:/private/returned-record.txt")
+    ranked = pressure_map.ranked(workload_priority={}, system_health_limit=0.5)
+    ranked[0]["affected_workloads"].append("C:/private/ranked-result.txt")
+
+    assert pressure_map.ranked(
+        workload_priority={}, system_health_limit=0.5
+    )[0]["affected_workloads"] == ["workload:interactive"]
+
+
 def test_service_projects_sanitized_restart_replayable_everything_state(
     tmp_path: Path,
 ):
