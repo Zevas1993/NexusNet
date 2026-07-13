@@ -129,3 +129,64 @@ Other gates:
 - The POSIX `fcntl` branch is implemented from the standard-library platform contract but was not executed on this Windows host. Windows thread and spawned-process locking were executed repeatedly.
 - The persistent `.lock` sidecar is deliberate coordination state next to `events.jsonl`; event durability and fail-closed integrity checks remain unchanged.
 - Programs C-I remain outside this fix wave.
+
+## Second Fix Wave: Exact Consumer-Valid Event Schemas
+
+### Re-review finding and root cause
+
+The first privacy hardening used subset matching (`payload_keys <= schema`). That allowed empty and incomplete known-event payloads, and the manual finite-number checks did not enforce the `GrowthPressure` consumer ranges.
+
+Pre-edit GitNexus impact was rerun for `append`, `replay`, `_payload_schema`, `_sanitize_payload`, and `_remember_legacy_taxonomy`. The linked-worktree index again returned UNKNOWN with zero impacted symbols for every backend target; no HIGH or CRITICAL symbol result appeared.
+
+### RED evidence
+
+Command:
+
+`python -m pytest tests/test_universal_evolution_store.py -q -k 'empty_and_incomplete or consumer_invalid'`
+
+Result: exit 1; **18 failed, 42 deselected in 0.57s**. The failures reproduced empty/incomplete acceptance for all seven retained event surfaces, out-of-range pressure scalars and negative recurrence, inconsistent legacy taxonomy semantics, and hash-consistent replay of invalid pressure data.
+
+### GREEN implementation
+
+- `unit.registered`, `genome.registered`, and `pressure.recorded` now require the exact serialized field set and validate/canonicalize through `EvolvableUnit`, `GenomeRef`, and `GrowthPressure` respectively.
+- Retained `foundation.recorded` and `snapshot.recorded` surfaces require exact fields and validate through their Pydantic consumer contracts.
+- Retained `contract.recorded` accepts only one exact five-contract schema and validates through the corresponding Pydantic model.
+- `legacy-taxonomy.observed` requires exactly six keys, the controlled taxonomy ID, nonnegative integer total, boolean fullness, unique sanitized refs, disjoint covered/uncovered sets, exact union/count consistency, and a fullness value consistent with the sets.
+- Unknown event types fail closed. Append and replay use the identical validator before payload hashes are accepted.
+- Old store fixtures now submit complete consumer-valid payloads; no production validation was weakened.
+
+### Focused and adversarial verification
+
+- Initial GREEN subset: **18 passed, 42 deselected in 0.34s**.
+- Exact append/replay adversarial subset: **34 passed, 40 deselected in 0.52s**.
+- Full store file: **60 passed in 2.10s** before the expanded replay parameterization; final store count is 74 inside the matrix below.
+- Store plus service: **100 passed in 2.98s**.
+- Thread plus spawned-process concurrency: five consecutive runs, each **2 passed, 72 deselected** in 1.62-1.64s.
+
+### Final verification before code commit
+
+Documented matrix command:
+
+`python -m pytest tests/test_universal_evolution_contracts.py tests/test_universal_evolution_store.py tests/test_universal_evolution_service.py tests/test_universal_evolution_api.py tests/test_self_improvement_coverage_endpoint.py tests/test_hive_self_improvement_engine.py tests/test_release_wrapper_runtime.py::test_release_wrapper_status_card_is_lightweight_control_panel_surface_after_restart -q`
+
+Result: exit 0; **148 passed, 0 skipped, 0 failed in 98.33s**.
+
+Fresh Node-backed Control Panel behavior: **1 passed in 8.86s**.
+
+Fresh three-construction restart/hash/privacy smoke:
+
+- content SHA-256 at all three observations: `519a5872023c3aced9c5c72af645dc33bc3cfca84c06b1d11e266b814a769aae`;
+- 23 events, contiguous sequences 1-23, schema `nexusnet-evolution-event-v1`;
+- final event SHA-256: `2fe3f92d9de3989618b55edabfb0032ef83bd0064e3e863ac937ce5dde9a134b`;
+- both hash layers and every previous-event link independently recomputed successfully;
+- privacy hit count 0 across artifact root, prompt body, output body, bearer token, private-key marker, and session marker;
+- 3/3 append attacks rejected and 1/1 hash-consistent replay attack rejected;
+- 22 registered units, 22 legacy aspects, legacy taxonomy fully covered, universal coverage false.
+
+Repository gates: `python -m compileall -q nexusnet/evolution` exit 0; `git diff --check` and `git diff --cached --check` exit 0. The staged slice is exactly `store.py`, its store tests, and this report. Staged GitNexus exited 0 but returned 0 symbols/processes and `No changes detected`, the same linked-worktree mapping limitation.
+
+### Remaining concerns
+
+- Backend GitNexus symbol mapping remains unavailable in this linked worktree.
+- Windows thread and spawned-process locking were exercised repeatedly. The POSIX `fcntl` branch remains unexecuted on this Windows host.
+- Programs C-I remain explicitly excluded.

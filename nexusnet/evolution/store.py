@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import math
 import os
 import re
 import threading
@@ -11,11 +10,20 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-from nexusnet.evolution.contracts import sanitize_reference
+from pydantic import BaseModel, ValidationError
+
+from nexusnet.evolution.contracts import (
+    EverythingStateSnapshot,
+    EvolvableUnit,
+    FoundationCheck,
+    GenomeRef,
+    GrowthPressure,
+    sanitize_reference,
+)
 
 
 EVENT_SCHEMA_VERSION = "nexusnet-evolution-event-v1"
-CLAIM_BOUNDARY_TOKEN = "reference-presence-is-not-semantic-proof"
+LEGACY_TAXONOMY_ID = "schema:legacy-self-improvement-taxonomy-v1"
 EVENT_KEYS = frozenset(
     {
         "schema_version",
@@ -28,72 +36,11 @@ EVENT_KEYS = frozenset(
         "event_sha256",
     }
 )
-METADATA_STRING_KEYS = frozenset(
-    {
-        "schema_version",
-        "unit_kind",
-        "authority_class",
-        "privacy_class",
-        "license_state",
-        "trust_state",
-        "federation_policy",
-        "lifecycle_state",
-        "family",
-        "problem_class",
-        "status",
-    }
-)
-REFERENCE_LIST_KEYS = frozenset({"affected_workloads"})
-IDENTIFIER_OR_REFERENCE_LIST_KEYS = frozenset({"affected_hardware_classes"})
-NUMERIC_FLOAT_KEYS = frozenset(
-    {
-        "severity",
-        "quality_risk",
-        "safety_risk",
-        "opportunity_score",
-        "expected_value",
-        "research_budget_request",
-    }
-)
-NUMERIC_INTEGER_KEYS = frozenset({"recurrence", "legacy_aspect_total"})
-BOOLEAN_KEYS = frozenset({"legacy_taxonomy_fully_covered"})
-OPTIONAL_REFERENCE_KEYS = frozenset(
-    {"current_release_ref", "registration_schema_ref", "evidence_ref"}
-)
-UNIT_PAYLOAD_KEYS = frozenset(
-    {
-        "schema_version", "unit_id", "unit_kind", "owner_brain_ref",
-        "parent_unit_refs", "child_unit_refs", "capability_refs", "genome_refs",
-        "implementation_refs", "dependency_refs", "pathway_refs", "authority_class",
-        "privacy_class", "license_state", "trust_state", "current_release_ref",
-        "checkpoint_refs", "health_refs", "workload_refs", "eval_suite_refs",
-        "invariant_refs", "growth_pressure_refs", "candidate_refs", "federation_policy",
-        "lifecycle_state", "registration_schema_ref", "rollback_refs",
-        "improvement_strategy_refs",
-    }
-)
-GENOME_PAYLOAD_KEYS = frozenset(
-    {"schema_version", "genome_id", "family", "content_ref", "invariant_refs"}
-)
-PRESSURE_PAYLOAD_KEYS = frozenset(
-    {
-        "schema_version", "pressure_id", "target_unit_refs", "source_evidence_refs",
-        "problem_class", "severity", "recurrence", "affected_workloads",
-        "affected_hardware_classes", "quality_risk", "safety_risk",
-        "opportunity_score", "expected_value", "research_budget_request", "status",
-    }
-)
-FOUNDATION_PAYLOAD_KEYS = frozenset(
-    {"schema_version", "foundation_id", "status", "evidence_ref", "claim_boundary"}
-)
-SNAPSHOT_PAYLOAD_KEYS = frozenset(
-    {
-        "schema_version", "snapshot_id", "registered_unit_refs", "implementation_refs",
-        "dependency_refs", "pathway_refs", "capability_refs", "health_refs",
-        "workload_refs", "resource_refs", "benchmark_refs", "candidate_refs",
-        "governance_refs", "external_alternative_refs", "unresolved_refs",
-    }
-)
+UNIT_PAYLOAD_KEYS = frozenset(EvolvableUnit.model_fields)
+GENOME_PAYLOAD_KEYS = frozenset(GenomeRef.model_fields)
+PRESSURE_PAYLOAD_KEYS = frozenset(GrowthPressure.model_fields)
+FOUNDATION_PAYLOAD_KEYS = frozenset(FoundationCheck.model_fields)
+SNAPSHOT_PAYLOAD_KEYS = frozenset(EverythingStateSnapshot.model_fields)
 LEGACY_TAXONOMY_PAYLOAD_KEYS = frozenset(
     {
         "legacy_taxonomy_id", "legacy_aspect_total",
@@ -101,21 +48,19 @@ LEGACY_TAXONOMY_PAYLOAD_KEYS = frozenset(
         "uncovered_refs",
     }
 )
-CONTRACT_PAYLOAD_SCHEMAS = (
-    UNIT_PAYLOAD_KEYS,
-    GENOME_PAYLOAD_KEYS,
-    PRESSURE_PAYLOAD_KEYS,
-    FOUNDATION_PAYLOAD_KEYS,
-    SNAPSHOT_PAYLOAD_KEYS,
+CONTRACT_PAYLOAD_SCHEMAS: tuple[tuple[frozenset[str], type[BaseModel]], ...] = (
+    (UNIT_PAYLOAD_KEYS, EvolvableUnit),
+    (GENOME_PAYLOAD_KEYS, GenomeRef),
+    (PRESSURE_PAYLOAD_KEYS, GrowthPressure),
+    (FOUNDATION_PAYLOAD_KEYS, FoundationCheck),
+    (SNAPSHOT_PAYLOAD_KEYS, EverythingStateSnapshot),
 )
-EVENT_PAYLOAD_SCHEMAS = {
-    "unit.registered": (UNIT_PAYLOAD_KEYS,),
-    "genome.registered": (GENOME_PAYLOAD_KEYS,),
-    "pressure.recorded": (PRESSURE_PAYLOAD_KEYS,),
-    "foundation.recorded": (FOUNDATION_PAYLOAD_KEYS,),
-    "snapshot.recorded": (SNAPSHOT_PAYLOAD_KEYS,),
-    "contract.recorded": CONTRACT_PAYLOAD_SCHEMAS,
-    "legacy-taxonomy.observed": (LEGACY_TAXONOMY_PAYLOAD_KEYS,),
+EVENT_PAYLOAD_MODELS: dict[str, tuple[frozenset[str], type[BaseModel]]] = {
+    "unit.registered": (UNIT_PAYLOAD_KEYS, EvolvableUnit),
+    "genome.registered": (GENOME_PAYLOAD_KEYS, GenomeRef),
+    "pressure.recorded": (PRESSURE_PAYLOAD_KEYS, GrowthPressure),
+    "foundation.recorded": (FOUNDATION_PAYLOAD_KEYS, FoundationCheck),
+    "snapshot.recorded": (SNAPSHOT_PAYLOAD_KEYS, EverythingStateSnapshot),
 }
 SAFE_TOKEN_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9._-]{0,127}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -179,88 +124,77 @@ def _sanitize_metadata_token(value: str, *, field_name: str) -> str:
     return value
 
 
-def _sanitize_reference_list(value: Any, *, field_name: str) -> list[str]:
-    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        raise ValueError(f"unsafe payload metadata: {field_name} must be references")
-    return [sanitize_reference(item) for item in value]
+def _validate_model_payload(
+    payload: dict[str, Any],
+    *,
+    expected_keys: frozenset[str],
+    model: type[BaseModel],
+) -> dict[str, Any]:
+    if set(payload) != expected_keys:
+        raise ValueError("unsafe payload metadata: payload keys must match exactly")
+    try:
+        validated = model.model_validate(payload)
+    except ValidationError as exc:
+        raise ValueError(f"unsafe payload metadata: consumer validation failed: {exc}") from exc
+    return validated.model_dump(mode="json")
 
 
-def _sanitize_field(field_name: str, value: Any) -> Any:
-    if field_name == "claim_boundary":
-        if value != CLAIM_BOUNDARY_TOKEN:
-            raise ValueError(
-                "unsafe payload metadata: claim_boundary must use the controlled token"
-            )
-        return value
-    if field_name.endswith("_id"):
-        if not isinstance(value, str):
-            raise ValueError(f"unsafe payload metadata: {field_name} must be a reference")
-        return sanitize_reference(value)
-    if field_name.endswith("_ref"):
-        if value is None:
-            return None
-        if not isinstance(value, str):
-            raise ValueError(f"unsafe payload metadata: {field_name} must be a reference")
-        return sanitize_reference(value)
-    if field_name.endswith("_refs") or field_name in REFERENCE_LIST_KEYS:
-        return _sanitize_reference_list(value, field_name=field_name)
-    if field_name in IDENTIFIER_OR_REFERENCE_LIST_KEYS:
-        if not isinstance(value, list) or not all(
-            isinstance(item, str) for item in value
-        ):
-            raise ValueError(
-                f"unsafe payload metadata: {field_name} must be safe tokens or references"
-            )
-        return [
-            sanitize_reference(item)
-            if ":" in item
-            else _sanitize_metadata_token(item, field_name=field_name)
-            for item in value
-        ]
-    if field_name in METADATA_STRING_KEYS:
-        if not isinstance(value, str):
-            raise ValueError(
-                f"unsafe payload metadata: {field_name} must be a bounded safe token"
-            )
-        return _sanitize_metadata_token(value, field_name=field_name)
-    if field_name in NUMERIC_FLOAT_KEYS:
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise ValueError(f"unsafe payload metadata: {field_name} must be numeric")
-        if not math.isfinite(value):
-            raise ValueError(f"unsafe payload metadata: {field_name} must be finite")
-        return value
-    if field_name in NUMERIC_INTEGER_KEYS:
-        if isinstance(value, bool) or not isinstance(value, int):
-            raise ValueError(f"unsafe payload metadata: {field_name} must be an integer")
-        return value
-    if field_name in BOOLEAN_KEYS:
-        if not isinstance(value, bool):
-            raise ValueError(f"unsafe payload metadata: {field_name} must be boolean")
-        return value
-    if field_name in OPTIONAL_REFERENCE_KEYS and value is None:
-        return None
-    raise ValueError(f"unsafe payload metadata: unknown field {field_name}")
-
-
-def _payload_schema(event_type: str, payload: dict[str, Any]) -> frozenset[str]:
-    schemas = EVENT_PAYLOAD_SCHEMAS.get(event_type, ())
-    payload_keys = set(payload)
-    matches = [schema for schema in schemas if payload_keys <= schema]
-    if not matches:
-        raise ValueError("unsafe payload metadata: unknown event payload shape")
-    return min(matches, key=len)
+def _validate_legacy_taxonomy(payload: dict[str, Any]) -> dict[str, Any]:
+    if set(payload) != LEGACY_TAXONOMY_PAYLOAD_KEYS:
+        raise ValueError("unsafe payload metadata: payload keys must match exactly")
+    taxonomy_id = payload["legacy_taxonomy_id"]
+    total = payload["legacy_aspect_total"]
+    fully_covered = payload["legacy_taxonomy_fully_covered"]
+    if taxonomy_id != LEGACY_TAXONOMY_ID:
+        raise ValueError("unsafe payload metadata: invalid legacy taxonomy id")
+    if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+        raise ValueError("unsafe payload metadata: invalid legacy aspect total")
+    if not isinstance(fully_covered, bool):
+        raise ValueError("unsafe payload metadata: invalid legacy coverage flag")
+    refs: dict[str, list[str]] = {}
+    for field_name in ("aspect_refs", "covered_refs", "uncovered_refs"):
+        value = payload[field_name]
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            raise ValueError(f"unsafe payload metadata: {field_name} must be references")
+        sanitized = [sanitize_reference(item) for item in value]
+        if len(set(sanitized)) != len(sanitized):
+            raise ValueError(f"unsafe payload metadata: {field_name} must be unique")
+        refs[field_name] = sorted(sanitized)
+    aspects = set(refs["aspect_refs"])
+    covered = set(refs["covered_refs"])
+    uncovered = set(refs["uncovered_refs"])
+    expected_fully_covered = total > 0 and covered == aspects and not uncovered
+    if (
+        len(aspects) != total
+        or covered & uncovered
+        or covered | uncovered != aspects
+        or fully_covered != expected_fully_covered
+    ):
+        raise ValueError("unsafe payload metadata: inconsistent legacy taxonomy coverage")
+    return {
+        "legacy_taxonomy_id": taxonomy_id,
+        "legacy_aspect_total": total,
+        "legacy_taxonomy_fully_covered": fully_covered,
+        **refs,
+    }
 
 
 def _sanitize_payload(event_type: str, value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("unsafe payload metadata: payload must be an object")
-    allowed_fields = _payload_schema(event_type, value)
-    sanitized: dict[str, Any] = {}
-    for key, nested in value.items():
-        if not isinstance(key, str) or key not in allowed_fields:
-            raise ValueError("unsafe payload metadata: keys must be allowlisted strings")
-        sanitized[key] = _sanitize_field(key, nested)
-    return sanitized
+    if event_type == "legacy-taxonomy.observed":
+        return _validate_legacy_taxonomy(value)
+    if event_type == "contract.recorded":
+        matches = [entry for entry in CONTRACT_PAYLOAD_SCHEMAS if set(value) == entry[0]]
+        if len(matches) != 1:
+            raise ValueError("unsafe payload metadata: unknown contract payload shape")
+        expected_keys, model = matches[0]
+        return _validate_model_payload(value, expected_keys=expected_keys, model=model)
+    payload_model = EVENT_PAYLOAD_MODELS.get(event_type)
+    if payload_model is None:
+        raise ValueError("unsafe payload metadata: unknown event type")
+    expected_keys, model = payload_model
+    return _validate_model_payload(value, expected_keys=expected_keys, model=model)
 
 
 def _validate_event_record(record: dict[str, Any], event_number: int) -> None:
