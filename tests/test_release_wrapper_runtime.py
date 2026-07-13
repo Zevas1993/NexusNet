@@ -4759,6 +4759,36 @@ const unavailable = [
     claim_boundary: "legacy-lane-coverage-is-not-universal-organism-coverage",
     mutation_boundary: "read-only-no-protected-state-mutation",
   }),
+  renderUniversalEvolutionCard({
+    authority: "NexusBrain",
+    open_pressure_count: 0,
+    coverage: {
+      registered_unit_total: 3,
+      covered_unit_total: 2,
+      uncovered_unit_refs: [],
+      universal_coverage_complete: false,
+    },
+    top_pressures: [],
+    missing_or_unverified_prerequisites: [],
+    last_event_sha256: null,
+    claim_boundary: "legacy-lane-coverage-is-not-universal-organism-coverage",
+    mutation_boundary: "read-only-no-protected-state-mutation",
+  }),
+  renderUniversalEvolutionCard({
+    authority: "NexusBrain",
+    open_pressure_count: 6,
+    coverage: {
+      registered_unit_total: 3,
+      covered_unit_total: 2,
+      uncovered_unit_refs: ["unit:uncovered"],
+      universal_coverage_complete: false,
+    },
+    top_pressures: [{ pressure_id: "pressure:only-one-of-five" }],
+    missing_or_unverified_prerequisites: [],
+    last_event_sha256: null,
+    claim_boundary: "legacy-lane-coverage-is-not-universal-organism-coverage",
+    mutation_boundary: "read-only-no-protected-state-mutation",
+  }),
 ];
 const available = renderUniversalEvolutionCard({
   authority: "NexusBrain",
@@ -4791,6 +4821,7 @@ process.stdout.write(JSON.stringify({ unavailable, available }));
         assert "evolution-status-unavailable" in unavailable
         assert "telemetry is unavailable/unverified" in unavailable
         assert "coverage, pressure, and prerequisite state was not observed" in unavailable
+        assert "legacy-lane-coverage-is-not-universal-organism-coverage" in unavailable
         assert "registered_unit_count" not in unavailable
         assert "<strong>0</strong>" not in unavailable
         assert "none-reported" not in unavailable

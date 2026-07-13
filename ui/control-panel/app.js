@@ -3229,14 +3229,13 @@ function isUniversalEvolutionStatusAvailable(evolution) {
     && coverage.covered_unit_total <= coverage.registered_unit_total
     && Array.isArray(coverage.uncovered_unit_refs)
     && coverage.uncovered_unit_refs.every((unitRef) => typeof unitRef === "string")
+    && coverage.covered_unit_total + coverage.uncovered_unit_refs.length === coverage.registered_unit_total
     && typeof coverage.universal_coverage_complete === "boolean"
     && Number.isInteger(evolution.open_pressure_count)
     && evolution.open_pressure_count >= 0
     && Array.isArray(evolution.top_pressures)
     && evolution.top_pressures.every((pressure) => pressure && typeof pressure.pressure_id === "string")
-    && (evolution.open_pressure_count === 0
-      ? evolution.top_pressures.length === 0
-      : evolution.top_pressures.length > 0)
+    && evolution.top_pressures.length === Math.min(evolution.open_pressure_count, 5)
     && Array.isArray(evolution.missing_or_unverified_prerequisites)
     && evolution.missing_or_unverified_prerequisites.every((name) => typeof name === "string")
     && (evolution.last_event_sha256 === null || typeof evolution.last_event_sha256 === "string")
@@ -3253,6 +3252,7 @@ function renderUniversalEvolutionCard(evolution) {
           <span class="state-pill shadow-only">unavailable / unverified</span>
         </div>
         <small>Read-only evolution telemetry is unavailable/unverified.</small>
+        <small>legacy-lane-coverage-is-not-universal-organism-coverage</small>
         <div class="evolution-prerequisite-gaps">coverage, pressure, and prerequisite state was not observed</div>
       </article>
     `;
