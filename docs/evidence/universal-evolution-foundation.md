@@ -1,6 +1,6 @@
 # Universal Evolution Foundation Evidence
 
-Verified on 2026-07-12 against base/final implementation commit `5374552c1a85a74a1516135caf4acc4d5592e7e8`. This record covers the Program A foundation-verification surface and Program B universal evolvable-registry foundation only. It does not claim that the full NexusNet vision is implemented.
+Verified on 2026-07-12 against final code head `6d58d5e428080b022d1c2b563c840be215f41e49`. This record covers the Program A foundation-verification surface and Program B universal evolvable-registry foundation only. It does not claim that the full NexusNet vision is implemented.
 
 ## Implementation commits
 
@@ -15,6 +15,8 @@ The Tasks 1-7 history, including review remediations present in the verified hea
 | 5 - NexusBrain evolution service | `d799b00c831f9b4f06293b545cad36d6a186742b` |
 | 6 - runtime/API integration | `e577c8e22c56aa62a5d3407d6acbd607c37e1186`, `14b8b40382400930d5541b2d5d7c2849bce2370b`, `6b7d820f34d96faf772f34e0ab4c3712a6bb1941` |
 | 7 - Control Panel projection | `5768bce711da5adff82e5dc59a01442489fbfb36`, `652d5db3b6fcb0bfab0564802ff55a839a50f86d`, `5374552c1a85a74a1516135caf4acc4d5592e7e8` |
+| Final review - privacy, defensive copies, append serialization, semantic UI boundaries | `c5f90d74cd08ecace73f889d76a79df3d03b3a3a` |
+| Final re-review - exact consumer-valid event schemas | `6d58d5e428080b022d1c2b563c840be215f41e49` |
 
 ## Fresh verification
 
@@ -26,24 +28,31 @@ Command:
 python -m pytest tests/test_universal_evolution_contracts.py tests/test_universal_evolution_store.py tests/test_universal_evolution_service.py tests/test_universal_evolution_api.py tests/test_self_improvement_coverage_endpoint.py tests/test_hive_self_improvement_engine.py tests/test_release_wrapper_runtime.py::test_release_wrapper_status_card_is_lightweight_control_panel_surface_after_restart -q
 ```
 
-Result: exit `0`; **101 passed, 0 skipped, 0 failed** in pytest-reported `96.52s` (`0:01:36`); measured wall duration `98.277s`. There was no Torch-related skip in this environment.
+Result: exit `0`; **148 passed, 0 skipped, 0 failed** in pytest-reported `98.33s` (`0:01:38`). There was no Torch-related skip in this environment.
 
-This matrix verifies known contract types and fail-closed ungoverned unknown types; recursive reference privacy rejection; event replay, integrity, restart, and tamper detection; legacy-lane registry coverage; deterministic Growth Pressure ranking, retry behavior, and safety/quality blocking; honest prerequisite states; the NexusBrain-owned service and read-only API projections; and the restart-safe sanitized wrapper projection.
+This matrix verifies exact consumer-valid event schemas; empty/incomplete/unknown event rejection; append and hash-consistent replay rejection for out-of-range Growth Pressure values; legacy taxonomy count/set/fullness consistency; recursive reference privacy rejection; serialized concurrent append; defensive model isolation; semantic UI boundaries; event replay, integrity, restart, and tamper detection; legacy-lane registry coverage; deterministic Growth Pressure ranking, retry behavior, and safety/quality blocking; honest prerequisite states; the NexusBrain-owned service and read-only API projections; and the restart-safe sanitized wrapper projection.
 
-### Two-restart API, hash-chain, and privacy smoke
+### Two-restart hash-chain, privacy, and adversarial smoke
 
-A fresh inline Python smoke created one temporary project, constructed the FastAPI application three times over that same project (two restart transitions), requested `/ops/brain/evolution/everything-state` after each construction, requested `/ops/wrapper/status-card` with a private session marker, and inspected `runtime/artifacts/evolution/events.jsonl`. Inspection emitted only schema version, sequence, event type, hash linkage, and sanitized-reference/privacy summaries; it did not emit payload bodies.
+A fresh inline Python smoke created one temporary event artifact root, constructed `UniversalEvolutionService` three times over that same root (two restart transitions), inspected `evolution/events.jsonl`, exercised three unsafe append cases, and externally rewrote a pressure event with hash-consistent invalid range data. Inspection emitted only hashes, sequence/schema summaries, coverage counts, and privacy/attack counts; it did not emit payload bodies.
 
 Observed:
 
-- Everything State `content_sha256` after initial start and both restarts: `64d8fbb1efc5d0b6b0305880d381abc631deab4692a4f620eb3b4bba709274a0` for all three observations.
+- Everything State `content_sha256` after initial construction and both restarts: `519a5872023c3aced9c5c72af645dc33bc3cfca84c06b1d11e266b814a769aae` for all three observations.
 - Event count: `23`; sequences: contiguous `1` through `23`; schema version: `nexusnet-evolution-event-v1`.
 - Event types: 22 `unit.registered` events followed by one `legacy-taxonomy.observed` event.
-- First `previous_event_sha256`: `None`; final `event_sha256`: `b477c725b91944da46e845265f90700eba603077bc4b4589905ad564ed5314d3`.
+- First `previous_event_sha256`: `None`; final `event_sha256`: `2fe3f92d9de3989618b55edabfb0032ef83bd0064e3e863ac937ce5dde9a134b`.
 - Every payload hash, event hash, and previous-event link was recomputed successfully: hash-chain valid.
-- Recursive reference inspection covered 242 reference values; absolute drive, POSIX-root, and UNC reference hits: `0`.
-- Privacy scan categories were absolute temporary user path, prompt body marker, output body marker, bearer-token marker, private-key marker, and injected session identifier; hits: `0`.
-- Smoke duration: `23.761s`.
+- Privacy scan categories were absolute temporary artifact root, prompt body marker, output body marker, bearer-token marker, private-key marker, and injected session identifier; hits: `0`.
+- Append attacks rejected: `3/3` (empty known payload, out-of-range pressure, unknown event type).
+- Hash-consistent external replay attack rejected: `1/1`.
+- Runtime coverage: 22 registered units, 22 legacy aspects, `legacy_taxonomy_fully_covered: true`, `universal_coverage_complete: false`.
+
+### Concurrency and UI evidence
+
+- Deterministic same-process plus spawned-process append serialization ran five consecutive times after exact-schema enforcement; every run reported **2 passed, 72 deselected** in 1.62-1.64s.
+- Fresh Node-backed Control Panel semantic-boundary behavior: **1 passed in 8.86s**.
+- Windows `threading.RLock` plus `msvcrt.locking` paths were executed. The POSIX `fcntl.flock` branch is implemented but was not executed on this Windows host.
 
 ### Repository gates
 
@@ -53,8 +62,8 @@ python -m compileall -q nexusnet/evolution
 npx gitnexus detect-changes --scope all --repo NexusNet
 ```
 
-- `git diff --check`: exit `0`, no output, `0.052s`.
-- `python -m compileall -q nexusnet/evolution`: exit `0`, no output, `0.049s`.
+- `git diff --check`: exit `0`, no output.
+- `python -m compileall -q nexusnet/evolution`: exit `0`, no output.
 - GitNexus all-scope detection: exit `0`, `2.339s`; reported **34 files, 987 symbols, 96 affected processes, CRITICAL**. That broad result reflects the implementation branch relative to the index/main-checkout baseline and includes many pre-existing/shared indexed changes outside this Task 8 documentation slice. It is not a Task 8 production-edit result and is not evidence that 987 symbols changed during this evidence task.
 - After staging only this evidence document, `npx gitnexus detect-changes --scope staged --repo NexusNet` exited `0` in `1.564s` and reported `No changes detected`; the final staged diff showed one new documentation file with 109 inserted lines. This is the known linked-worktree staged-detection limitation described below, not proof of an empty staged change.
 
@@ -91,6 +100,7 @@ The service/API mutation boundary is `read-only-no-protected-state-mutation`. It
 - Task 6: CRITICAL composition risk governed the work. Supplied impact evidence reported `NexusServices` at 34 direct/127 impacted, `build_services` at 62 direct/477 impacted with CLI `main` affected, and `create_app` at 418 direct/435 impacted with CLI `main` affected. A local rerun returned materially smaller stale-looking LOW results, so the CRITICAL classification remained controlling.
 - Task 7: LOW. `renderReleaseWrapperStatusFallback` had one direct caller, five impacted symbols, and zero indexed flows; `renderAutonomousUpdatesScorecard` had three direct callers and ten impacted symbols and participates in `renderAll`.
 - Known limitation: linked-worktree staged detection repeatedly returned `No changes detected` even for known staged files. The branch-wide `--scope all` result maps shared/index-baseline deltas, while staged detection can miss linked-worktree additions or JavaScript/test/doc changes. Git diff scope and focused behavioral evidence therefore remain necessary; neither result should be misreported as zero impact.
+- Final review and re-review backend symbol impact checks also returned UNKNOWN/zero in the linked-worktree index. The Control Panel renderer remained LOW (3 direct callers, 10 total impacted symbols, `renderAll` flow). Staged final code detection again reported `No changes detected`; exact staged diffs and the 148-test matrix are the controlling scope evidence.
 
 Task 5 final review also left a minor test-precision note: its restart/privacy test checked the stable content hash and a representative user-name absence, but did not itself assert the exact event-key set, independently recompute both hash layers, or recursively scan all privacy categories. This Task 8 smoke supplies those exact-key/hash-chain/recursive privacy checks; the note is retained so the narrower Task 5 test is not overstated.
 
