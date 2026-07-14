@@ -25,6 +25,7 @@ from nexusnet.runtime.moe_residency import (
     MoEResidencyRequest,
     RouteTransitionPrefetcher,
     TieredExpertStore,
+    TieredMoERuntimeAttachment,
     TieredSwiGLUExecutionBackend,
     attach_tiered_moe_runtime,
     compute_model_identity,
@@ -165,6 +166,7 @@ def _package_fixture(tmp_path: Path):
         experts,
         tmp_path,
         model_ref="model:nexusnet-fixture",
+        model_digest=compute_model_identity(experts),
         layer_id="0",
     )
     return experts, manifest
@@ -189,6 +191,7 @@ def test_manifest_reopens_with_canonical_identity_validation(tmp_path: Path) -> 
     reopened = ExpertTensorManifest.read_json(
         tmp_path / "manifest.json",
         expected_model_ref="model:nexusnet-fixture",
+        expected_model_digest=manifest.model_digest,
         expected_layer_id="0",
         expected_expert_count=2,
     )
@@ -199,6 +202,30 @@ def test_manifest_reopens_with_canonical_identity_validation(tmp_path: Path) -> 
     (tmp_path / "manifest.json").write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(ExpertIntegrityError, match="canonical"):
         ExpertTensorManifest.read_json(tmp_path / "manifest.json")
+
+
+def test_manifest_rejects_same_reference_with_different_model_identity(tmp_path: Path) -> None:
+    torch.manual_seed(101)
+    source = MoECapsuleLayer(4, 8, num_experts=2, top_k=1).eval()
+    package_swiglu_experts(
+        source.experts,
+        tmp_path,
+        model_ref="model:same-ref",
+        model_digest=compute_model_identity(source),
+        layer_id="identity",
+    )
+    torch.manual_seed(102)
+    different = MoECapsuleLayer(4, 8, num_experts=2, top_k=1).eval()
+
+    with pytest.raises(ExpertIntegrityError, match="model identity"):
+        TieredSwiGLUExecutionBackend.from_manifest(
+            different,
+            tmp_path / "manifest.json",
+            model_ref="model:same-ref",
+            layer_id="identity",
+            ram_slots=1,
+            hot_slots=1,
+        )
 
 
 def test_digest_mismatch_fails_closed(tmp_path: Path) -> None:
@@ -221,6 +248,7 @@ def test_packaging_rejects_layer_id_path_traversal(tmp_path: Path) -> None:
             experts,
             tmp_path,
             model_ref="model:nexusnet-fixture",
+            model_digest=compute_model_identity(experts),
             layer_id="../escape",
         )
 
@@ -356,6 +384,7 @@ def test_existing_manifest_can_attach_after_restart_without_repackaging(tmp_path
         original.experts,
         tmp_path,
         model_ref="model:nexusnet-fixture",
+        model_digest=compute_model_identity(original),
         layer_id="restart",
     )
 
@@ -582,6 +611,19 @@ def test_model_attachment_rejects_same_topology_with_different_weights(tmp_path:
             plan=plan,
             model_ref="model:nexusnet-lm-fixture",
         )
+
+
+def test_model_identity_ignores_mutable_runtime_load_telemetry() -> None:
+    torch.manual_seed(103)
+    model = NexusNetLM(
+        vocab_size=16, d_model=8, n_heads=2, n_kv_heads=1,
+        num_experts=2, top_k=1, d_hidden=12, num_layers=1,
+    ).eval()
+    identity = compute_model_identity(model)
+
+    model(torch.tensor([[1, 2, 3]]))
+
+    assert compute_model_identity(model) == identity
 
 
 def test_prefetch_learns_layer_transition_without_changing_route_authority() -> None:
@@ -856,6 +898,42 @@ def test_speculation_run_falls_back_when_candidate_fails() -> None:
     assert controller.state("storage-cold").reason == "candidate_execution_failed"
 
 
+@pytest.mark.parametrize(
+    ("candidate", "equivalent", "reason"),
+    [
+        (
+            lambda: {"tokens": [1, 2], "accepted": 2, "proposed": 2},
+            lambda target, candidate: (_ for _ in ()).throw(RuntimeError("verifier failed")),
+            "target_verification_failed",
+        ),
+        (
+            lambda: {"tokens": [1, 2], "accepted": "two", "proposed": 2},
+            lambda target, candidate: target["tokens"] == candidate["tokens"],
+            "candidate_accounting_invalid",
+        ),
+    ],
+)
+def test_speculation_validation_failures_return_verified_baseline(
+    candidate,
+    equivalent,
+    reason: str,
+) -> None:
+    timestamps = iter((0.0, 1.0, 1.0, 1.5))
+    controller = AdaptiveSpeculationController(clock=lambda: next(timestamps))
+    baseline = {"tokens": [1, 2]}
+
+    result = controller.run(
+        "storage-cold",
+        target_only=lambda: baseline,
+        speculative=candidate,
+        equivalent=equivalent,
+    )
+
+    assert result is baseline
+    assert controller.state("storage-cold").enabled is False
+    assert controller.state("storage-cold").reason == reason
+
+
 def test_evidence_contains_runtime_metrics_but_no_prompt_content() -> None:
     evidence = ExpertResidencyEvidence(
         plan_ref="moe-plan:fixture",
@@ -911,6 +989,30 @@ def test_evidence_rejects_invalid_metrics_and_degrades_on_load_failure() -> None
     payload = evidence.snapshot()
     assert payload["runtime_state"] == "tiered-degraded"
     assert payload["fallback_events"] == ["prefetch_failed"]
+
+
+def test_runtime_evidence_window_is_guarded_by_attachment_lock() -> None:
+    attachment = TieredMoERuntimeAttachment(
+        [],
+        plan=MoEResidencyPlanner().plan(_request()),
+    )
+
+    class TrackingLock:
+        def __init__(self) -> None:
+            self.entries = 0
+
+        def __enter__(self):
+            self.entries += 1
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    lock = TrackingLock()
+    attachment._evidence_lock = lock
+
+    attachment.runtime_evidence()
+
+    assert lock.entries == 1
 
 
 def test_colibri_provenance_is_commit_pinned_and_excludes_server_integration() -> None:

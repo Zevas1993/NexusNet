@@ -14,7 +14,7 @@ import torch.nn as nn
 _SAFE_LAYER_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MANIFEST_KEYS = {
-    "manifest_id", "model_ref", "layer_id", "format", "root_dir",
+    "manifest_id", "model_ref", "model_digest", "layer_id", "format", "root_dir",
     "experts", "source_provenance_refs",
 }
 _RECORD_KEYS = {"expert_id", "layer_id", "path", "size_bytes", "sha256", "tensor_names"}
@@ -39,6 +39,7 @@ class ExpertTensorRecord:
 class ExpertTensorManifest:
     manifest_id: str
     model_ref: str
+    model_digest: str
     layer_id: str
     format: str
     root_dir: str
@@ -67,6 +68,7 @@ class ExpertTensorManifest:
         path: str | Path,
         *,
         expected_model_ref: str | None = None,
+        expected_model_digest: str | None = None,
         expected_layer_id: str | None = None,
         expected_expert_count: int | None = None,
     ) -> "ExpertTensorManifest":
@@ -94,13 +96,18 @@ class ExpertTensorManifest:
         if payload["format"] != "safetensors":
             raise ExpertIntegrityError("manifest format must be safetensors")
         model_ref = payload["model_ref"]
+        model_digest = payload["model_digest"]
         layer_id = payload["layer_id"]
         if not isinstance(model_ref, str) or not model_ref:
             raise ExpertIntegrityError("manifest model_ref is invalid")
+        if not isinstance(model_digest, str) or not _SHA256.fullmatch(model_digest):
+            raise ExpertIntegrityError("manifest model_digest is invalid")
         if not isinstance(layer_id, str) or not _SAFE_LAYER_ID.fullmatch(layer_id) or ".." in layer_id:
             raise ExpertIntegrityError("manifest layer_id is invalid")
         if expected_model_ref is not None and model_ref != expected_model_ref:
             raise ExpertIntegrityError("manifest model_ref does not match expected model")
+        if expected_model_digest is not None and model_digest != expected_model_digest:
+            raise ExpertIntegrityError("manifest model identity does not match expected model")
         if expected_layer_id is not None and layer_id != expected_layer_id:
             raise ExpertIntegrityError("manifest layer_id does not match expected layer")
         raw_records = payload["experts"]
@@ -143,12 +150,15 @@ class ExpertTensorManifest:
             )
         if expected_expert_count is not None and len(records) != expected_expert_count:
             raise ExpertIntegrityError("manifest expert count does not match expected topology")
-        canonical_id = _canonical_manifest_id(model_ref, layer_id, records, tuple(raw_refs))
+        canonical_id = _canonical_manifest_id(
+            model_ref, model_digest, layer_id, records, tuple(raw_refs)
+        )
         if payload["manifest_id"] != canonical_id:
             raise ExpertIntegrityError("manifest_id does not match canonical manifest content")
         return cls(
             manifest_id=canonical_id,
             model_ref=model_ref,
+            model_digest=model_digest,
             layer_id=layer_id,
             format="safetensors",
             root_dir=str(source.parent.resolve()),
@@ -159,12 +169,14 @@ class ExpertTensorManifest:
 
 def _canonical_manifest_id(
     model_ref: str,
+    model_digest: str,
     layer_id: str,
     records: Iterable[ExpertTensorRecord],
     source_provenance_refs: tuple[str, ...],
 ) -> str:
     identity_payload = {
         "model_ref": model_ref,
+        "model_digest": model_digest,
         "layer_id": layer_id,
         "experts": [asdict(record) for record in records],
         "source_provenance_refs": list(source_provenance_refs),
@@ -179,6 +191,7 @@ def package_swiglu_experts(
     output_dir: str | Path,
     *,
     model_ref: str,
+    model_digest: str,
     layer_id: str,
     source_provenance_refs: tuple[str, ...] = (),
 ) -> ExpertTensorManifest:
@@ -189,6 +202,8 @@ def package_swiglu_experts(
         raise RuntimeError("safetensors is required for tiered expert packaging") from exc
     if not _SAFE_LAYER_ID.fullmatch(layer_id) or ".." in layer_id:
         raise ValueError("layer_id must be a safe identifier without path traversal")
+    if not _SHA256.fullmatch(model_digest):
+        raise ValueError("model_digest must be a lowercase SHA-256 digest")
     root = Path(output_dir).resolve()
     root.mkdir(parents=True, exist_ok=True)
     records: list[ExpertTensorRecord] = []
@@ -226,10 +241,13 @@ def package_swiglu_experts(
             )
         )
 
-    manifest_id = _canonical_manifest_id(model_ref, layer_id, records, source_provenance_refs)
+    manifest_id = _canonical_manifest_id(
+        model_ref, model_digest, layer_id, records, source_provenance_refs
+    )
     manifest = ExpertTensorManifest(
         manifest_id=manifest_id,
         model_ref=model_ref,
+        model_digest=model_digest,
         layer_id=layer_id,
         format="safetensors",
         root_dir=str(root),

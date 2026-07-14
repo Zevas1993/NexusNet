@@ -24,11 +24,24 @@ class ExpertExecutionBackend(Protocol):
 
 
 def compute_model_identity(model: nn.Module) -> str:
-    """Return a deterministic SHA-256 identity over model type and state tensors."""
+    """Return a stable identity over parameters and model-defining configuration."""
     digest = hashlib.sha256()
     digest.update(f"{type(model).__module__}.{type(model).__qualname__}\0".encode("utf-8"))
-    for name, tensor in sorted(model.state_dict().items()):
-        value = tensor.detach().cpu().contiguous()
+    config_fields = {
+        "d_model", "n_heads", "n_kv_heads", "head_dim", "full_features",
+        "use_ebt", "num_experts", "top_k", "router_lr", "causal", "steps",
+        "max_steps", "num_planes", "in_features", "out_features",
+        "num_embeddings", "embedding_dim",
+    }
+    for module_name, module in model.named_modules():
+        module_type = f"{type(module).__module__}.{type(module).__qualname__}"
+        digest.update(f"module:{module_name}:{module_type}\0".encode("utf-8"))
+        for field in sorted(config_fields):
+            value = getattr(module, field, None)
+            if isinstance(value, (str, int, float, bool)):
+                digest.update(f"config:{module_name}:{field}:{value!r}\0".encode("utf-8"))
+    for name, parameter in sorted(model.named_parameters()):
+        value = parameter.detach().cpu().contiguous()
         digest.update(name.encode("utf-8") + b"\0")
         digest.update(str(value.dtype).encode("ascii") + b"\0")
         digest.update(str(tuple(value.shape)).encode("ascii") + b"\0")
@@ -94,6 +107,7 @@ class TieredSwiGLUExecutionBackend:
         output_dir: str | Path,
         *,
         model_ref: str,
+        model_digest: str | None = None,
         layer_id: str,
         ram_slots: int,
         hot_slots: int,
@@ -105,6 +119,7 @@ class TieredSwiGLUExecutionBackend:
             layer.experts,
             output_dir,
             model_ref=model_ref,
+            model_digest=model_digest or compute_model_identity(layer),
             layer_id=layer_id,
         )
         backend = cls(
@@ -122,6 +137,7 @@ class TieredSwiGLUExecutionBackend:
         manifest_path: str | Path,
         *,
         model_ref: str,
+        model_digest: str | None = None,
         layer_id: str,
         ram_slots: int,
         hot_slots: int,
@@ -132,6 +148,7 @@ class TieredSwiGLUExecutionBackend:
         manifest = ExpertTensorManifest.read_json(
             manifest_path,
             expected_model_ref=model_ref,
+            expected_model_digest=model_digest or compute_model_identity(layer),
             expected_layer_id=layer_id,
             expected_expert_count=len(layer.experts),
         )
@@ -247,6 +264,7 @@ class TieredMoERuntimeAttachment:
         self.plan = plan
         self._coordinator = coordinator
         self._restored = False
+        self._evidence_lock = Lock()
         self._evidence_baselines = [self._counter_snapshot(backend) for backend in self.backends]
 
     @property
@@ -261,6 +279,10 @@ class TieredMoERuntimeAttachment:
         return [backend.evidence() for backend in self.backends]
 
     def runtime_evidence(self) -> dict[str, object]:
+        with self._evidence_lock:
+            return self._runtime_evidence_snapshot()
+
+    def _runtime_evidence_snapshot(self) -> dict[str, object]:
         layers: list[dict[str, object]] = []
         for index, backend in enumerate(self.backends):
             current = self._counter_snapshot(backend)
@@ -450,6 +472,7 @@ def attach_tiered_moe_runtime(
                 layer,
                 root / safe_name,
                 model_ref=plan.model_ref,
+                model_digest=plan.model_digest,
                 layer_id=name or str(layer_index),
                 ram_slots=ram_slots,
                 hot_slots=hot_slots,

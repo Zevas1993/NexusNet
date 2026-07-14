@@ -162,22 +162,34 @@ class AdaptiveSpeculationController:
         candidate_seconds = max(self._clock() - candidate_start, 1e-12)
 
         verifier = equivalent or _outputs_equivalent
-        if not verifier(baseline, candidate):
-            with self._lock:
-                profile = self._profiles.setdefault(profile_ref, _Accumulator())
-                profile.enabled = False
-                profile.reason = "target_verification_mismatch"
+        try:
+            equivalent_output = verifier(baseline, candidate)
+        except Exception:
+            self._disable(profile_ref, "target_verification_failed")
+            return baseline
+        if not equivalent_output:
+            self._disable(profile_ref, "target_verification_mismatch")
             return baseline
 
-        accepted, proposed = self._candidate_counts(candidate)
-        state = self.observe(
-            profile_ref,
-            baseline_seconds=baseline_seconds,
-            candidate_seconds=candidate_seconds,
-            accepted=accepted,
-            proposed=proposed,
-        )
+        try:
+            accepted, proposed = self._candidate_counts(candidate)
+            state = self.observe(
+                profile_ref,
+                baseline_seconds=baseline_seconds,
+                candidate_seconds=candidate_seconds,
+                accepted=accepted,
+                proposed=proposed,
+            )
+        except (TypeError, ValueError):
+            self._disable(profile_ref, "candidate_accounting_invalid")
+            return baseline
         return candidate if state.enabled else baseline
+
+    def _disable(self, profile_ref: str, reason: str) -> None:
+        with self._lock:
+            profile = self._profiles.setdefault(profile_ref, _Accumulator())
+            profile.enabled = False
+            profile.reason = reason
 
     @staticmethod
     def _candidate_counts(candidate: object) -> tuple[int, int]:
