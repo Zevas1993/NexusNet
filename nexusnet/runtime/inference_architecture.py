@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from nexus.schemas import utcnow
 from nexusnet.policy import PolicyKernel
+from nexusnet.runtime.evolutionary_inference import EvolutionaryInferenceFoundation
 
 
 WorkloadType = Literal["chat", "research", "agentic", "coding", "multimodal", "batch"]
@@ -38,6 +39,7 @@ class InferenceArchitectureRegistry:
             self.plans_dir.mkdir(parents=True, exist_ok=True)
         self._memory_plans: list[dict[str, Any]] = []
         self.policy_kernel = PolicyKernel.default()
+        self.evolutionary_foundation = EvolutionaryInferenceFoundation(artifacts_dir=self.artifacts_dir)
 
     def plan(self, request: InferenceArchitectureRequest | dict[str, Any]) -> dict[str, Any]:
         normalized = (
@@ -104,6 +106,9 @@ class InferenceArchitectureRegistry:
                 "docs/NEXUSNET_QUANTIZATION_AGENTIC_RESEARCH_EXPANSION_2026-04-28.md",
             ],
             "architecture_boundary": "inference-architecture-plans-are-shadow-only-until-benchmarked",
+            "evolutionary_inference_foundation": self.evolutionary_foundation.status(
+                ensure_baseline=self.artifacts_dir is not None
+            ),
             "watch_items": [
                 "speculative decoding",
                 "disaggregated prefill/decode",

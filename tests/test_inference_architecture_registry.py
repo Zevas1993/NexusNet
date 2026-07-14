@@ -146,3 +146,25 @@ def test_inference_architecture_api_blackbox_and_control_panel_surface(tmp_path)
     assert "renderInferenceArchitectureScorecard" in app_js
     assert "/ops/brain/canon/inference-architecture" in app_js
     assert "Inference upstream cache gate" in app_js
+
+
+def test_evolutionary_inference_foundation_is_runtime_visible_and_restart_safe(tmp_path):
+    project_root = make_project(tmp_path)
+    first_client = TestClient(create_app(str(project_root)))
+
+    first_response = first_client.get("/ops/brain/canon/inference-architecture")
+
+    assert first_response.status_code == 200
+    first = first_response.json()["evolutionary_inference_foundation"]
+    assert first["runtime_state"] == "live-evidence"
+    assert first["policy_mutation_allowed"] is False
+    assert set(first["primitive_ids"]) == {"portable.cpu-reference", "moe.selective-residency"}
+    assert first["feasibility"]["status"] == "shadow-feasible"
+    assert first["artifact_ref"] == "runtime/evolutionary-inference/foundation-v1.json"
+
+    restarted_client = TestClient(create_app(str(project_root)))
+    restarted = restarted_client.get("/ops/brain/canon/inference-architecture").json()[
+        "evolutionary_inference_foundation"
+    ]
+    assert restarted["evidence_id"] == first["evidence_id"]
+    assert restarted["host_fingerprint"] == first["host_fingerprint"]
