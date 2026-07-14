@@ -10,9 +10,15 @@ Device-agnostic: `.to("cuda")` on a GPU box (e.g. the RTX 5070 Ti), trains on CP
 """
 from __future__ import annotations
 
+from typing import Protocol
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+
+class ExpertExecutionBackend(Protocol):
+    def execute(self, expert_id: int, inputs: torch.Tensor) -> torch.Tensor: ...
 
 
 def squash(x: torch.Tensor, dim: int = -1, eps: float = 1e-8) -> torch.Tensor:
@@ -102,6 +108,19 @@ class MoECapsuleLayer(nn.Module):
         # Governed Sparse Routing: hive governance bias over experts (0=allow, -inf=forbid, +=prio).
         # Set by GovernedSparseRouter from the sacred-geometry fabric; None = ungoverned (free routing).
         self.governance: torch.Tensor | None = None
+        self._expert_execution_backend: ExpertExecutionBackend | None = None
+
+    def set_execution_backend(self, backend: ExpertExecutionBackend | None) -> None:
+        """Select an inference-only expert executor; None restores resident execution."""
+        if self.training and backend is not None:
+            raise RuntimeError("tiered expert execution is inference-only")
+        if (
+            backend is None
+            and self._expert_execution_backend is not None
+            and getattr(self._expert_execution_backend, "resident_experts_released", False)
+        ):
+            raise RuntimeError("restore resident experts before detaching tiered execution")
+        self._expert_execution_backend = backend
 
     def set_governance(self, governance: torch.Tensor | None) -> None:
         """Bind a per-expert governance bias (len == num_experts) from the hive fabric, or None."""
@@ -113,11 +132,18 @@ class MoECapsuleLayer(nn.Module):
         self.governance = None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.training and self._expert_execution_backend is not None:
+            raise RuntimeError("tiered expert execution is inference-only")
         scores = self.gate(x)                                   # (N, E) learned routing scores
         biased = scores + self.load_bias                        # selection only
         if self.governance is not None:
             biased = biased + self.governance.to(biased.device)  # governed sparse routing
         topv, topi = torch.topk(biased, self.top_k, dim=-1)     # (N, k)
+        if self._expert_execution_backend is not None:
+            begin_route = getattr(self._expert_execution_backend, "begin_route", None)
+            if begin_route is not None:
+                selected = tuple(sorted(int(item) for item in torch.unique(topi).detach().cpu().tolist()))
+                begin_route(selected, x.device)
         chosen_scores = torch.gather(scores, -1, topi)          # original scores for the gate weight
         gate_w = torch.softmax(chosen_scores, dim=-1)           # (N, k), sums to 1 per row
 
@@ -130,7 +156,13 @@ class MoECapsuleLayer(nn.Module):
             token_mask = sel.any(dim=-1)                        # (N,) tokens routing to e
             # weight for expert e per token = sum of its gate weights across the matching slots
             w_e = (gate_w * sel).sum(dim=-1, keepdim=True)[token_mask]  # (M,1)
-            out[token_mask] = out[token_mask] + w_e * self.experts[e](x[token_mask])
+            expert_inputs = x[token_mask]
+            expert_output = (
+                self._expert_execution_backend.execute(e, expert_inputs)
+                if self._expert_execution_backend is not None
+                else self.experts[e](expert_inputs)
+            )
+            out[token_mask] = out[token_mask] + w_e * expert_output
             load[e] = token_mask.sum()
         self.last_load = load.detach()
         return out
