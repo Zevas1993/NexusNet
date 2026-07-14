@@ -35,10 +35,10 @@ No Colibrì performance result is represented as NexusNet runtime evidence. Nexu
 
 | Role | Path | SHA-256 |
 |---|---|---|
-| Reviewed upstream | `c/tier.h` | `93c2a90ebb233f30a9cf1a5adb6228583ab4ad9ca9caad1bd5bfdcf336364625` |
-| Reviewed upstream | `c/resource_plan.py` | `dfd18afc3e419c6a8afba97d3d893ec69ca4db4b41560abc910fd94e052f797c` |
+| Reviewed upstream raw blob | `c/tier.h` | `1971c5325fc4ffe5dce17e50d7781dc64ef31d14ebf354cb2452ca6c13a3d495` |
+| Reviewed upstream raw blob | `c/resource_plan.py` | `07a9549fed35fe080468b12eae38fe5e576a851efcd157cb3fd47353019f9980` |
 | Independent NexusNet implementation | `nexusnet/runtime/moe_residency/heat.py` | `7b0eec65dba422090e86588ee70ddd6d00e8de3edffb7934a697b835e98e7bfb` |
-| Independent NexusNet implementation | `nexusnet/runtime/moe_residency/planner.py` | `edbf4dd163e059b3bdc66743e4c01da7920540393e2e9779a5cc9ac69799b96f` |
+| Independent NexusNet implementation | `nexusnet/runtime/moe_residency/planner.py` | `d8d88511a82e6c6b0225900b61ea5024bd2b817e4bbab240de8d38b034bd6ea2` |
 
 Review and verification are executable in
 `tests/runtime/test_moe_residency.py`, including plan admission, immutable

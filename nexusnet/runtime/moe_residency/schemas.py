@@ -32,10 +32,16 @@ class MoEResidencyRequest:
     ram_headroom_bytes: int
     expert_bytes: int
     expert_count: int
+    model_digest: str | None = None
 
     def __post_init__(self) -> None:
         if not self.model_ref.strip():
             raise ValueError("model_ref is required")
+        if self.model_digest is not None and (
+            len(self.model_digest) != 64
+            or any(character not in "0123456789abcdef" for character in self.model_digest)
+        ):
+            raise ValueError("model_digest must be a lowercase SHA-256 digest")
         values = (
             self.dense_core_bytes,
             self.kv_cache_bytes,
@@ -55,6 +61,7 @@ class MoEResidencyRequest:
 class MoEResidencyPlan:
     plan_id: str
     model_ref: str
+    model_digest: str | None
     admission_state: AdmissionState
     blockers: tuple[str, ...]
     gpu_expert_slots: int

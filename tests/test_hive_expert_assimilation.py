@@ -75,3 +75,17 @@ def test_fuse_requires_matching_d_model():
     b = MoECapsuleLayer(24, 32, num_experts=2, top_k=1)
     with pytest.raises(ValueError):
         fuse_moe_layers(a, b)
+
+
+def test_structural_mutation_rejects_tiered_attached_layers():
+    a = MoECapsuleLayer(16, 32, num_experts=2, top_k=1).eval()
+    b = MoECapsuleLayer(16, 32, num_experts=2, top_k=1).eval()
+    a.set_execution_backend(object())
+
+    with pytest.raises(RuntimeError, match="tiered execution"):
+        assimilate_expert(a, make_swiglu_expert(16, 32))
+    with pytest.raises(RuntimeError, match="tiered execution"):
+        fuse_moe_layers(a, b)
+
+    assert a.num_experts == 2
+    assert len(a.experts) == 2

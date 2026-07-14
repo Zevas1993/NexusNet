@@ -10,14 +10,11 @@ from threading import RLock
 
 import torch
 
-from .manifest import ExpertTensorManifest
-
-
-class ExpertIntegrityError(RuntimeError):
-    pass
+from .manifest import ExpertIntegrityError, ExpertTensorManifest
 
 
 TensorMap = dict[str, torch.Tensor]
+CacheKey = tuple[int, str, str]
 
 
 class TieredExpertStore:
@@ -44,13 +41,16 @@ class TieredExpertStore:
         self.max_shard_bytes = max_shard_bytes
         self.max_prefetch_inflight = max_prefetch_inflight
         self._ram: OrderedDict[int, TensorMap] = OrderedDict()
-        self._hot: OrderedDict[tuple[int, str], TensorMap] = OrderedDict()
-        self._pinned_hot_keys: set[tuple[int, str]] = set()
-        self._leases: dict[tuple[int, str], int] = {}
+        self._hot: OrderedDict[CacheKey, TensorMap] = OrderedDict()
+        self._pinned_hot_keys: set[CacheKey] = set()
+        self._leases: dict[CacheKey, int] = {}
+        self._host_inflight: dict[int, Future[TensorMap]] = {}
+        self._acquire_inflight: dict[CacheKey, Future[TensorMap]] = {}
         self._lock = RLock()
         self._prefetch_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="nexus-moe-prefetch")
-        self._prefetched: set[tuple[int, str]] = set()
-        self._prefetch_inflight: dict[tuple[int, str], Future[TensorMap]] = {}
+        self._prefetched: set[CacheKey] = set()
+        self._prefetch_inflight: dict[CacheKey, Future[TensorMap]] = {}
+        self._prefetch_workers: set[Future[TensorMap]] = set()
         self._metrics = {
             "storage_misses": 0,
             "ram_hits": 0,
@@ -64,6 +64,7 @@ class TieredExpertStore:
             "prefetch_cancellations": 0,
             "prefetch_coalesced": 0,
             "prefetch_wasted": 0,
+            "load_failures": 0,
         }
         self._validate_manifest_paths()
 
@@ -72,9 +73,10 @@ class TieredExpertStore:
         expert_id: int,
         device: torch.device,
         *,
+        dtype: torch.dtype | None = None,
         _prefetch: bool = False,
     ) -> TensorMap:
-        key = (expert_id, str(device))
+        key = self._cache_key(expert_id, device, dtype)
         with self._lock:
             hot = self._hot.get(key)
             if hot is not None:
@@ -82,29 +84,43 @@ class TieredExpertStore:
                 self._mark_prefetch_hit(key, is_prefetch=_prefetch)
                 self._hot.move_to_end(key)
                 return hot
-
-            host = self._ram.get(expert_id)
-            if host is not None:
-                self._metrics["ram_hits"] += 1
-                self._mark_prefetch_hit(key, is_prefetch=_prefetch)
-                self._ram.move_to_end(expert_id)
-            else:
-                host = self._load_from_storage(expert_id)
-                self._insert_ram(expert_id, host)
-
-            if self.hot_slots == 0:
-                return host if device.type == "cpu" else self._to_device(host, device)
-            device_tensors = host if device.type == "cpu" else self._to_device(host, device)
-            self._hot[key] = device_tensors
-            self._hot.move_to_end(key)
-            self._trim_hot()
-            return device_tensors
+            inflight = self._acquire_inflight.get(key)
+            owner = inflight is None
+            if owner:
+                inflight = Future()
+                self._acquire_inflight[key] = inflight
+        assert inflight is not None
+        if owner:
+            try:
+                host = self._host_tensors(expert_id)
+                device_tensors = self._to_device(host, device, dtype)
+                with self._lock:
+                    if self.hot_slots:
+                        self._hot[key] = device_tensors
+                        self._hot.move_to_end(key)
+                        self._trim_hot()
+                    inflight.set_result(device_tensors)
+            except BaseException as exc:
+                inflight.set_exception(exc)
+            finally:
+                with self._lock:
+                    if self._acquire_inflight.get(key) is inflight:
+                        self._acquire_inflight.pop(key, None)
+        result = inflight.result()
+        with self._lock:
+            self._mark_prefetch_hit(key, is_prefetch=_prefetch)
+        return result
 
     @contextmanager
-    def lease(self, expert_id: int, device: torch.device):
-        key = (expert_id, str(device))
+    def lease(
+        self,
+        expert_id: int,
+        device: torch.device,
+        dtype: torch.dtype | None = None,
+    ):
+        key = self._cache_key(expert_id, device, dtype)
+        tensors = self.acquire(expert_id, device, dtype=dtype)
         with self._lock:
-            tensors = self.acquire(expert_id, device)
             self._leases[key] = self._leases.get(key, 0) + 1
         try:
             yield tensors
@@ -118,20 +134,31 @@ class TieredExpertStore:
                 self._trim_hot()
                 self._trim_ram()
 
-    def pin(self, expert_ids: tuple[int, ...], device: torch.device) -> None:
+    def pin(
+        self,
+        expert_ids: tuple[int, ...],
+        device: torch.device,
+        dtype: torch.dtype | None = None,
+    ) -> None:
         unique_ids = tuple(dict.fromkeys(expert_ids))
         if len(unique_ids) > self.hot_slots:
             raise ValueError("pinned expert count exceeds hot slot budget")
-        device_ref = str(device)
         with self._lock:
-            self._pinned_hot_keys = {(expert_id, device_ref) for expert_id in unique_ids}
+            self._pinned_hot_keys = {
+                self._cache_key(expert_id, device, dtype) for expert_id in unique_ids
+            }
         for expert_id in unique_ids:
-            self.acquire(expert_id, device)
+            self.acquire(expert_id, device, dtype=dtype)
         with self._lock:
             self._trim_hot()
 
-    def prefetch(self, expert_id: int, device: torch.device) -> Future[TensorMap]:
-        key = (expert_id, str(device))
+    def prefetch(
+        self,
+        expert_id: int,
+        device: torch.device,
+        dtype: torch.dtype | None = None,
+    ) -> Future[TensorMap]:
+        key = self._cache_key(expert_id, device, dtype)
         with self._lock:
             self._metrics["prefetch_requests"] += 1
             existing = self._prefetch_inflight.get(key)
@@ -144,19 +171,43 @@ class TieredExpertStore:
                 self._metrics["prefetch_cancellations"] += 1
                 return rejected
             self._prefetched.add(key)
+            reservation: Future[TensorMap] = Future()
+            self._prefetch_inflight[key] = reservation
 
         def load() -> TensorMap:
             try:
-                return self.acquire(expert_id, device, _prefetch=True)
+                return self.acquire(expert_id, device, dtype=dtype, _prefetch=True)
             except Exception:
                 with self._lock:
                     self._prefetched.discard(key)
                     self._metrics["prefetch_failures"] += 1
                 raise
 
-        future = self._prefetch_executor.submit(load)
+        try:
+            worker = self._prefetch_executor.submit(load)
+        except BaseException as exc:
+            with self._lock:
+                self._prefetch_inflight.pop(key, None)
+                self._prefetched.discard(key)
+                self._metrics["prefetch_failures"] += 1
+            reservation.set_exception(exc)
+            return reservation
         with self._lock:
-            self._prefetch_inflight[key] = future
+            self._prefetch_workers.add(worker)
+
+        def transfer(done: Future[TensorMap]) -> None:
+            with self._lock:
+                self._prefetch_workers.discard(done)
+            if reservation.done():
+                return
+            if done.cancelled():
+                reservation.cancel()
+                return
+            error = done.exception()
+            if error is not None:
+                reservation.set_exception(error)
+            else:
+                reservation.set_result(done.result())
 
         def cleanup(done: Future[TensorMap]) -> None:
             with self._lock:
@@ -168,8 +219,9 @@ class TieredExpertStore:
             if not done.cancelled():
                 done.exception()
 
-        future.add_done_callback(cleanup)
-        return future
+        worker.add_done_callback(transfer)
+        reservation.add_done_callback(cleanup)
+        return reservation
 
     def close(self) -> None:
         with self._lock:
@@ -185,7 +237,9 @@ class TieredExpertStore:
                 **self._metrics,
                 "ram_occupancy": len(self._ram),
                 "hot_occupancy": len(self._hot),
-                "pinned_hot_experts": sorted(expert_id for expert_id, _ in self._pinned_hot_keys),
+                "pinned_hot_experts": sorted(
+                    {expert_id for expert_id, _, _ in self._pinned_hot_keys}
+                ),
                 "active_leases": sum(self._leases.values()),
                 "inflight_prefetches": len(self._prefetch_inflight),
             }
@@ -223,12 +277,42 @@ class TieredExpertStore:
             raise ExpertIntegrityError(
                 f"expert {expert_id} digest mismatch for manifest {self.manifest.manifest_id}"
             )
-        self._metrics["storage_misses"] += 1
-        self._metrics["bytes_read"] += len(data)
+        with self._lock:
+            self._metrics["storage_misses"] += 1
+            self._metrics["bytes_read"] += len(data)
         tensors = load(data)
         if tuple(sorted(tensors)) != record.tensor_names:
             raise ExpertIntegrityError(f"expert {expert_id} tensor names do not match manifest")
         return tensors
+
+    def _host_tensors(self, expert_id: int) -> TensorMap:
+        with self._lock:
+            host = self._ram.get(expert_id)
+            if host is not None:
+                self._metrics["ram_hits"] += 1
+                self._ram.move_to_end(expert_id)
+                return host
+            inflight = self._host_inflight.get(expert_id)
+            owner = inflight is None
+            if owner:
+                inflight = Future()
+                self._host_inflight[expert_id] = inflight
+        assert inflight is not None
+        if owner:
+            try:
+                host = self._load_from_storage(expert_id)
+                with self._lock:
+                    self._insert_ram(expert_id, host)
+                    inflight.set_result(host)
+            except BaseException as exc:
+                with self._lock:
+                    self._metrics["load_failures"] += 1
+                inflight.set_exception(exc)
+            finally:
+                with self._lock:
+                    if self._host_inflight.get(expert_id) is inflight:
+                        self._host_inflight.pop(expert_id, None)
+        return inflight.result()
 
     def _insert_ram(self, expert_id: int, tensors: TensorMap) -> None:
         if self.ram_slots == 0:
@@ -237,7 +321,7 @@ class TieredExpertStore:
         self._ram.move_to_end(expert_id)
         self._trim_ram()
 
-    def _mark_prefetch_hit(self, key: tuple[int, str], *, is_prefetch: bool) -> None:
+    def _mark_prefetch_hit(self, key: CacheKey, *, is_prefetch: bool) -> None:
         if not is_prefetch and key in self._prefetched:
             self._prefetched.remove(key)
             self._metrics["prefetch_hits"] += 1
@@ -268,7 +352,7 @@ class TieredExpertStore:
                     for expert_id in self._ram
                     if not any(
                         leased_expert == expert_id and count > 0
-                        for (leased_expert, _), count in self._leases.items()
+                        for (leased_expert, _, _), count in self._leases.items()
                     )
                 ),
                 None,
@@ -286,8 +370,27 @@ class TieredExpertStore:
             self._metrics["ram_evictions"] += 1
 
     @staticmethod
-    def _to_device(tensors: TensorMap, device: torch.device) -> TensorMap:
-        return {name: tensor.to(device=device, non_blocking=True) for name, tensor in tensors.items()}
+    def _to_device(
+        tensors: TensorMap,
+        device: torch.device,
+        dtype: torch.dtype | None,
+    ) -> TensorMap:
+        return {
+            name: tensor.to(
+                device=device,
+                dtype=dtype if tensor.is_floating_point() else tensor.dtype,
+                non_blocking=True,
+            )
+            for name, tensor in tensors.items()
+        }
+
+    @staticmethod
+    def _cache_key(
+        expert_id: int,
+        device: torch.device,
+        dtype: torch.dtype | None,
+    ) -> CacheKey:
+        return (expert_id, str(device), str(dtype) if dtype is not None else "source")
 
     def _validate_manifest_paths(self) -> None:
         seen: set[int] = set()

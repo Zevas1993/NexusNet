@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import Future
 from contextvars import ContextVar
+import hashlib
 from pathlib import Path
 from threading import Lock
 from typing import Any, Callable, Protocol
@@ -12,7 +13,7 @@ import torch.nn.functional as F
 
 from .heat import ExpertHeatPolicy
 from .evidence import ExpertResidencyEvidence
-from .manifest import package_swiglu_experts
+from .manifest import ExpertTensorManifest, package_swiglu_experts
 from .prefetch import RouteTransitionPrefetcher
 from .schemas import MoEResidencyPlan
 from .store import TieredExpertStore
@@ -22,11 +23,34 @@ class ExpertExecutionBackend(Protocol):
     def execute(self, expert_id: int, inputs: torch.Tensor) -> torch.Tensor: ...
 
 
+def compute_model_identity(model: nn.Module) -> str:
+    """Return a deterministic SHA-256 identity over model type and state tensors."""
+    digest = hashlib.sha256()
+    digest.update(f"{type(model).__module__}.{type(model).__qualname__}\0".encode("utf-8"))
+    for name, tensor in sorted(model.state_dict().items()):
+        value = tensor.detach().cpu().contiguous()
+        digest.update(name.encode("utf-8") + b"\0")
+        digest.update(str(value.dtype).encode("ascii") + b"\0")
+        digest.update(str(tuple(value.shape)).encode("ascii") + b"\0")
+        digest.update(value.view(torch.uint8).numpy().tobytes())
+    return digest.hexdigest()
+
+
 class _OffloadedExpertStub(nn.Module):
-    def __init__(self, expert_id: int, store: TieredExpertStore) -> None:
+    def __init__(
+        self,
+        expert_id: int,
+        store: TieredExpertStore,
+        anchor: torch.Tensor,
+    ) -> None:
         super().__init__()
         self.expert_id = expert_id
         self.store = store
+        self.register_buffer(
+            "_tiered_anchor",
+            torch.empty(0, device=anchor.device, dtype=anchor.dtype),
+            persistent=False,
+        )
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         raise RuntimeError(
@@ -34,9 +58,19 @@ class _OffloadedExpertStub(nn.Module):
         )
 
     def _save_to_state_dict(self, destination, prefix, keep_vars) -> None:
-        with self.store.lease(self.expert_id, torch.device("cpu")) as tensors:
+        with self.store.lease(
+            self.expert_id,
+            self._tiered_anchor.device,
+            self._tiered_anchor.dtype,
+        ) as tensors:
             for name, tensor in tensors.items():
                 destination[prefix + name] = tensor if keep_vars else tensor.detach()
+
+    def _load_from_state_dict(self, *args, **kwargs) -> None:
+        raise RuntimeError("restore resident experts before loading a checkpoint")
+
+    def __deepcopy__(self, memo):
+        raise RuntimeError("restore resident experts before copying the model")
 
 
 class TieredSwiGLUExecutionBackend:
@@ -46,8 +80,11 @@ class TieredSwiGLUExecutionBackend:
         self.store = store
         self.heat_policy = heat_policy
         self._resident_released = False
-        self._route_callback: Callable[[tuple[int, ...], torch.device], None] | None = None
+        self._route_callback: (
+            Callable[[tuple[int, ...], torch.device, torch.dtype], None] | None
+        ) = None
         self._last_device: torch.device | None = None
+        self._last_dtype: torch.dtype | None = None
         self._requires_grad: dict[int, dict[str, bool]] = {}
 
     @classmethod
@@ -78,13 +115,42 @@ class TieredSwiGLUExecutionBackend:
             backend.release_resident(layer)
         return backend
 
+    @classmethod
+    def from_manifest(
+        cls,
+        layer: Any,
+        manifest_path: str | Path,
+        *,
+        model_ref: str,
+        layer_id: str,
+        ram_slots: int,
+        hot_slots: int,
+        release_resident: bool = False,
+    ) -> "TieredSwiGLUExecutionBackend":
+        if layer.training:
+            raise RuntimeError("tiered expert attachment is inference-only")
+        manifest = ExpertTensorManifest.read_json(
+            manifest_path,
+            expected_model_ref=model_ref,
+            expected_layer_id=layer_id,
+            expected_expert_count=len(layer.experts),
+        )
+        backend = cls(
+            TieredExpertStore(manifest, ram_slots=ram_slots, hot_slots=hot_slots),
+            heat_policy=ExpertHeatPolicy(slot_count=hot_slots),
+        )
+        if release_resident:
+            backend.release_resident(layer)
+        return backend
+
     def execute(self, expert_id: int, inputs: torch.Tensor) -> torch.Tensor:
         self._last_device = inputs.device
+        self._last_dtype = inputs.dtype
         self.heat_policy.touch(
             f"{self.store.manifest.layer_id}:expert{expert_id}",
             count=max(1, int(inputs.shape[0])),
         )
-        with self.store.lease(expert_id, inputs.device) as tensors:
+        with self.store.lease(expert_id, inputs.device, inputs.dtype) as tensors:
             gate = F.linear(inputs, tensors["w_gate.weight"], tensors.get("w_gate.bias"))
             value = F.linear(inputs, tensors["w_value.weight"], tensors.get("w_value.bias"))
             hidden = F.silu(gate) * value
@@ -92,19 +158,24 @@ class TieredSwiGLUExecutionBackend:
 
     def set_route_callback(
         self,
-        callback: Callable[[tuple[int, ...], torch.device], None] | None,
+        callback: Callable[[tuple[int, ...], torch.device, torch.dtype], None] | None,
     ) -> None:
         self._route_callback = callback
 
-    def begin_route(self, selected_experts: tuple[int, ...], device: torch.device) -> None:
+    def begin_route(
+        self,
+        selected_experts: tuple[int, ...],
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> None:
         if self._route_callback is not None:
-            self._route_callback(selected_experts, device)
+            self._route_callback(selected_experts, device, dtype)
 
     def repin(self) -> tuple[str, ...]:
         pinned = self.heat_policy.repin()
         if self._last_device is not None:
             expert_ids = tuple(int(ref.rsplit("expert", 1)[1]) for ref in pinned)
-            self.store.pin(expert_ids, self._last_device)
+            self.store.pin(expert_ids, self._last_device, self._last_dtype)
         return pinned
 
     @property
@@ -126,7 +197,7 @@ class TieredSwiGLUExecutionBackend:
             }
         layer.experts = nn.ModuleList(
             [
-                _OffloadedExpertStub(record.expert_id, self.store)
+                _OffloadedExpertStub(record.expert_id, self.store, layer.gate.weight)
                 for record in self.store.manifest.experts
             ]
         )
@@ -139,13 +210,14 @@ class TieredSwiGLUExecutionBackend:
         from nexusnet.hive.net.model import SwiGLUExpert
 
         device = layer.gate.weight.device
+        dtype = layer.gate.weight.dtype
         restored: list[nn.Module] = []
         for record in self.store.manifest.experts:
-            with self.store.lease(record.expert_id, device) as tensors:
+            with self.store.lease(record.expert_id, device, dtype) as tensors:
                 d_hidden, d_model = tensors["w_gate.weight"].shape
                 expert = SwiGLUExpert(d_model=d_model, d_hidden=d_hidden).to(
                     device=device,
-                    dtype=tensors["w_gate.weight"].dtype,
+                    dtype=dtype,
                 )
                 expert.load_state_dict(tensors, strict=True)
             for name, parameter in expert.named_parameters():
@@ -175,6 +247,7 @@ class TieredMoERuntimeAttachment:
         self.plan = plan
         self._coordinator = coordinator
         self._restored = False
+        self._evidence_baselines = [self._counter_snapshot(backend) for backend in self.backends]
 
     @property
     def backends(self) -> tuple[TieredSwiGLUExecutionBackend, ...]:
@@ -189,12 +262,20 @@ class TieredMoERuntimeAttachment:
 
     def runtime_evidence(self) -> dict[str, object]:
         layers: list[dict[str, object]] = []
-        for backend in self.backends:
+        for index, backend in enumerate(self.backends):
+            current = self._counter_snapshot(backend)
+            baseline = self._evidence_baselines[index]
+            delta = {
+                key: value - baseline.get(key, 0)
+                for key, value in current.items()
+                if value - baseline.get(key, 0) > 0
+            }
+            self._evidence_baselines[index] = current
             evidence = ExpertResidencyEvidence(
                 plan_ref=self.plan.plan_id,
                 manifest_ref=backend.store.manifest.manifest_id,
             )
-            evidence.record_store_metrics(backend.store.evidence())
+            evidence.record_store_metrics(delta)
             layers.append(evidence.snapshot())
         states = {layer["runtime_state"] for layer in layers}
         if "tiered-degraded" in states:
@@ -213,6 +294,20 @@ class TieredMoERuntimeAttachment:
             "runtime_state": runtime_state,
             "layers": layers,
             "privacy_boundary": "numeric-runtime-metrics-and-sanitized-references-only",
+        }
+
+    @staticmethod
+    def _counter_snapshot(backend: TieredSwiGLUExecutionBackend) -> dict[str, int | float]:
+        gauges = {
+            "ram_occupancy", "hot_occupancy", "active_leases", "inflight_prefetches",
+        }
+        return {
+            key: value
+            for key, value in backend.store.evidence().items()
+            if key not in gauges
+            and key not in {"manifest_ref", "pinned_hot_experts"}
+            and isinstance(value, (int, float))
+            and not isinstance(value, bool)
         }
 
     def restore(self) -> None:
@@ -252,7 +347,13 @@ class _RoutePrefetchCoordinator:
         with self._lock:
             return len(self._futures)
 
-    def observe(self, layer_index: int, selected: tuple[int, ...], device: torch.device) -> None:
+    def observe(
+        self,
+        layer_index: int,
+        selected: tuple[int, ...],
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> None:
         if layer_index == 0:
             for _, backend in self.bindings:
                 backend.repin()
@@ -279,7 +380,7 @@ class _RoutePrefetchCoordinator:
             )
         next_store = self.bindings[layer_index + 1][1].store
         for expert_id in candidates:
-            future = next_store.prefetch(expert_id, device)
+            future = next_store.prefetch(expert_id, device, dtype)
             with self._lock:
                 self._futures.add(future)
             future.add_done_callback(self._reap)
@@ -313,6 +414,10 @@ def attach_tiered_moe_runtime(
         raise RuntimeError(f"residency plan is blocked: {', '.join(plan.blockers)}")
     if model.training:
         raise RuntimeError("tiered model attachment is inference-only")
+    if plan.model_digest is None:
+        raise RuntimeError("residency plan is not bound to a model identity")
+    if compute_model_identity(model) != plan.model_digest:
+        raise RuntimeError("model identity does not match residency plan")
 
     from nexusnet.hive.net.model import MoECapsuleLayer
 
@@ -362,6 +467,8 @@ def attach_tiered_moe_runtime(
     coordinator = _RoutePrefetchCoordinator(bindings, layer_ids)
     for layer_index, (_, backend) in enumerate(bindings):
         backend.set_route_callback(
-            lambda selected, device, index=layer_index: coordinator.observe(index, selected, device)
+            lambda selected, device, dtype, index=layer_index: coordinator.observe(
+                index, selected, device, dtype
+            )
         )
     return TieredMoERuntimeAttachment(bindings, plan=plan, coordinator=coordinator)

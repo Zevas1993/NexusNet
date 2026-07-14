@@ -152,12 +152,12 @@ class MoECapsuleLayer(nn.Module):
             begin_route = getattr(self._expert_execution_backend, "begin_route", None)
             if begin_route is not None:
                 selected = tuple(sorted(int(item) for item in torch.unique(topi).detach().cpu().tolist()))
-                begin_route(selected, x.device)
+                begin_route(selected, x.device, x.dtype)
         chosen_scores = torch.gather(scores, -1, topi)          # original scores for the gate weight
         gate_w = torch.softmax(chosen_scores, dim=-1)           # (N, k), sums to 1 per row
 
         out = torch.zeros_like(x)
-        load = torch.zeros(self.num_experts, device=x.device)
+        load = torch.zeros(self.num_experts, device=x.device, dtype=x.dtype)
         for e in range(self.num_experts):
             sel = (topi == e)                                   # (N, k) where expert e was chosen
             if not sel.any():

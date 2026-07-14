@@ -21,6 +21,14 @@ import torch.nn as nn
 from .model import MoECapsuleLayer, SwiGLUExpert
 
 
+def _require_structurally_mutable(layer: MoECapsuleLayer) -> None:
+    if getattr(layer, "_expert_execution_backend", None) is not None:
+        raise RuntimeError(
+            "structural expert mutation is unavailable while tiered execution is attached; "
+            "restore and detach before assimilation or fusion"
+        )
+
+
 def _grow_linear(gate: nn.Linear, extra: int, *, init: float = 0.0) -> nn.Linear:
     """Return a copy of `gate` with `extra` new output rows initialized to `init` (neutral logits)."""
     new = nn.Linear(gate.in_features, gate.out_features + extra, bias=gate.bias is not None)
@@ -36,6 +44,7 @@ def _grow_linear(gate: nn.Linear, extra: int, *, init: float = 0.0) -> nn.Linear
 def assimilate_expert(layer: MoECapsuleLayer, donor: nn.Module, *, gate_init: float = 0.0,
                       trainable_donor: bool = True) -> dict[str, Any]:
     """Graft `donor` (a module mapping d_model -> d_model) into `layer` as a new expert. In place."""
+    _require_structurally_mutable(layer)
     old_e = layer.num_experts
     pre_param_ids = {id(p) for e in layer.experts for p in e.parameters()}
     layer.experts.append(donor)
@@ -67,6 +76,8 @@ def fuse_moe_layers(layer_a: MoECapsuleLayer, layer_b: MoECapsuleLayer, *,
     the router is the row-concatenation of both gates - the canon Mixtral+Devstral 'fuse at the neural
     level' realized on the trainable substrate.
     """
+    _require_structurally_mutable(layer_a)
+    _require_structurally_mutable(layer_b)
     if layer_a.gate.in_features != layer_b.gate.in_features:
         raise ValueError("MoE layers must share d_model to fuse")
     d_model = layer_a.gate.in_features

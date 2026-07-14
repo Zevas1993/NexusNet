@@ -9,6 +9,27 @@ from typing import Any, Callable, Mapping, TypeVar
 T = TypeVar("T")
 
 
+def _outputs_equivalent(target: object, candidate: object) -> bool:
+    if isinstance(target, Mapping) and isinstance(candidate, Mapping):
+        return target.keys() == candidate.keys() and all(
+            _outputs_equivalent(target[key], candidate[key]) for key in target
+        )
+    if isinstance(target, (list, tuple)) and isinstance(candidate, type(target)):
+        return len(target) == len(candidate) and all(
+            _outputs_equivalent(left, right) for left, right in zip(target, candidate)
+        )
+    try:
+        comparison = target == candidate
+    except Exception:
+        return False
+    if isinstance(comparison, bool):
+        return comparison
+    try:
+        return bool(comparison.all().item())
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        return False
+
+
 @dataclass(frozen=True)
 class SpeculationProfileState:
     profile_ref: str
@@ -117,7 +138,7 @@ class AdaptiveSpeculationController:
         *,
         target_only: Callable[..., T],
         speculative: Callable[..., T],
-        equivalent: Callable[[T, T], bool] = lambda target, candidate: target == candidate,
+        equivalent: Callable[[T, T], bool] | None = None,
         args: tuple[Any, ...] = (),
         kwargs: dict[str, Any] | None = None,
     ) -> T:
@@ -140,7 +161,8 @@ class AdaptiveSpeculationController:
             return baseline
         candidate_seconds = max(self._clock() - candidate_start, 1e-12)
 
-        if not equivalent(baseline, candidate):
+        verifier = equivalent or _outputs_equivalent
+        if not verifier(baseline, candidate):
             with self._lock:
                 profile = self._profiles.setdefault(profile_ref, _Accumulator())
                 profile.enabled = False
@@ -178,8 +200,15 @@ class AdaptiveSpeculationController:
         *,
         target_only: Callable[..., T],
         speculative: Callable[..., T],
+        equivalent: Callable[[T, T], bool] | None = None,
         args: tuple[Any, ...] = (),
         kwargs: dict[str, Any] | None = None,
     ) -> T:
-        decoder = speculative if self.enabled(profile_ref) else target_only
-        return decoder(*args, **dict(kwargs or {}))
+        return self.run(
+            profile_ref,
+            target_only=target_only,
+            speculative=speculative,
+            equivalent=equivalent,
+            args=args,
+            kwargs=kwargs,
+        )

@@ -39,7 +39,17 @@ class MoEResidencyPlanner:
         cold_store_required = gpu_slots + ram_slots < request.expert_count
         # Storage is the immutable source of truth for every expert, including
         # experts currently cached in RAM or on the accelerator.
-        cold_store_bytes = request.expert_count * request.expert_bytes
+        expert_payload_bytes = request.expert_count * request.expert_bytes
+        safetensors_and_manifest_overhead = max(
+            4096 * request.expert_count,
+            (expert_payload_bytes + 99) // 100,
+        )
+        atomic_write_workspace = request.expert_bytes + 4096
+        cold_store_bytes = (
+            expert_payload_bytes
+            + safetensors_and_manifest_overhead
+            + atomic_write_workspace
+        )
         if not blockers and cold_store_bytes > request.hardware.storage_available_bytes:
             blockers.append("cold_expert_storage_insufficient")
         if blockers:
@@ -49,6 +59,7 @@ class MoEResidencyPlanner:
 
         payload = {
             "model_ref": request.model_ref,
+            "model_digest": request.model_digest,
             "dense_working_set": dense_working_set,
             "gpu_available": request.hardware.gpu_available_bytes,
             "ram_available": request.hardware.ram_available_bytes,
@@ -80,6 +91,7 @@ class MoEResidencyPlanner:
         return MoEResidencyPlan(
             plan_id=plan_id,
             model_ref=request.model_ref,
+            model_digest=request.model_digest,
             admission_state="blocked" if blockers else "admitted",
             blockers=tuple(blockers),
             gpu_expert_slots=int(gpu_slots),

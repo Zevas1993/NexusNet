@@ -3,10 +3,16 @@ from .execution import (
     TieredMoERuntimeAttachment,
     TieredSwiGLUExecutionBackend,
     attach_tiered_moe_runtime,
+    compute_model_identity,
 )
 from .evidence import ExpertResidencyEvidence
 from .heat import ExpertHeatPolicy
-from .manifest import ExpertTensorManifest, ExpertTensorRecord, package_swiglu_experts
+from .manifest import (
+    ExpertIntegrityError,
+    ExpertTensorManifest,
+    ExpertTensorRecord,
+    package_swiglu_experts,
+)
 from .planner import MoEResidencyPlanner
 from .prefetch import RouteTransitionPrefetcher
 from .provenance import ColibriAssimilationProvenance
@@ -16,7 +22,7 @@ from .schemas import (
     MoEResidencyRequest,
 )
 from .speculation import AdaptiveSpeculationController, SpeculationProfileState
-from .store import ExpertIntegrityError, TieredExpertStore
+from .store import TieredExpertStore
 
 __all__ = [
     "AdaptiveSpeculationController",
@@ -37,5 +43,6 @@ __all__ = [
     "TieredMoERuntimeAttachment",
     "TieredSwiGLUExecutionBackend",
     "attach_tiered_moe_runtime",
+    "compute_model_identity",
     "package_swiglu_experts",
 ]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import math
 from dataclasses import dataclass, field
 from numbers import Real
 from typing import Mapping
@@ -23,6 +24,7 @@ _METRIC_KEYS = {
     "prefetch_wasted",
     "active_leases",
     "inflight_prefetches",
+    "load_failures",
 }
 _REASON_CODE = re.compile(r"^[a-z0-9][a-z0-9_:-]{0,79}$")
 _REF_CODE = re.compile(r"^[a-z0-9][a-z0-9_.:/-]{0,255}$")
@@ -45,7 +47,16 @@ class ExpertResidencyEvidence:
                 continue
             if isinstance(value, bool) or not isinstance(value, Real):
                 raise TypeError(f"metric {key} must be numeric")
+            if value < 0 or not math.isfinite(float(value)):
+                raise ValueError(f"metric {key} must be finite non-negative")
             self.tier_metrics[key] = value
+        if self.tier_metrics.get("load_failures", 0) and "expert_load_failed" not in self.fallback_events:
+            self.fallback_events.append("expert_load_failed")
+        if (
+            self.tier_metrics.get("prefetch_failures", 0)
+            and "prefetch_failed" not in self.fallback_events
+        ):
+            self.fallback_events.append("prefetch_failed")
 
     def record_fallback(self, reason_code: str) -> None:
         if not _REASON_CODE.fullmatch(reason_code):
