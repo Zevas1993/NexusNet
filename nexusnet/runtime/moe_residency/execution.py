@@ -42,10 +42,24 @@ def compute_model_identity(model: nn.Module) -> str:
                 digest.update(f"config:{module_name}:{field}:{value!r}\0".encode("utf-8"))
     for name, parameter in sorted(model.named_parameters()):
         value = parameter.detach().cpu().contiguous()
-        digest.update(name.encode("utf-8") + b"\0")
+        digest.update(f"parameter:{name}".encode("utf-8") + b"\0")
         digest.update(str(value.dtype).encode("ascii") + b"\0")
         digest.update(str(tuple(value.shape)).encode("ascii") + b"\0")
         digest.update(value.view(torch.uint8).numpy().tobytes())
+    for module_name, module in model.named_modules():
+        for local_name, buffer in sorted(module._buffers.items()):
+            if (
+                buffer is None
+                or local_name in module._non_persistent_buffers_set
+                or local_name == "last_load"
+            ):
+                continue
+            name = f"{module_name}.{local_name}" if module_name else local_name
+            value = buffer.detach().cpu().contiguous()
+            digest.update(f"buffer:{name}".encode("utf-8") + b"\0")
+            digest.update(str(value.dtype).encode("ascii") + b"\0")
+            digest.update(str(tuple(value.shape)).encode("ascii") + b"\0")
+            digest.update(value.view(torch.uint8).numpy().tobytes())
     return digest.hexdigest()
 
 

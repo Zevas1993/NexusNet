@@ -626,6 +626,19 @@ def test_model_identity_ignores_mutable_runtime_load_telemetry() -> None:
     assert compute_model_identity(model) == identity
 
 
+def test_model_identity_includes_behavior_defining_load_bias() -> None:
+    torch.manual_seed(104)
+    model = NexusNetLM(
+        vocab_size=16, d_model=8, n_heads=2, n_kv_heads=1,
+        num_experts=2, top_k=1, d_hidden=12, num_layers=1,
+    ).eval()
+    identity = compute_model_identity(model)
+
+    model.blocks[0].moe.load_bias[0] = 1000
+
+    assert compute_model_identity(model) != identity
+
+
 def test_prefetch_learns_layer_transition_without_changing_route_authority() -> None:
     prefetcher = RouteTransitionPrefetcher(max_candidates=2)
     for _ in range(4):
