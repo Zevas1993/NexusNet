@@ -8,7 +8,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from nexus.schemas import utcnow
 from nexusnet.policy import PolicyKernel
-from nexusnet.runtime.evolutionary_inference import EvolutionaryInferenceFoundation
+from nexusnet.runtime.evolutionary_inference import (
+    EvolutionaryInferenceFoundation,
+    EvolutionaryInferenceSystem,
+    SLOProfile,
+    WorkloadProfile,
+)
 
 
 WorkloadType = Literal["chat", "research", "agentic", "coding", "multimodal", "batch"]
@@ -39,7 +44,29 @@ class InferenceArchitectureRegistry:
             self.plans_dir.mkdir(parents=True, exist_ok=True)
         self._memory_plans: list[dict[str, Any]] = []
         self.policy_kernel = PolicyKernel.default()
-        self.evolutionary_foundation = EvolutionaryInferenceFoundation(artifacts_dir=self.artifacts_dir)
+        self.evolutionary_system = (
+            EvolutionaryInferenceSystem(artifacts_dir=self.artifacts_dir) if self.artifacts_dir is not None else None
+        )
+        self.evolutionary_foundation = (
+            self.evolutionary_system.foundation
+            if self.evolutionary_system is not None
+            else EvolutionaryInferenceFoundation(artifacts_dir=self.artifacts_dir)
+        )
+
+    def select_runtime_plan(self, workload: dict[str, Any], slo: dict[str, Any]) -> dict[str, Any]:
+        if self.evolutionary_system is None:
+            return {"plan_id": "plan::portable-reference", "reason_codes": ["artifact-store-unavailable"]}
+        profile = WorkloadProfile(
+            prompt_tokens=int(workload.get("input_tokens", workload.get("prompt_tokens", 0))),
+            max_new_tokens=max(1, int(workload.get("output_tokens", workload.get("max_new_tokens", 1)))),
+            batch_size=max(1, int(workload.get("batch_size", 1))),
+            concurrent_requests=max(1, int(workload.get("concurrent_requests", 1))),
+        )
+        objective = str(slo.get("objective", "balanced"))
+        normalized_slo = dict(slo)
+        normalized_slo["objective"] = objective if objective in {"latency", "throughput", "memory", "balanced"} else "balanced"
+        selected = self.evolutionary_system.select_plan(profile, SLOProfile.model_validate(normalized_slo))
+        return selected.model_dump(mode="json")
 
     def plan(self, request: InferenceArchitectureRequest | dict[str, Any]) -> dict[str, Any]:
         normalized = (
@@ -109,6 +136,7 @@ class InferenceArchitectureRegistry:
             "evolutionary_inference_foundation": self.evolutionary_foundation.status(
                 ensure_baseline=self.artifacts_dir is not None
             ),
+            "evolutionary_inference": self.evolutionary_system.status() if self.evolutionary_system else None,
             "watch_items": [
                 "speculative decoding",
                 "disaggregated prefill/decode",

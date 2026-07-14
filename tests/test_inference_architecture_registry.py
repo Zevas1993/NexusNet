@@ -156,10 +156,13 @@ def test_evolutionary_inference_foundation_is_runtime_visible_and_restart_safe(t
 
     assert first_response.status_code == 200
     first = first_response.json()["evolutionary_inference_foundation"]
-    assert first["runtime_state"] == "live-evidence"
+    assert first["runtime_state"] == "calibrated-awaiting-model"
     assert first["policy_mutation_allowed"] is False
-    assert set(first["primitive_ids"]) == {"portable.cpu-reference", "moe.selective-residency"}
-    assert first["feasibility"]["status"] == "shadow-feasible"
+    assert {"portable.cpu-reference", "moe.selective-residency", "transfer.pageable", "transfer.double-buffered"} <= set(
+        first["primitive_ids"]
+    )
+    assert "feasibility" not in first
+    assert "model_fingerprint" not in first
     assert first["artifact_ref"] == "runtime/evolutionary-inference/foundation-v1.json"
 
     restarted_client = TestClient(create_app(str(project_root)))
@@ -168,3 +171,40 @@ def test_evolutionary_inference_foundation_is_runtime_visible_and_restart_safe(t
     ]
     assert restarted["evidence_id"] == first["evidence_id"]
     assert restarted["host_fingerprint"] == first["host_fingerprint"]
+
+
+def test_inference_evolution_api_attaches_selects_dreams_and_rolls_back(tmp_path):
+    client = TestClient(create_app(str(make_project(tmp_path))))
+    metadata = {
+        "architecture_family": "transformer",
+        "parameter_count": 1_000_000,
+        "tensor_bytes": 2_000_000,
+        "quantization": "int8",
+        "context_length": 4096,
+        "layer_count": 4,
+        "operator_families": ["attention", "dense-ffn"],
+        "tensor_groups": [{"group_id": "weights", "bytes": 2_000_000, "dtype": "int8", "layout": "row-major"}],
+    }
+
+    attached = client.post("/ops/brain/inference-evolution/model", json=metadata)
+    selected = client.post(
+        "/ops/brain/inference-evolution/select",
+        json={
+            "workload": {"prompt_tokens": 64, "max_new_tokens": 32, "batch_size": 1},
+            "slo": {"objective": "balanced"},
+        },
+    )
+    dream = client.post(
+        "/ops/brain/inference-evolution/dream",
+        json={"serving_idle": True, "thermal_ok": True, "memory_ok": True, "power_ok": True, "budget_remaining": 2},
+    )
+    status = client.get("/ops/brain/inference-evolution")
+
+    assert attached.status_code == 200
+    assert attached.json()["fingerprint_id"].startswith("model-fingerprint::")
+    assert selected.status_code == 200
+    assert selected.json()["plan_id"]
+    assert dream.status_code == 200
+    assert dream.json()["trials_completed"] > 0
+    assert status.status_code == 200
+    assert status.json()["model_fingerprint_id"] == attached.json()["fingerprint_id"]

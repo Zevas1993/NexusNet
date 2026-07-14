@@ -51,6 +51,13 @@ class OllamaRuntimeAdapter(RuntimeAdapter):
         if not self.live:
             return f"[ollama:dry] {text[:240]}"
         payload = {"model": model_id.split("/", 1)[-1] if "/" in model_id else self.default_model, "prompt": text}
+        parameters = _verified_runtime_parameters(metadata)
+        if parameters:
+            payload["options"] = {
+                "num_ctx": int(parameters.get("context_tokens", 4096)),
+                "num_batch": int(parameters.get("runtime_batch_tokens", 256)),
+                "num_gpu": int(parameters.get("gpu_layers", 0)),
+            }
         response = requests.post(f"{self.base_url}/api/generate", json=payload, timeout=30)
         response.raise_for_status()
         return response.json().get("response", "")
@@ -82,6 +89,9 @@ class OpenAICompatibleRuntimeAdapter(RuntimeAdapter):
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         payload = {"model": model_id.split("/", 1)[-1] if "/" in model_id else self.default_model, "messages": payload_messages}
+        parameters = _verified_runtime_parameters(metadata)
+        if parameters:
+            payload["max_tokens"] = int(parameters.get("max_new_tokens", 256))
         response = requests.post(f"{self.base_url}/v1/chat/completions", json=payload, headers=headers, timeout=30)
         response.raise_for_status()
         data = response.json()
@@ -115,7 +125,7 @@ class LMStudioRuntimeAdapter(RuntimeAdapter):
         payload = {
             "model": model_id.split("/", 1)[-1] if "/" in model_id else self.default_model,
             "prompt": prompt_from_messages(messages, prompt),
-            "max_tokens": 256,
+            "max_tokens": int(_verified_runtime_parameters(metadata).get("max_new_tokens", 256)),
         }
         response = requests.post(f"{self.base_url}/v1/completions", json=payload, timeout=30)
         response.raise_for_status()
@@ -153,6 +163,7 @@ class LlamaCppRuntimeAdapter(RuntimeAdapter):
         super().__init__(config)
         self.model_path = Path(self.config.get("model_path", "models/tiny/tinyllama.gguf"))
         self._engine = None
+        self._engine_plan_id: str | None = None
 
     def health(self) -> dict[str, Any]:
         ready = self.model_path.exists()
@@ -161,11 +172,23 @@ class LlamaCppRuntimeAdapter(RuntimeAdapter):
     def generate(self, *, prompt: str | None, messages: list[Message], model_id: str, expert: str | None = None, metadata: dict[str, Any] | None = None) -> str:
         if not self.model_path.exists():
             return f"[llama.cpp:stub] {prompt_from_messages(messages, prompt)[:240]}"
-        if self._engine is None:
+        selection = (metadata or {}).get("evolutionary_inference") or {}
+        parameters = _verified_runtime_parameters(metadata)
+        plan_id = str(selection.get("plan_id")) if parameters else "plan::runtime-default"
+        if self._engine is None or self._engine_plan_id != plan_id:
             from core.engines.llamacpp_engine import LlamaCppEngine  # type: ignore
 
-            self._engine = LlamaCppEngine(str(self.model_path))
-        return self._engine.generate(prompt_from_messages(messages, prompt))
+            self._engine = LlamaCppEngine(
+                str(self.model_path),
+                n_ctx=int(parameters.get("context_tokens", 4096)),
+                n_gpu_layers=int(parameters.get("gpu_layers", 0)),
+                n_batch=int(parameters.get("runtime_batch_tokens", 256)),
+            )
+            self._engine_plan_id = plan_id
+        return self._engine.generate(
+            prompt_from_messages(messages, prompt),
+            max_new_tokens=int(parameters.get("max_new_tokens", 256)),
+        )
 
 
 class RuntimeRegistry:
@@ -210,3 +233,11 @@ class RuntimeRegistry:
             if profile.available:
                 return self.adapters[runtime_name]
         return self.adapters["mock"]
+
+
+def _verified_runtime_parameters(metadata: dict[str, Any] | None) -> dict[str, Any]:
+    selection = (metadata or {}).get("evolutionary_inference")
+    if not isinstance(selection, dict) or selection.get("verified") is not True:
+        return {}
+    parameters = selection.get("parameters")
+    return dict(parameters) if isinstance(parameters, dict) else {}

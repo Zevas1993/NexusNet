@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -50,7 +50,12 @@ class InferenceRouteRequest(BaseModel):
 
 
 class InferenceEconomyRouter:
-    def __init__(self, *, artifacts_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        artifacts_dir: Path | None = None,
+        evolutionary_plan_selector: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]] | None = None,
+    ) -> None:
         self.artifacts_dir = Path(artifacts_dir) if artifacts_dir is not None else None
         self.decisions_dir = self.artifacts_dir / "runtime" / "inference-economy-router" if self.artifacts_dir else None
         if self.decisions_dir is not None:
@@ -58,6 +63,7 @@ class InferenceEconomyRouter:
         self._memory_decisions: list[dict[str, Any]] = []
         self.policy_kernel = PolicyKernel.default()
         self.manifest_adapter = ManifestAdapter.default()
+        self.evolutionary_plan_selector = evolutionary_plan_selector
 
     def route(self, request: InferenceRouteRequest | dict[str, Any]) -> dict[str, Any]:
         normalized = request if isinstance(request, InferenceRouteRequest) else InferenceRouteRequest.model_validate(request)
@@ -125,6 +131,23 @@ class InferenceEconomyRouter:
         if upstream_aitune_blocked:
             reason_codes = list(dict.fromkeys(reason_codes + ["upstream_aitune_gate_blocked"]))
         output_tokens = normalized.max_tokens or _default_output_tokens(tier)
+        evolutionary_inference = (
+            self.evolutionary_plan_selector(
+                {
+                    "input_tokens": int(scoring["token_count"]),
+                    "output_tokens": output_tokens,
+                    "batch_size": max(1, int(normalized.metadata.get("batch_size", 1))),
+                    "concurrent_requests": max(1, int(normalized.metadata.get("concurrent_requests", 1))),
+                },
+                {
+                    "objective": str(normalized.metadata.get("inference_objective", "balanced")),
+                    "max_latency_ms": normalized.metadata.get("max_inference_latency_ms"),
+                    "max_peak_vram_bytes": normalized.metadata.get("max_peak_vram_bytes"),
+                },
+            )
+            if self.evolutionary_plan_selector is not None
+            else {"plan_id": "plan::portable-reference", "reason_codes": ["evolution-selector-unbound"]}
+        )
         cost_ledger = build_cost_ledger(
             trace_id=normalized.trace_id,
             agent_id=normalized.agent_id,
@@ -164,6 +187,7 @@ class InferenceEconomyRouter:
             "fallback_policy": fallback_policy(),
             "fallback_routes": fallbacks,
             "cost_ledger": cost_ledger,
+            "evolutionary_inference": evolutionary_inference,
             "estimated_cost_usd": cost_ledger["estimated_cost_usd"],
             "baseline_cost_usd": cost_ledger["baseline_cost_usd"],
             "source": "native",

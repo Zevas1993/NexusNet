@@ -107,6 +107,35 @@ def test_retrieval_and_operator_flow_persist_trace_and_memory(tmp_path: Path):
     assert stored_trace is not None
 
 
+def test_operator_chat_executes_with_verified_evolutionary_plan_without_raw_prompt_in_selector(tmp_path: Path):
+    project_root = make_project(tmp_path)
+    services = build_services(str(project_root))
+    services.brain_inference_architecture.evolutionary_system.attach_model(
+        {
+            "architecture_family": "transformer",
+            "parameter_count": 1_000_000,
+            "tensor_bytes": 2_000_000,
+            "quantization": "int8",
+            "context_length": 4096,
+            "layer_count": 4,
+            "operator_families": ["attention", "dense-ffn"],
+            "tensor_groups": [
+                {"group_id": "weights", "bytes": 2_000_000, "dtype": "int8", "layout": "row-major"}
+            ],
+        }
+    )
+
+    result = services.operator.execute_chat(
+        ChatRequest(session_id="session-evolution", prompt="raw private prompt sentinel")
+    )
+
+    selection = result.runtime_selection["evolutionary_inference"]
+    assert selection["plan_id"]
+    assert selection["verified"] is True
+    assert "raw private prompt sentinel" not in str(selection)
+    assert any(step.name == "evolutionary_inference_plan" for step in result.trace.steps)
+
+
 def test_governance_and_alias_routing(tmp_path: Path):
     project_root = make_project(tmp_path)
     services = build_services(str(project_root))

@@ -154,7 +154,15 @@ def test_default_primitive_registry_assimilates_portable_and_existing_moe_capabi
     assert moe.adapter_path == "nexusnet.runtime.moe_residency"
     assert moe.compatible_model_families == ["moe"]
     assert "tiered-expert-residency" in moe.effects
-    assert registry.list_ids() == ["moe.selective-residency", "portable.cpu-reference"]
+    assert registry.list_ids() == [
+        "moe.selective-residency",
+        "portable.cpu-reference",
+        "transfer.accelerator-resident",
+        "transfer.double-buffered",
+        "transfer.pageable",
+        "transfer.storage-staging",
+        "transfer.unified-memory",
+    ]
 
 
 def test_feasibility_selects_global_primitives_without_mutating_policy():
@@ -271,13 +279,15 @@ def test_foundation_persists_sanitized_atomic_evidence_and_restores_after_restar
         calibrator=calibrator,
     )
 
-    evidence = foundation.establish_baseline()
+    evidence = foundation.establish_baseline(model_fingerprint=synthetic_model_fingerprint())
     status = foundation.status()
 
     assert status["runtime_state"] == "live-evidence"
     assert status["artifact_ref"] == "runtime/evolutionary-inference/foundation-v1.json"
     assert status["policy_mutation_allowed"] is False
-    assert set(status["primitive_ids"]) == {"portable.cpu-reference", "moe.selective-residency"}
+    assert {"portable.cpu-reference", "moe.selective-residency", "transfer.pageable", "transfer.double-buffered"} <= set(
+        status["primitive_ids"]
+    )
     assert evidence.feasibility.status == "shadow-feasible"
     artifact_path = tmp_path / status["artifact_ref"]
     assert artifact_path.exists()

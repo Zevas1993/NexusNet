@@ -26,6 +26,7 @@ from .routing import ExpertSelector
 from nexusnet.core import NexusBrain
 from nexusnet.core.compatibility_provenance import normalize_compatibility_provenance
 from nexusnet.schemas import SessionContext
+from nexusnet.runtime.evolutionary_inference import SLOProfile, WorkloadProfile
 
 
 def _now() -> datetime:
@@ -56,6 +57,7 @@ class OperatorKernel:
         brain_promotions: Any | None = None,
         model_runtime_planner: Any | None = None,
         nexusnet_core: Any | None = None,
+        evolutionary_inference: Any | None = None,
     ):
         self.store = store
         self.ao_registry = ao_registry
@@ -77,6 +79,7 @@ class OperatorKernel:
         self.brain_promotions = brain_promotions
         self.model_runtime_planner = model_runtime_planner
         self.nexusnet_core = nexusnet_core
+        self.evolutionary_inference = evolutionary_inference
 
     def execute_chat(self, request: ChatRequest) -> OperatorResult:
         operator_request = OperatorRequest(
@@ -215,6 +218,43 @@ class OperatorKernel:
                 "compatibility_provenance": core_attach_provenance,
             }
 
+        evolutionary_selection: dict[str, Any] | None = None
+        if self.evolutionary_inference is not None:
+            input_tokens = sum(max(1, len(message.content.split())) for message in messages)
+            objective = str(request.metadata.get("inference_objective", "balanced"))
+            if objective not in {"latency", "throughput", "memory", "balanced"}:
+                objective = "balanced"
+            selected_execution_plan = self.evolutionary_inference.select_plan(
+                WorkloadProfile(
+                    prompt_tokens=input_tokens,
+                    max_new_tokens=max(1, int(request.metadata.get("max_new_tokens", 256))),
+                    batch_size=max(1, int(request.metadata.get("batch_size", 1))),
+                    concurrent_requests=max(1, int(request.metadata.get("concurrent_requests", 1))),
+                ),
+                SLOProfile(
+                    objective=objective,
+                    max_latency_ms=request.metadata.get("max_inference_latency_ms"),
+                    max_peak_ram_bytes=request.metadata.get("max_peak_ram_bytes"),
+                    max_peak_vram_bytes=request.metadata.get("max_peak_vram_bytes"),
+                ),
+            )
+            evolution_status = self.evolutionary_inference.status()
+            evolutionary_selection = {
+                "plan_id": selected_execution_plan.plan_id,
+                "primitive_ids": selected_execution_plan.primitive_ids,
+                "parameters": selected_execution_plan.parameters,
+                "fallback_plan_id": selected_execution_plan.fallback_plan_id,
+                "model_fingerprint_id": evolution_status.get("model_fingerprint_id"),
+                "verified": selected_execution_plan.plan_id in evolution_status.get("verified_plan_ids", []),
+                "quality_semantics": selected_execution_plan.quality_semantics,
+                "raw_content_included": False,
+            }
+            runtime_selection_payload = {
+                **runtime_selection_payload,
+                "evolutionary_inference": evolutionary_selection,
+            }
+            steps.append(TraceStep(name="evolutionary_inference_plan", detail=evolutionary_selection))
+
         brain_result = self.brain.generate(
             session_context=SessionContext(
                 session_id=request.session_id,
@@ -233,6 +273,7 @@ class OperatorKernel:
                     "teacher_registry_layer": (teacher_provenance.get("arbitration", {}) or {}).get("registry_layer"),
                     "teacher_lineage": teacher_provenance.get("lineage"),
                     **request.metadata,
+                    "evolutionary_inference": evolutionary_selection,
                 },
             ),
             prompt=raw_text,

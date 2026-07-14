@@ -4,7 +4,13 @@ import hashlib
 import json
 from typing import Any
 
-from .schemas import ModelExecutionFingerprint
+from .schemas import ModelExecutionFingerprint, RuntimeModelMetadata
+
+
+class UnsupportedModelFeatureError(ValueError):
+    def __init__(self, features: list[str]) -> None:
+        self.features = sorted({str(feature) for feature in features if str(feature)})
+        super().__init__(f"unsupported model execution features: {', '.join(self.features)}")
 
 
 _SYNTHETIC_FIXTURE = {
@@ -39,6 +45,44 @@ def fingerprint_from_metadata(metadata: dict[str, Any]) -> ModelExecutionFingerp
     return _build_fingerprint(normalized, source_kind="metadata")
 
 
+def fingerprint_from_runtime_metadata(
+    metadata: RuntimeModelMetadata | dict[str, Any],
+) -> ModelExecutionFingerprint:
+    normalized = metadata if isinstance(metadata, RuntimeModelMetadata) else RuntimeModelMetadata.model_validate(metadata)
+    if normalized.unknown_or_unsupported_features:
+        raise UnsupportedModelFeatureError(normalized.unknown_or_unsupported_features)
+    canonical = normalized.model_dump(mode="json", exclude={"provenance_ref"})
+    canonical["architecture_family"] = normalized.architecture_family.strip().lower()
+    canonical["quantization"] = normalized.quantization.strip().lower()
+    canonical["modalities"] = sorted({item.strip().lower() for item in normalized.modalities})
+    canonical["operator_families"] = sorted({item.strip().lower() for item in normalized.operator_families})
+    canonical["custom_operator_requirements"] = sorted(
+        {item.strip().lower() for item in normalized.custom_operator_requirements}
+    )
+    canonical["rights_and_artifact_refs"] = sorted(
+        {
+            f"artifact-ref::{hashlib.sha256(item.encode('utf-8')).hexdigest()[:24]}"
+            for item in normalized.rights_and_artifact_refs
+            if item
+        }
+    )
+    graph_digest = _digest(
+        {
+            "operators": canonical["operator_families"],
+            "tensors": canonical["tensor_groups"],
+            "state": canonical["state_and_kv_contract"],
+            "sparsity": canonical["sparsity_and_router_contract"],
+            "dynamic_shapes": canonical["dynamic_shape_contract"],
+        }
+    )
+    return ModelExecutionFingerprint(
+        fingerprint_id=f"model-fingerprint::{_digest(canonical)[:24]}",
+        graph_digest=graph_digest,
+        source_kind="metadata",
+        **canonical,
+    )
+
+
 def _build_fingerprint(metadata: dict[str, Any], *, source_kind: str) -> ModelExecutionFingerprint:
     canonical = json.dumps(metadata, sort_keys=True, separators=(",", ":"))
     digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:24]
@@ -47,3 +91,8 @@ def _build_fingerprint(metadata: dict[str, Any], *, source_kind: str) -> ModelEx
         source_kind=source_kind,
         **metadata,
     )
+
+
+def _digest(payload: Any) -> str:
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

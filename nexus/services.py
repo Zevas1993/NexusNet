@@ -676,8 +676,11 @@ def build_services(project_root: str | None = None) -> NexusServices:
         edge_router=brain_edge_workload_router,
     )
     brain_operator_events = OperatorEventRegistry(artifacts_dir=paths.artifacts_dir)
-    brain_inference_economy_router = InferenceEconomyRouter(artifacts_dir=paths.artifacts_dir)
     brain_inference_architecture = InferenceArchitectureRegistry(artifacts_dir=paths.artifacts_dir)
+    brain_inference_economy_router = InferenceEconomyRouter(
+        artifacts_dir=paths.artifacts_dir,
+        evolutionary_plan_selector=brain_inference_architecture.select_runtime_plan,
+    )
     brain_cache_ledger = EffectiveContextCacheLedger(artifacts_dir=paths.artifacts_dir)
     brain_runtime_workload_scorecards = RuntimeWorkloadScorecardRegistry(artifacts_dir=paths.artifacts_dir)
     brain_quantization_catalog = QuantizationCatalog.default(artifacts_dir=paths.artifacts_dir)
@@ -969,6 +972,7 @@ def build_services(project_root: str | None = None) -> NexusServices:
         brain_promotions=brain_promotions,
         model_runtime_planner=model_runtime_planner,
         nexusnet_core=nexusnet_core,
+        evolutionary_inference=brain_inference_architecture.evolutionary_system,
     )
     return NexusServices(
         version=VERSION,

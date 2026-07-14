@@ -102,6 +102,13 @@ from nexusnet.protocols import ProtocolAdapterRequest
 from nexusnet.runtime.edge_router import EdgeWorkloadRequest
 from nexusnet.runtime.inference_economy_router import InferenceRouteRequest
 from nexusnet.runtime.inference_architecture import InferenceArchitectureRequest
+from nexusnet.runtime.evolutionary_inference import (
+    CapacityGate,
+    RuntimeModelMetadata,
+    RuntimeObservation,
+    SLOProfile,
+    WorkloadProfile,
+)
 from nexusnet.runtime.model_passport import CertificationRunRequest, ModelPassportRequest
 from nexusnet.runtime.quantization.catalog import QuantizationRecommendationRequest
 from nexusnet.security import ArtifactScanRequest
@@ -2753,6 +2760,33 @@ def create_app(project_root: str | None = None) -> FastAPI:
     @application.get("/ops/brain/canon/inference-architecture")
     def ops_brain_canon_inference_architecture():
         return services.brain_inference_architecture.scorecard()
+
+    @application.get("/ops/brain/inference-evolution")
+    def ops_brain_inference_evolution():
+        return services.brain_inference_architecture.evolutionary_system.status()
+
+    @application.post("/ops/brain/inference-evolution/model")
+    def ops_brain_inference_evolution_model(metadata: RuntimeModelMetadata = Body(...)):
+        return services.brain_inference_architecture.evolutionary_system.attach_model(metadata).model_dump(mode="json")
+
+    @application.post("/ops/brain/inference-evolution/select")
+    def ops_brain_inference_evolution_select(payload: dict[str, Any] = Body(...)):
+        workload = WorkloadProfile.model_validate(payload.get("workload", {}))
+        slo = SLOProfile.model_validate(payload.get("slo", {}))
+        return services.brain_inference_architecture.evolutionary_system.select_plan(workload, slo).model_dump(mode="json")
+
+    @application.post("/ops/brain/inference-evolution/dream")
+    def ops_brain_inference_evolution_dream(gate: CapacityGate = Body(...)):
+        return services.brain_inference_architecture.evolutionary_system.run_dream_cycle(gate).model_dump(mode="json")
+
+    @application.post("/ops/brain/inference-evolution/observe")
+    def ops_brain_inference_evolution_observe(observation: RuntimeObservation = Body(...)):
+        return {"outcome": services.brain_inference_architecture.evolutionary_system.observe(observation)}
+
+    @application.post("/ops/brain/inference-evolution/rollback")
+    def ops_brain_inference_evolution_rollback(payload: dict[str, Any] = Body(default={})):
+        reason = str(payload.get("reason") or "operator-request")
+        return {"outcome": services.brain_inference_architecture.evolutionary_system.rollback(reason)}
 
     @application.get("/ops/brain/cache-ledger")
     def ops_brain_cache_ledger(limit: int = 50):

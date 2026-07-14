@@ -4,14 +4,13 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .calibration import BoundedHostCalibrator
 from .feasibility import CandidateFeasibilityEvaluator
-from .fingerprints import synthetic_model_fingerprint
 from .hardware import HardwareCapabilityDiscoverer
 from .primitives import InferencePrimitiveRegistry
-from .schemas import EvolutionaryInferenceEvidence, ModelExecutionFingerprint
+from .schemas import EvolutionaryInferenceEvidence, HardwareCapabilityGraph, ModelExecutionFingerprint
 
 
 _ARTIFACT_REF = "runtime/evolutionary-inference/foundation-v1.json"
@@ -26,6 +25,7 @@ class EvolutionaryInferenceFoundation:
         calibrator: BoundedHostCalibrator | None = None,
         registry: InferencePrimitiveRegistry | None = None,
         evaluator: CandidateFeasibilityEvaluator | None = None,
+        graph_calibrator: Callable[[HardwareCapabilityGraph], HardwareCapabilityGraph] | None = None,
     ) -> None:
         self.artifacts_dir = Path(artifacts_dir) if artifacts_dir is not None else None
         self.artifact_path = self.artifacts_dir / _ARTIFACT_REF if self.artifacts_dir is not None else None
@@ -35,6 +35,7 @@ class EvolutionaryInferenceFoundation:
         self.calibrator = calibrator or BoundedHostCalibrator()
         self.registry = registry or InferencePrimitiveRegistry.default()
         self.evaluator = evaluator or CandidateFeasibilityEvaluator()
+        self.graph_calibrator = graph_calibrator
         self._evidence: EvolutionaryInferenceEvidence | None = None
         self._load_error: str | None = None
 
@@ -45,10 +46,20 @@ class EvolutionaryInferenceFoundation:
     ) -> EvolutionaryInferenceEvidence:
         graph = self.discoverer.discover()
         graph = graph.model_copy(update={"calibration": self.calibrator.calibrate()})
-        fingerprint = model_fingerprint or synthetic_model_fingerprint()
-        feasibility = self.evaluator.evaluate(graph=graph, fingerprint=fingerprint, registry=self.registry)
+        if self.graph_calibrator is not None:
+            graph = self.graph_calibrator(graph)
+        fingerprint = model_fingerprint
+        feasibility = (
+            self.evaluator.evaluate(graph=graph, fingerprint=fingerprint, registry=self.registry)
+            if fingerprint is not None
+            else None
+        )
         created_at = datetime.now(timezone.utc)
-        evidence_id = _evidence_id(graph.host_fingerprint, fingerprint.fingerprint_id, created_at)
+        evidence_id = _evidence_id(
+            graph.host_fingerprint,
+            fingerprint.fingerprint_id if fingerprint is not None else "hardware-only",
+            created_at,
+        )
         evidence = EvolutionaryInferenceEvidence(
             evidence_id=evidence_id,
             created_at=created_at,
@@ -93,22 +104,24 @@ class EvolutionaryInferenceFoundation:
                 "policy_mutation_allowed": False,
             }
         evidence = self._evidence
-        return {
+        status = {
             "status_label": "MEASURED SHADOW",
             "surface_id": "evolutionary-inference-foundation",
             "authority": "NexusBrain",
-            "runtime_state": "live-evidence",
+            "runtime_state": "live-evidence" if evidence.model_fingerprint is not None else "calibrated-awaiting-model",
             "evidence_id": evidence.evidence_id,
             "created_at": evidence.created_at.isoformat(),
             "artifact_ref": evidence.artifact_ref,
             "host_fingerprint": evidence.hardware.host_fingerprint,
             "hardware": evidence.hardware.model_dump(mode="json"),
-            "model_fingerprint": evidence.model_fingerprint.model_dump(mode="json"),
             "primitive_ids": [primitive.primitive_id for primitive in evidence.primitives],
-            "feasibility": evidence.feasibility.model_dump(mode="json"),
-            "reason_codes": evidence.feasibility.reason_codes,
+            "reason_codes": evidence.feasibility.reason_codes if evidence.feasibility is not None else ["model-not-attached"],
             "policy_mutation_allowed": False,
         }
+        if evidence.model_fingerprint is not None and evidence.feasibility is not None:
+            status["model_fingerprint"] = evidence.model_fingerprint.model_dump(mode="json")
+            status["feasibility"] = evidence.feasibility.model_dump(mode="json")
+        return status
 
     def _persist(self, evidence: EvolutionaryInferenceEvidence) -> None:
         if self.artifact_path is None:

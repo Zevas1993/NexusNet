@@ -47,6 +47,25 @@ def test_inference_economy_router_routes_local_only_after_excluding_system_and_d
     assert decision["cost_ledger"]["baseline_cost_usd"] >= decision["cost_ledger"]["estimated_cost_usd"]
 
 
+def test_inference_economy_router_uses_sanitized_evolution_selector_without_messages(tmp_path):
+    module = _router_module()
+    captured = []
+    router = module.InferenceEconomyRouter(artifacts_dir=tmp_path, evolutionary_plan_selector=lambda workload, slo: captured.append((workload, slo)) or {"plan_id": "plan::verified"})
+    decision = router.route(
+        {
+            "trace_id": "trace::evolution",
+            "agent_id": "ao::front-desk",
+            "messages": [{"role": "user", "content": "private raw content"}],
+            "max_tokens": 32,
+        }
+    )
+
+    assert decision["evolutionary_inference"]["plan_id"] == "plan::verified"
+    assert captured[0][0]["input_tokens"] >= 0
+    assert "messages" not in captured[0][0]
+    assert "private raw content" not in str(captured)
+
+
 def test_inference_economy_router_uses_specificity_before_complexity_and_builds_fallback_chain(tmp_path):
     module = _router_module()
     router = module.InferenceEconomyRouter(artifacts_dir=tmp_path)
