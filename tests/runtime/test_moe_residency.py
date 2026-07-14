@@ -33,6 +33,7 @@ def _request(**overrides) -> MoEResidencyRequest:
         "hardware": HardwareMemorySnapshot(
             gpu_available_bytes=1_000,
             ram_available_bytes=2_000,
+            storage_available_bytes=100_000,
         ),
         "dense_core_bytes": 400,
         "kv_cache_bytes": 100,
@@ -45,13 +46,14 @@ def _request(**overrides) -> MoEResidencyRequest:
     hardware_updates = {
         key: overrides.pop(key)
         for key in list(overrides)
-        if key in {"gpu_available_bytes", "ram_available_bytes"}
+        if key in {"gpu_available_bytes", "ram_available_bytes", "storage_available_bytes"}
     }
     values.update(overrides)
     if hardware_updates:
         values["hardware"] = HardwareMemorySnapshot(
             gpu_available_bytes=hardware_updates.get("gpu_available_bytes", 1_000),
             ram_available_bytes=hardware_updates.get("ram_available_bytes", 2_000),
+            storage_available_bytes=hardware_updates.get("storage_available_bytes", 100_000),
         )
     return MoEResidencyRequest(**values)
 
@@ -77,9 +79,44 @@ def test_planner_assigns_hot_warm_and_cold_expert_capacity() -> None:
 
     assert plan.admission_state == "admitted"
     assert plan.gpu_expert_slots == 3
-    assert plan.ram_expert_slots == 18
+    assert plan.ram_expert_slots == 17
     assert plan.cold_store_required is True
+    assert plan.cold_store_bytes == 3_000
     assert plan.expected_bottleneck == "storage-warmup"
+
+
+def test_plan_identity_includes_ram_headroom_and_computed_outcome() -> None:
+    planner = MoEResidencyPlanner()
+
+    first = planner.plan(_request(ram_headroom_bytes=200))
+    second = planner.plan(_request(ram_headroom_bytes=300))
+
+    assert first.plan_id != second.plan_id
+    assert first.ram_expert_slots != second.ram_expert_slots
+
+
+def test_planner_requires_gpu_expert_workspace_and_host_staging() -> None:
+    no_gpu_slot = MoEResidencyPlanner().plan(
+        _request(
+            gpu_available_bytes=700,
+            dense_core_bytes=400,
+            kv_cache_bytes=100,
+            runtime_buffer_bytes=100,
+            gpu_headroom_bytes=100,
+        )
+    )
+    no_ram_staging = MoEResidencyPlanner().plan(
+        _request(ram_available_bytes=350, ram_headroom_bytes=200)
+    )
+
+    assert "gpu_expert_workspace_unavailable" in no_gpu_slot.blockers
+    assert "ram_expert_staging_workspace_unavailable" in no_ram_staging.blockers
+
+
+def test_planner_blocks_when_cold_expert_storage_does_not_fit() -> None:
+    plan = MoEResidencyPlanner().plan(_request(storage_available_bytes=100))
+
+    assert "cold_expert_storage_insufficient" in plan.blockers
 
 
 def test_heat_policy_requires_hysteresis_before_replacing_hot_expert() -> None:
@@ -103,6 +140,17 @@ def test_heat_decay_is_deterministic_and_preserves_minimum_observed_heat() -> No
 
     assert policy.heat("layer0:expert0") == 2
     assert policy.heat("layer0:expert1") == 1
+
+
+def test_heat_recency_cannot_overpower_a_much_hotter_expert_after_long_uptime() -> None:
+    policy = ExpertHeatPolicy(slot_count=1, hysteresis=0.25)
+    policy.touch("layer0:hot", count=100)
+    assert policy.repin() == ("layer0:hot",)
+
+    for index in range(30_000):
+        policy.touch(f"layer0:cold-{index}")
+
+    assert policy.repin() == ("layer0:hot",)
 
 
 def _package_fixture(tmp_path: Path):
@@ -135,11 +183,37 @@ def test_digest_mismatch_fails_closed(tmp_path: Path) -> None:
     expert_path = Path(manifest.root_dir) / manifest.experts[0].path
     expert_path.write_bytes(b"corrupt")
 
-    with pytest.raises(ExpertIntegrityError, match="digest mismatch"):
+    with pytest.raises(ExpertIntegrityError, match="does not match"):
         TieredExpertStore(manifest, ram_slots=1, hot_slots=0).acquire(
             0,
             torch.device("cpu"),
         )
+
+
+def test_packaging_rejects_layer_id_path_traversal(tmp_path: Path) -> None:
+    experts = nn.ModuleList([SwiGLUExpert(4, 8)])
+
+    with pytest.raises(ValueError, match="layer_id"):
+        package_swiglu_experts(
+            experts,
+            tmp_path,
+            model_ref="model:nexusnet-fixture",
+            layer_id="../escape",
+        )
+
+
+def test_store_rejects_shard_larger_than_configured_bound(tmp_path: Path) -> None:
+    _, manifest = _package_fixture(tmp_path)
+    shard_size = manifest.experts[0].size_bytes
+    store = TieredExpertStore(
+        manifest,
+        ram_slots=1,
+        hot_slots=0,
+        max_shard_bytes=shard_size - 1,
+    )
+
+    with pytest.raises(ExpertIntegrityError, match="configured bound"):
+        store.acquire(0, torch.device("cpu"))
 
 
 def test_ram_slot_eviction_is_visible_in_store_evidence(tmp_path: Path) -> None:
@@ -216,6 +290,7 @@ def test_tiered_backend_can_release_and_restore_resident_expert_parameters(tmp_p
     layer = MoECapsuleLayer(4, 8, num_experts=3, top_k=2).eval()
     x = torch.randn(5, 4)
     expected = layer(x)
+    expected_state = {name: tensor.clone() for name, tensor in layer.state_dict().items()}
     resident_parameter_count = sum(parameter.numel() for parameter in layer.parameters())
 
     backend = TieredSwiGLUExecutionBackend.from_layer(
@@ -231,12 +306,21 @@ def test_tiered_backend_can_release_and_restore_resident_expert_parameters(tmp_p
 
     assert sum(parameter.numel() for parameter in layer.parameters()) < resident_parameter_count
     torch.testing.assert_close(layer(x), expected, rtol=0, atol=0)
+    attached_state = layer.state_dict()
+    assert attached_state.keys() == expected_state.keys()
+    for name, tensor in expected_state.items():
+        torch.testing.assert_close(attached_state[name], tensor, rtol=0, atol=0)
 
     backend.restore_resident(layer)
     layer.set_execution_backend(None)
 
     assert sum(parameter.numel() for parameter in layer.parameters()) == resident_parameter_count
     torch.testing.assert_close(layer(x), expected, rtol=0, atol=0)
+    layer.train()
+    with pytest.raises(RuntimeError, match="optimizer rebind"):
+        layer(x)
+    layer.acknowledge_optimizer_rebind()
+    layer(x).sum().backward()
 
 
 def test_released_resident_experts_must_be_restored_before_backend_detach(tmp_path: Path) -> None:
@@ -271,12 +355,17 @@ def test_native_lm_runs_end_to_end_with_all_moe_layers_storage_backed(tmp_path: 
     token_ids = torch.tensor([[1, 2, 3, 4]])
     expected = model(token_ids)
     resident_parameter_count = sum(parameter.numel() for parameter in model.parameters())
+    largest_expert_bytes = max(
+        sum(parameter.numel() * parameter.element_size() for parameter in block.moe.experts[0].parameters())
+        for block in model.blocks
+    )
     plan = MoEResidencyPlanner().plan(
         _request(
             model_ref="model:nexusnet-lm-fixture",
             expert_count=6,
-            gpu_available_bytes=1_500,
-            ram_available_bytes=2_000,
+            expert_bytes=largest_expert_bytes,
+            gpu_available_bytes=12_000,
+            ram_available_bytes=20_000,
         )
     )
 
@@ -284,6 +373,7 @@ def test_native_lm_runs_end_to_end_with_all_moe_layers_storage_backed(tmp_path: 
         model,
         tmp_path,
         plan=plan,
+        model_ref="model:nexusnet-lm-fixture",
         release_resident=True,
     )
     actual = model(token_ids)
@@ -298,6 +388,20 @@ def test_native_lm_runs_end_to_end_with_all_moe_layers_storage_backed(tmp_path: 
 
     torch.testing.assert_close(repeated, expected, rtol=0, atol=0)
     assert attachment.evidence()[1]["prefetch_requests"] > 0
+
+    runtime_evidence = attachment.runtime_evidence()
+    assert runtime_evidence["plan_ref"] == plan.plan_id
+    assert len(runtime_evidence["manifest_refs"]) == 2
+    assert runtime_evidence["runtime_state"] in {
+        "tiered-cold",
+        "tiered-warm",
+        "tiered-warming",
+    }
+    assert "prompt" not in json.dumps(runtime_evidence).lower()
+
+    for _ in range(20):
+        model(token_ids)
+    assert attachment.pending_prefetch_count <= 2 * len(attachment.backends)
 
     attachment.restore()
 
@@ -327,7 +431,40 @@ def test_model_attachment_rejects_blocked_residency_plan(tmp_path: Path) -> None
     )
 
     with pytest.raises(RuntimeError, match="residency plan is blocked"):
-        attach_tiered_moe_runtime(model, tmp_path, plan=blocked_plan)
+        attach_tiered_moe_runtime(
+            model,
+            tmp_path,
+            plan=blocked_plan,
+            model_ref="model:nexusnet-fixture",
+        )
+
+
+def test_model_attachment_rejects_plan_for_different_expert_layout(tmp_path: Path) -> None:
+    model = NexusNetLM(
+        vocab_size=16,
+        d_model=8,
+        n_heads=2,
+        n_kv_heads=1,
+        num_experts=2,
+        top_k=1,
+        d_hidden=12,
+        num_layers=1,
+    ).eval()
+    mismatched_plan = MoEResidencyPlanner().plan(
+        _request(
+            model_ref="model:other",
+            expert_count=99,
+            expert_bytes=1,
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="model_ref"):
+        attach_tiered_moe_runtime(
+            model,
+            tmp_path,
+            plan=mismatched_plan,
+            model_ref="model:nexusnet-fixture",
+        )
 
 
 def test_prefetch_learns_layer_transition_without_changing_route_authority() -> None:
@@ -353,6 +490,31 @@ def test_store_prefetch_warms_ram_and_records_useful_hit(tmp_path: Path) -> None
     assert evidence["storage_misses"] == 1
 
 
+def test_failed_prefetch_cleans_inflight_state_without_poisoning_demand(tmp_path: Path) -> None:
+    _, manifest = _package_fixture(tmp_path)
+    expert_path = Path(manifest.root_dir) / manifest.experts[0].path
+    expert_path.write_bytes(b"corrupt")
+    store = TieredExpertStore(manifest, ram_slots=1, hot_slots=0)
+
+    future = store.prefetch(0, torch.device("cpu"))
+    with pytest.raises(ExpertIntegrityError):
+        future.result(timeout=5)
+
+    evidence = store.evidence()
+    assert evidence["prefetch_failures"] == 1
+    assert evidence["inflight_prefetches"] == 0
+
+
+def test_ram_eviction_marks_unused_prefetch_as_wasted(tmp_path: Path) -> None:
+    _, manifest = _package_fixture(tmp_path)
+    store = TieredExpertStore(manifest, ram_slots=1, hot_slots=0)
+
+    store.prefetch(0, torch.device("cpu")).result(timeout=5)
+    store.acquire(1, torch.device("cpu"))
+
+    assert store.evidence()["prefetch_wasted"] == 1
+
+
 def test_hot_pin_prevents_lru_eviction_by_unpinned_expert(tmp_path: Path) -> None:
     _, manifest = _package_fixture(tmp_path)
     store = TieredExpertStore(manifest, ram_slots=2, hot_slots=1)
@@ -367,6 +529,21 @@ def test_hot_pin_prevents_lru_eviction_by_unpinned_expert(tmp_path: Path) -> Non
     evidence = store.evidence()
     assert evidence["hot_hits"] == hot_hits_before + 1
     assert evidence["pinned_hot_experts"] == [0]
+
+
+def test_active_lease_prevents_hot_expert_eviction(tmp_path: Path) -> None:
+    _, manifest = _package_fixture(tmp_path)
+    store = TieredExpertStore(manifest, ram_slots=2, hot_slots=1)
+    device = torch.device("cpu")
+
+    with store.lease(0, device):
+        store.acquire(1, device)
+        hot_hits_before = store.evidence()["hot_hits"]
+        store.acquire(0, device)
+        assert store.evidence()["hot_hits"] == hot_hits_before + 1
+        assert store.evidence()["active_leases"] == 1
+
+    assert store.evidence()["active_leases"] == 0
 
 
 def test_adaptive_speculation_disables_slower_profile_despite_high_acceptance() -> None:
@@ -422,6 +599,60 @@ def test_disabled_speculation_profile_uses_target_only_decode() -> None:
     assert calls == ["target"]
 
 
+def test_speculation_run_measures_and_target_verifies_candidate() -> None:
+    timestamps = iter((0.0, 1.0, 1.0, 3.0))
+    controller = AdaptiveSpeculationController(
+        min_trials=1,
+        min_speedup=1.0,
+        clock=lambda: next(timestamps),
+    )
+
+    result = controller.run(
+        "storage-cold",
+        target_only=lambda: {"tokens": [1, 2], "accepted": 0, "proposed": 0},
+        speculative=lambda: {"tokens": [1, 2], "accepted": 2, "proposed": 2},
+        equivalent=lambda target, candidate: target["tokens"] == candidate["tokens"],
+    )
+
+    assert result["tokens"] == [1, 2]
+    assert controller.state("storage-cold").enabled is False
+    assert controller.state("storage-cold").reason == "non_positive_end_to_end_benefit"
+
+
+def test_speculation_run_rejects_candidate_that_differs_from_target() -> None:
+    timestamps = iter((0.0, 1.0, 1.0, 1.5))
+    controller = AdaptiveSpeculationController(clock=lambda: next(timestamps))
+
+    result = controller.run(
+        "storage-cold",
+        target_only=lambda: {"tokens": [1, 2]},
+        speculative=lambda: {"tokens": [1, 3], "accepted": 2, "proposed": 2},
+        equivalent=lambda target, candidate: target["tokens"] == candidate["tokens"],
+    )
+
+    assert result == {"tokens": [1, 2]}
+    assert controller.state("storage-cold").enabled is False
+    assert controller.state("storage-cold").reason == "target_verification_mismatch"
+
+
+def test_speculation_run_falls_back_when_candidate_fails() -> None:
+    timestamps = iter((0.0, 1.0, 1.0))
+    controller = AdaptiveSpeculationController(clock=lambda: next(timestamps))
+
+    def fail() -> dict[str, object]:
+        raise RuntimeError("candidate failed")
+
+    result = controller.run(
+        "storage-cold",
+        target_only=lambda: {"tokens": [1, 2]},
+        speculative=fail,
+    )
+
+    assert result == {"tokens": [1, 2]}
+    assert controller.state("storage-cold").enabled is False
+    assert controller.state("storage-cold").reason == "candidate_execution_failed"
+
+
 def test_evidence_contains_runtime_metrics_but_no_prompt_content() -> None:
     evidence = ExpertResidencyEvidence(
         plan_ref="moe-plan:fixture",
@@ -447,6 +678,24 @@ def test_evidence_contains_runtime_metrics_but_no_prompt_content() -> None:
     assert "completion" not in json.dumps(payload).lower()
 
 
+def test_evidence_refs_and_runtime_states_are_sanitized() -> None:
+    with pytest.raises(ValueError, match="sanitized"):
+        ExpertResidencyEvidence(
+            plan_ref="moe-plan:fixture prompt text",
+            manifest_ref="expert-manifest:fixture",
+        )
+
+    warming = ExpertResidencyEvidence(
+        plan_ref="moe-plan:fixture",
+        manifest_ref="expert-manifest:fixture",
+    )
+    assert warming.snapshot()["runtime_state"] == "tiered-warming"
+    warming.record_store_metrics({"storage_misses": 1})
+    assert warming.snapshot()["runtime_state"] == "tiered-cold"
+    warming.record_store_metrics({"ram_hits": 1})
+    assert warming.snapshot()["runtime_state"] == "tiered-warm"
+
+
 def test_colibri_provenance_is_commit_pinned_and_excludes_server_integration() -> None:
     provenance = ColibriAssimilationProvenance()
     payload = provenance.as_dict()
@@ -457,3 +706,8 @@ def test_colibri_provenance_is_commit_pinned_and_excludes_server_integration() -
     assert "c/tier.h" in payload["eligible_attributed_sources"]
     assert "c/resource_plan.py" in payload["eligible_attributed_sources"]
     assert "c/openai_server.py" in payload["excluded_sources"]
+    assert payload["assimilation_classification"] == "independent-behavioral-assimilation"
+    assert payload["source_sha256"]["c/tier.h"] == (
+        "93c2a90ebb233f30a9cf1a5adb6228583ab4ad9ca9caad1bd5bfdcf336364625"
+    )
+    assert payload["license_file"] == "docs/third-party/licenses/Apache-2.0-Colibri.txt"

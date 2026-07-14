@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
 import torch.nn as nn
+
+
+_SAFE_LAYER_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
 
 @dataclass(frozen=True)
@@ -57,6 +62,8 @@ def package_swiglu_experts(
         from safetensors.torch import save_file
     except ImportError as exc:
         raise RuntimeError("safetensors is required for tiered expert packaging") from exc
+    if not _SAFE_LAYER_ID.fullmatch(layer_id) or ".." in layer_id:
+        raise ValueError("layer_id must be a safe identifier without path traversal")
     root = Path(output_dir).resolve()
     root.mkdir(parents=True, exist_ok=True)
     records: list[ExpertTensorRecord] = []
@@ -77,7 +84,11 @@ def package_swiglu_experts(
             raise TypeError("tiered execution currently requires native SwiGLUExpert tensors")
         relative_path = f"layer-{layer_id}-expert-{expert_id}.safetensors"
         shard_path = root / relative_path
-        save_file(state, str(shard_path))
+        if shard_path.parent.resolve() != root:
+            raise ValueError("expert shard path must remain inside output_dir")
+        temporary_path = root / f".{relative_path}.tmp"
+        save_file(state, str(temporary_path))
+        os.replace(temporary_path, shard_path)
         shard_bytes = shard_path.read_bytes()
         records.append(
             ExpertTensorRecord(

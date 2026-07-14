@@ -19,6 +19,12 @@ dependencies = [
   "PyYAML>=6.0",
 ]
 
+[project.optional-dependencies]
+native-moe-residency = [
+  "torch>=2.1",
+  "safetensors>=0.4",
+]
+
 [project.scripts]
 nexus = "nexus.cli.main:main"
 nexusnet-brain = "nexusnet.cli.brain:main"

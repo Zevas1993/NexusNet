@@ -109,6 +109,7 @@ class MoECapsuleLayer(nn.Module):
         # Set by GovernedSparseRouter from the sacred-geometry fabric; None = ungoverned (free routing).
         self.governance: torch.Tensor | None = None
         self._expert_execution_backend: ExpertExecutionBackend | None = None
+        self._tiered_parameter_identity_changed = False
 
     def set_execution_backend(self, backend: ExpertExecutionBackend | None) -> None:
         """Select an inference-only expert executor; None restores resident execution."""
@@ -122,6 +123,12 @@ class MoECapsuleLayer(nn.Module):
             raise RuntimeError("restore resident experts before detaching tiered execution")
         self._expert_execution_backend = backend
 
+    def acknowledge_optimizer_rebind(self) -> None:
+        """Confirm optimizers were rebuilt after materializing released experts."""
+        if self._expert_execution_backend is not None:
+            raise RuntimeError("cannot acknowledge optimizer rebind while tiered execution is attached")
+        self._tiered_parameter_identity_changed = False
+
     def set_governance(self, governance: torch.Tensor | None) -> None:
         """Bind a per-expert governance bias (len == num_experts) from the hive fabric, or None."""
         if governance is not None and governance.numel() != self.num_experts:
@@ -134,6 +141,8 @@ class MoECapsuleLayer(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.training and self._expert_execution_backend is not None:
             raise RuntimeError("tiered expert execution is inference-only")
+        if self.training and self._tiered_parameter_identity_changed:
+            raise RuntimeError("optimizer rebind is required after restoring tiered experts")
         scores = self.gate(x)                                   # (N, E) learned routing scores
         biased = scores + self.load_bias                        # selection only
         if self.governance is not None:

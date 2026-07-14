@@ -11,8 +11,13 @@ AdmissionState = Literal["admitted", "blocked"]
 class HardwareMemorySnapshot:
     gpu_available_bytes: int
     ram_available_bytes: int
+    storage_available_bytes: int = 0
     def __post_init__(self) -> None:
-        if self.gpu_available_bytes < 0 or self.ram_available_bytes < 0:
+        if (
+            self.gpu_available_bytes < 0
+            or self.ram_available_bytes < 0
+            or self.storage_available_bytes < 0
+        ):
             raise ValueError("available memory values must be non-negative")
 
 
@@ -59,3 +64,7 @@ class MoEResidencyPlan:
     dense_working_set_bytes: int
     gpu_available_bytes: int
     ram_available_bytes: int
+    storage_available_bytes: int
+    cold_store_bytes: int
+    expert_bytes: int
+    expert_count: int
