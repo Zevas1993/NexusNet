@@ -317,6 +317,21 @@ def test_separate_registry_instances_merge_serialized_mutations_without_lost_upd
     assert restored.get(second_manifest.pack_id, second_manifest.version).manifest == second_manifest
 
 
+def test_long_lived_registry_reader_refreshes_after_another_instance_commits(tmp_path, manifest_factory):
+    path = tmp_path / "registry-v1.json"
+    reader = RuntimePackRegistry(path)
+    writer = RuntimePackRegistry(path)
+    manifest = manifest_factory()
+
+    writer.register_manifest(manifest)
+    assert reader.get(manifest.pack_id, manifest.version).manifest == manifest
+    _advance_to_verifying(writer, manifest.pack_id, manifest.version)
+    writer.activate(manifest.pack_id, manifest.version)
+
+    assert reader.active(manifest.pack_id).manifest.version == manifest.version
+    assert reader.snapshot().active_versions[manifest.pack_id] == manifest.version
+
+
 def test_separate_processes_serialize_registry_writes_without_lost_updates(tmp_path, manifest_factory):
     path = tmp_path / "registry-v1.json"
     start = tmp_path / "start"
@@ -464,3 +479,37 @@ def test_rollback_after_quarantine_persists_the_supplied_reason(tmp_path, manife
     registry.rollback(first.pack_id, reason_code="rollback-requested")
 
     assert "rollback-requested" in registry.get(second.pack_id, second.version).reason_codes
+
+
+def test_reason_history_capacity_cannot_block_fatal_quarantine(tmp_path, manifest_factory):
+    registry = RuntimePackRegistry(tmp_path / "registry-v1.json")
+    manifest = manifest_factory()
+    registry.register_manifest(manifest)
+    _advance_to_verifying(registry, manifest.pack_id, manifest.version)
+    registry.activate(manifest.pack_id, manifest.version)
+    for index in range(32):
+        registry.transition(
+            manifest.pack_id,
+            manifest.version,
+            PackLifecycleState.DEGRADED,
+            reason_code=f"degraded-{index}",
+        )
+        registry.transition(
+            manifest.pack_id,
+            manifest.version,
+            PackLifecycleState.ACTIVE,
+            reason_code=f"recovered-{index}",
+        )
+
+    quarantined = registry.transition(
+        manifest.pack_id,
+        manifest.version,
+        PackLifecycleState.QUARANTINED,
+        reason_code="fatal-worker-failure",
+    )
+
+    assert len(quarantined.reason_codes) == 64
+    assert quarantined.reason_codes[-1] == "fatal-worker-failure"
+    assert "degraded-0" not in quarantined.reason_codes
+    with pytest.raises(RegistryError, match="active-pack-unavailable"):
+        registry.active(manifest.pack_id)

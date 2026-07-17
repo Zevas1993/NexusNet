@@ -30,6 +30,7 @@ _REASON_CODE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 _MAX_REGISTRY_BYTES = 16 * 1024 * 1024
 _MAX_RECORDS = 4096
 _MAX_PACK_POINTERS = 1024
+_MAX_REASON_CODES = 64
 _PATH_LOCKS_GUARD = RLock()
 _PATH_LOCKS: dict[str, RLock] = {}
 
@@ -104,7 +105,11 @@ class RuntimePackRecord(BaseModel):
     manifest: RuntimePackManifest
     state: PackLifecycleState = PackLifecycleState.AVAILABLE
     install_ref: StrictStr | None = Field(default=None, max_length=512)
-    reason_codes: tuple[StrictStr, ...] = Field(default=(), max_length=64, validate_default=True)
+    reason_codes: tuple[StrictStr, ...] = Field(
+        default=(),
+        max_length=_MAX_REASON_CODES,
+        validate_default=True,
+    )
     updated_at: datetime
 
     @field_validator("install_ref")
@@ -297,6 +302,10 @@ class RuntimePackRegistry:
         except (ValidationError, ValueError, TypeError):
             raise RegistryError("registry-record-invalid") from None
 
+    @staticmethod
+    def _append_reason(reason_codes: tuple[str, ...], reason_code: str) -> tuple[str, ...]:
+        return (*reason_codes, reason_code)[-_MAX_REASON_CODES:]
+
     def _new_snapshot(self, **updates) -> RegistrySnapshot:
         payload = self._snapshot.model_dump(mode="json")
         payload.update(updates)
@@ -330,6 +339,12 @@ class RuntimePackRegistry:
     def _mutation(self):
         with self._lock, self._path_lock, _exclusive_file_lock(self._lock_path):
             self._cleanup_stale_temps()
+            self._snapshot = self._load()
+            yield
+
+    @contextmanager
+    def _refreshed_read(self):
+        with self._lock, self._path_lock, _exclusive_file_lock(self._lock_path):
             self._snapshot = self._load()
             yield
 
@@ -372,8 +387,23 @@ class RuntimePackRegistry:
         self._snapshot = snapshot
 
     def snapshot(self) -> RegistrySnapshot:
-        with self._lock:
+        with self._refreshed_read():
             return RegistrySnapshot.model_validate(self._snapshot.model_dump(mode="json"))
+
+    def _cached_get(self, pack_id: str, version: str) -> RuntimePackRecord:
+        try:
+            return self._snapshot.records[self._key(pack_id, version)]
+        except KeyError:
+            raise RegistryError("pack-version-not-registered") from None
+
+    def _cached_active(self, pack_id: str) -> RuntimePackRecord:
+        version = self._snapshot.active_versions.get(pack_id)
+        if version is None:
+            raise RegistryError("active-pack-unavailable")
+        record = self._cached_get(pack_id, version)
+        if record.state not in {PackLifecycleState.ACTIVE, PackLifecycleState.DEGRADED}:
+            raise RegistryError("active-pack-unavailable")
+        return record
 
     def register_manifest(self, manifest: RuntimePackManifest) -> RuntimePackRecord:
         with self._mutation():
@@ -389,21 +419,12 @@ class RuntimePackRegistry:
             return record
 
     def get(self, pack_id: str, version: str) -> RuntimePackRecord:
-        with self._lock:
-            try:
-                return self._snapshot.records[self._key(pack_id, version)]
-            except KeyError:
-                raise RegistryError("pack-version-not-registered") from None
+        with self._refreshed_read():
+            return self._cached_get(pack_id, version)
 
     def active(self, pack_id: str) -> RuntimePackRecord:
-        with self._lock:
-            version = self._snapshot.active_versions.get(pack_id)
-            if version is None:
-                raise RegistryError("active-pack-unavailable")
-            record = self.get(pack_id, version)
-            if record.state not in {PackLifecycleState.ACTIVE, PackLifecycleState.DEGRADED}:
-                raise RegistryError("active-pack-unavailable")
-            return record
+        with self._refreshed_read():
+            return self._cached_active(pack_id)
 
     def transition(
         self,
@@ -415,7 +436,7 @@ class RuntimePackRegistry:
         reason_code: str | None = None,
     ) -> RuntimePackRecord:
         with self._mutation():
-            current = self.get(pack_id, version)
+            current = self._cached_get(pack_id, version)
             try:
                 target = PackLifecycleState(target)
             except (TypeError, ValueError):
@@ -436,7 +457,7 @@ class RuntimePackRegistry:
                     if target == PackLifecycleState.REMOVED
                     else install_ref if install_ref is not None else current.install_ref
                 ),
-                reason_codes=(*current.reason_codes, reason_code) if reason_code else current.reason_codes,
+                reason_codes=self._append_reason(current.reason_codes, reason_code) if reason_code else current.reason_codes,
                 updated_at=self._now(),
             )
             records = {**self._snapshot.records, self._key(pack_id, version): updated}
@@ -470,7 +491,7 @@ class RuntimePackRegistry:
 
     def activate(self, pack_id: str, version: str) -> RuntimePackRecord:
         with self._mutation():
-            candidate = self.get(pack_id, version)
+            candidate = self._cached_get(pack_id, version)
             if candidate.state != PackLifecycleState.VERIFYING:
                 raise RegistryError("lifecycle-transition-invalid")
             records = dict(self._snapshot.records)
@@ -533,27 +554,27 @@ class RuntimePackRegistry:
             target_version = self._snapshot.previous_versions.get(pack_id)
             if target_version is None:
                 raise RegistryError("rollback-unavailable")
-            target = self.get(pack_id, target_version)
+            target = self._cached_get(pack_id, target_version)
             if target.state != PackLifecycleState.ROLLBACK_AVAILABLE:
                 raise RegistryError("rollback-unavailable")
             records = dict(self._snapshot.records)
             if current_version is not None:
-                current = self.get(pack_id, current_version)
+                current = self._cached_get(pack_id, current_version)
                 if current.state not in {PackLifecycleState.ACTIVE, PackLifecycleState.DEGRADED}:
                     raise RegistryError("rollback-unavailable")
                 records[self._key(pack_id, current_version)] = self._updated_record(
                     current,
                     state=PackLifecycleState.QUARANTINED,
-                    reason_codes=(*current.reason_codes, reason_code),
+                    reason_codes=self._append_reason(current.reason_codes, reason_code),
                     updated_at=self._now(),
                 )
             elif failed_version is not None:
-                failed = self.get(pack_id, failed_version)
+                failed = self._cached_get(pack_id, failed_version)
                 if failed.state != PackLifecycleState.QUARANTINED:
                     raise RegistryError("rollback-unavailable")
                 records[self._key(pack_id, failed_version)] = self._updated_record(
                     failed,
-                    reason_codes=(*failed.reason_codes, reason_code),
+                    reason_codes=self._append_reason(failed.reason_codes, reason_code),
                     updated_at=self._now(),
                 )
             else:
