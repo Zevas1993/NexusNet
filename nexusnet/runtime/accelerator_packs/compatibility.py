@@ -1,17 +1,75 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from collections.abc import Mapping
+import re
+
+from pydantic import BaseModel, ConfigDict
 
 from nexusnet.runtime.hardware_contracts import HardwareNode
 
 from .contracts import ExecutionMode, ModelFormat, RuntimePackManifest, WorkloadKind
 
 
+_VERSION = re.compile(r"^\d+(?:\.\d+)*$")
+_CONSTRAINT = re.compile(r"^(==|!=|>=|<=|>|<)?(\d+(?:\.\d+)*)$")
+_DEPENDENCY_SEPARATOR = re.compile(r"[-_.]+")
+
+
+def _numeric_version(value: object) -> tuple[int, ...] | None:
+    if not isinstance(value, str) or not _VERSION.fullmatch(value):
+        return None
+    parts = [int(part) for part in value.split(".")]
+    while len(parts) > 1 and parts[-1] == 0:
+        parts.pop()
+    return tuple(parts)
+
+
+def _compare_versions(left: tuple[int, ...], right: tuple[int, ...]) -> int:
+    width = max(len(left), len(right))
+    normalized_left = left + (0,) * (width - len(left))
+    normalized_right = right + (0,) * (width - len(right))
+    return (normalized_left > normalized_right) - (normalized_left < normalized_right)
+
+
+def _satisfies_constraint(version: object, constraint: object) -> bool | None:
+    actual = _numeric_version(version)
+    if actual is None or not isinstance(constraint, str):
+        return None
+    clauses = constraint.split(",")
+    if not clauses or any(not clause for clause in clauses):
+        return None
+    for clause in clauses:
+        match = _CONSTRAINT.fullmatch(clause)
+        if match is None:
+            return None
+        operator, expected_text = match.groups()
+        expected = _numeric_version(expected_text)
+        if expected is None:
+            return None
+        comparison = _compare_versions(actual, expected)
+        accepted = {
+            None: comparison == 0,
+            "==": comparison == 0,
+            "!=": comparison != 0,
+            ">=": comparison >= 0,
+            "<=": comparison <= 0,
+            ">": comparison > 0,
+            "<": comparison < 0,
+        }[operator]
+        if not accepted:
+            return False
+    return True
+
+
+def _dependency_name(value: str) -> str:
+    return _DEPENDENCY_SEPARATOR.sub("-", value).casefold()
+
+
 class CompatibilityDecision(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     compatible: bool
-    reason_codes: list[str] = Field(default_factory=list)
+    reason_codes: tuple[str, ...] = ()
 
 
 class PackCompatibilityEvaluator:
@@ -26,6 +84,8 @@ class PackCompatibilityEvaluator:
         workload: WorkloadKind,
         model_format: ModelFormat,
         requested_mode: ExecutionMode,
+        host_python_abi: str | None = None,
+        dependency_versions: Mapping[str, str] | None = None,
     ) -> CompatibilityDecision:
         reasons: list[str] = []
         if host_os.lower() not in manifest.supported_os:
@@ -39,18 +99,72 @@ class PackCompatibilityEvaluator:
         if model_format not in manifest.model_formats:
             reasons.append("model-format-mismatch")
 
+        if manifest.minimum_driver_version is not None:
+            required_driver = _numeric_version(manifest.minimum_driver_version)
+            observed_driver = _numeric_version(device.driver_version)
+            if required_driver is None:
+                reasons.append("driver-version-constraint-invalid")
+            elif observed_driver is None:
+                reasons.append("driver-version-unverified")
+            elif _compare_versions(observed_driver, required_driver) < 0:
+                reasons.append("driver-version-too-old")
+
+        if manifest.python_abi is not None:
+            if not isinstance(host_python_abi, str):
+                reasons.append("python-abi-unverified")
+            elif host_python_abi.casefold() != manifest.python_abi.casefold():
+                reasons.append("python-abi-mismatch")
+
+        if manifest.dependency_constraints:
+            if dependency_versions is None:
+                reasons.append("dependency-constraints-unverified")
+            else:
+                observed_dependencies = {
+                    _dependency_name(name): version
+                    for name, version in dependency_versions.items()
+                    if isinstance(name, str)
+                }
+                dependency_unavailable = False
+                dependency_unverified = False
+                dependency_mismatch = False
+                for name, constraint in manifest.dependency_constraints.items():
+                    version = observed_dependencies.get(_dependency_name(name))
+                    if version is None:
+                        dependency_unavailable = True
+                        continue
+                    satisfies = _satisfies_constraint(version, constraint)
+                    if satisfies is None:
+                        dependency_unverified = True
+                    elif not satisfies:
+                        dependency_mismatch = True
+                if dependency_unavailable:
+                    reasons.append("dependency-unavailable")
+                if dependency_unverified:
+                    reasons.append("dependency-constraint-unverified")
+                if dependency_mismatch:
+                    reasons.append("dependency-version-mismatch")
+
         concrete_modes = set(manifest.execution_modes)
+        if device.kind not in {"cpu", "gpu"}:
+            reasons.append("device-not-compute-capable")
         if requested_mode == ExecutionMode.CPU and device.kind != "cpu":
             reasons.append("cpu-mode-requires-cpu")
         if requested_mode == ExecutionMode.GPU and device.kind != "gpu":
             reasons.append("gpu-mode-requires-accelerator")
+        if requested_mode == ExecutionMode.HYBRID and device.kind != "gpu":
+            reasons.append("hybrid-mode-requires-accelerator")
         if requested_mode == ExecutionMode.HYBRID and "hybrid-offload" not in manifest.capabilities:
             reasons.append("hybrid-offload-unavailable")
         if requested_mode != ExecutionMode.AUTO and requested_mode not in concrete_modes:
             reasons.append("execution-mode-mismatch")
         if requested_mode == ExecutionMode.AUTO:
-            device_mode = ExecutionMode.CPU if device.kind == "cpu" else ExecutionMode.GPU
-            if device_mode not in concrete_modes and ExecutionMode.HYBRID not in concrete_modes:
+            device_mode = {
+                "cpu": ExecutionMode.CPU,
+                "gpu": ExecutionMode.GPU,
+            }.get(device.kind)
+            if device_mode is None or (
+                device_mode not in concrete_modes and ExecutionMode.HYBRID not in concrete_modes
+            ):
                 reasons.append("auto-has-no-concrete-mode")
 
         device_apis = set(device.accelerator_apis or [device.backend])
