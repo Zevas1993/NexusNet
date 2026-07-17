@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import tempfile
 import time
 from pathlib import Path
@@ -100,7 +101,19 @@ EXECUTION_RECEIPT_KEYS = {
     "target_digest", "sandbox_root_digest", "lease_id", "capability", "status", "executed",
     "execution_allowed", "findings", "execution_authority_reason", "evidence_ref_count",
     "evidence_digest", "result_digest", "result_metadata", "error_category",
-    "raw_content_included", "trace_contract", "duration_ms", "recorded_at",
+    "raw_content_included", "trace_contract", "duration_ms", "recorded_at", "receipt_digest",
+}
+AUTHORITY_REASON_CATEGORIES = {
+    "allowed", "authority_invalid_response", "authority_unavailable", "capability_mismatch",
+    "denied", "lease_expired", "lease_not_found", "lease_not_granted", "lease_required",
+    "mutation_not_available", "not_evaluated", "scope_mismatch",
+}
+EXECUTION_STATUS_FLAGS = {
+    "blocked-plan-only": (False, False),
+    "blocked-evidence": (False, False),
+    "blocked-authority": (False, False),
+    "blocked-sandbox": (False, True),
+    "executed-readonly": (True, True),
 }
 
 
@@ -118,19 +131,19 @@ class SafeReadOnlyToolbox:
             raise ValueError("unsupported read-only tool action")
         path = self._resolve_target(target)
         if action == "read":
-            if not path.is_file():
-                raise ValueError("read target must be a file")
-            if path.stat().st_size > MAX_READ_BYTES:
+            with self._open_regular_file(path) as handle:
+                if os.fstat(handle.fileno()).st_size > MAX_READ_BYTES:
+                    raise ValueError("read target exceeds the read-only size limit")
+                content = handle.read(MAX_READ_BYTES + 1)
+            if len(content) > MAX_READ_BYTES:
                 raise ValueError("read target exceeds the read-only size limit")
-            return {"text": path.read_text(encoding="utf-8")}
+            return {"text": content.decode("utf-8")}
         if action == "list":
             if not path.is_dir():
                 raise ValueError("list target must be a directory")
             return {"entries": sorted(item.name for item in path.iterdir())}
-        if not path.is_file():
-            raise ValueError("hash target must be a file")
         digest = hashlib.sha256()
-        with path.open("rb") as handle:
+        with self._open_regular_file(path) as handle:
             for chunk in iter(lambda: handle.read(64 * 1024), b""):
                 digest.update(chunk)
         return {"sha256": digest.hexdigest()}
@@ -145,6 +158,46 @@ class SafeReadOnlyToolbox:
         except ValueError as exc:
             raise PermissionError("tool target escapes the sandbox root") from exc
         return resolved
+
+    def _open_regular_file(self, path: Path) -> Any:
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(path, flags)
+        try:
+            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                raise ValueError("read-only tool target must be a regular file")
+            opened_path = self._opened_file_path(descriptor)
+            if opened_path is not None:
+                try:
+                    opened_path.relative_to(self.root)
+                except ValueError as exc:
+                    raise PermissionError("opened tool target escapes the sandbox root") from exc
+            return os.fdopen(descriptor, "rb")
+        except Exception:
+            os.close(descriptor)
+            raise
+
+    def _opened_file_path(self, descriptor: int) -> Path | None:
+        if os.name == "nt":
+            import ctypes
+            import msvcrt
+
+            handle = msvcrt.get_osfhandle(descriptor)
+            buffer = ctypes.create_unicode_buffer(32_768)
+            length = ctypes.windll.kernel32.GetFinalPathNameByHandleW(
+                ctypes.c_void_p(handle), buffer, len(buffer), 0
+            )
+            if length == 0 or length >= len(buffer):
+                raise OSError("unable to resolve opened Windows file handle")
+            value = buffer.value
+            if value.startswith("\\\\?\\UNC\\"):
+                value = "\\\\" + value[8:]
+            elif value.startswith("\\\\?\\"):
+                value = value[4:]
+            return Path(value).resolve()
+        proc_handle = Path("/proc/self/fd") / str(descriptor)
+        if proc_handle.exists():
+            return proc_handle.resolve()
+        return None
 
 
 class ToolActionHarness:
@@ -245,17 +298,25 @@ class ToolActionHarness:
                 "blocked-authority", False, False, ["execution_authority_lease_required"], "lease_required", evidence_refs, None, "", started)
         scope = {"tool_ref": tool_ref, "action_type": action_type, "target": target,
                  "sandbox_root_digest": root_digest.removeprefix("sha256:")}
+        authority_failure = ""
         try:
             evaluation = execution_authority.evaluate(lease_id=lease_id, capability=capability, scope=scope)
-            decision = dict(evaluation.get("decision") or {})
+            if not isinstance(evaluation, dict) or not isinstance(evaluation.get("decision"), dict):
+                raise TypeError("authority evaluation must contain a decision object")
+            decision = evaluation["decision"]
         except KeyError:
-            decision = {"execution_allowed": False, "reason": "lease_not_found"}
-        except (AttributeError, TypeError, ValueError):
-            decision = {"execution_allowed": False, "reason": "authority_unavailable"}
-        if decision.get("execution_allowed") is not True:
-            reason = str(decision.get("reason") or "denied")
+            authority_failure, decision = "lease_not_found", {}
+        except Exception:
+            authority_failure, decision = "authority_unavailable", {}
+        if not authority_failure and decision.get("execution_allowed") is True:
+            if not self._authority_allow_decision_matches(decision, lease_id=lease_id, capability=capability, scope=scope):
+                authority_failure = "authority_invalid_response"
+        elif not authority_failure:
+            authority_failure = self._authority_reason_category(decision.get("reason"))
+        if authority_failure:
             return self._finish_execution(action_id, tool_ref, action_type, target_digest, root_digest, lease_id, capability,
-                "blocked-authority", False, False, [f"execution_authority::{reason}"], reason, evidence_refs, None, "", started)
+                "blocked-authority", False, False, [f"execution_authority::{authority_failure}"], authority_failure,
+                evidence_refs, None, "", started)
         try:
             result = SafeReadOnlyToolbox(root).run(action_type, target)
         except (OSError, PermissionError, UnicodeError, ValueError) as exc:
@@ -295,6 +356,7 @@ class ToolActionHarness:
             "result_metadata": self._result_metadata(result), "error_category": error_category, "raw_content_included": False,
             "trace_contract": EXECUTION_TRACE_CONTRACT, "duration_ms": round((time.perf_counter() - started) * 1000, 3),
             "recorded_at": utcnow().isoformat()}
+        receipt["receipt_digest"] = self._receipt_digest(receipt)
         self._persist_execution(receipt)
         response = copy.deepcopy(receipt)
         if result is not None:
@@ -340,10 +402,8 @@ class ToolActionHarness:
         return sorted((copy.deepcopy(item) for item in executions.values()), key=lambda item: (item["recorded_at"], item["execution_id"]), reverse=True)
 
     def _validate_execution_receipt(self, payload: Any, *, path: Path | None = None) -> dict[str, Any]:
-        if not isinstance(payload, dict) or not EXECUTION_RECEIPT_KEYS.issubset(payload):
-            raise ValueError("tool execution receipt missing required keys")
-        if {"result", "target", "sandbox_root", "evidence_refs", "artifact_path"} & set(payload):
-            raise ValueError("tool execution receipt contains non-public fields")
+        if not isinstance(payload, dict) or set(payload) != EXECUTION_RECEIPT_KEYS:
+            raise ValueError("tool execution receipt keys do not match the public schema")
         if path is not None and not HASHED_PLAN_FILENAME.fullmatch(path.name):
             raise ValueError("tool execution receipt filename must be a sha256 artifact name")
         receipt = {"surface_id": self._validate_string("surface_id", payload["surface_id"]),
@@ -369,13 +429,28 @@ class ToolActionHarness:
             "raw_content_included": self._validate_bool("raw_content_included", payload["raw_content_included"]),
             "trace_contract": self._validate_string("trace_contract", payload["trace_contract"]),
             "duration_ms": self._validate_duration(payload["duration_ms"]),
-            "recorded_at": self._validate_string("recorded_at", payload["recorded_at"])}
+            "recorded_at": self._validate_string("recorded_at", payload["recorded_at"]),
+            "receipt_digest": self._validate_digest("receipt_digest", payload["receipt_digest"])}
         if receipt["surface_id"] != SURFACE_ID or receipt["authority"] != AUTHORITY or receipt["trace_contract"] != EXECUTION_TRACE_CONTRACT:
             raise ValueError("tool execution receipt authority fields are invalid")
         if receipt["raw_content_included"] is not False:
             raise ValueError("tool execution receipt must not contain raw content")
+        if receipt["execution_authority_reason"] not in AUTHORITY_REASON_CATEGORIES:
+            raise ValueError("tool execution receipt authority reason is not allowlisted")
+        expected_flags = EXECUTION_STATUS_FLAGS.get(receipt["status"])
+        if expected_flags is None or (receipt["executed"], receipt["execution_allowed"]) != expected_flags:
+            raise ValueError("tool execution receipt status flags are inconsistent")
+        if receipt["status"] == "executed-readonly":
+            expected_kind = {"read": "text", "list": "entries", "hash": "sha256"}.get(receipt["action_type"])
+            if (not receipt["result_digest"] or receipt["result_metadata"].get("kind") != expected_kind
+                    or receipt["findings"] or receipt["error_category"]):
+                raise ValueError("executed tool receipt result fields are inconsistent")
+        elif receipt["result_digest"] or receipt["result_metadata"] != {"kind": "none", "item_count": 0}:
+            raise ValueError("blocked tool receipt must not claim a result")
         if receipt["execution_id"] != self._execution_id(receipt["action_id"], receipt["lease_id"], receipt["target_digest"], receipt["sandbox_root_digest"]):
             raise ValueError("tool execution receipt id does not match its safe inputs")
+        if receipt["receipt_digest"] != self._receipt_digest(receipt):
+            raise ValueError("tool execution receipt digest does not match its safe fields")
         if path is not None and path.name != f"{receipt['execution_id']}.json":
             raise ValueError("tool execution receipt filename does not match receipt id")
         return receipt
@@ -383,6 +458,22 @@ class ToolActionHarness:
     def _execution_id(self, action_id: str, lease_id: str, target_digest: str, sandbox_root_digest: str) -> str:
         return hashlib.sha256(json.dumps({"action_id": action_id, "lease_id": lease_id, "target_digest": target_digest,
             "sandbox_root_digest": sandbox_root_digest}, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+    def _receipt_digest(self, receipt: dict[str, Any]) -> str:
+        return self._digest_payload({key: value for key, value in receipt.items() if key != "receipt_digest"})
+
+    def _authority_allow_decision_matches(self, decision: dict[str, Any], *, lease_id: str,
+                                          capability: str, scope: dict[str, Any]) -> bool:
+        encoded_scope = json.dumps(scope, sort_keys=True, separators=(",", ":"), default=str)
+        expected_scope_hash = hashlib.sha256(encoded_scope.encode("utf-8")).hexdigest()[:16]
+        return (decision.get("lease_id") == lease_id
+                and decision.get("capability") == capability
+                and decision.get("scope_hash") == expected_scope_hash
+                and decision.get("reason") == "allowed")
+
+    def _authority_reason_category(self, reason: Any) -> str:
+        normalized = str(reason or "denied").strip().lower()
+        return normalized if normalized in AUTHORITY_REASON_CATEGORIES - {"allowed"} else "denied"
 
     def _result_metadata(self, result: dict[str, Any] | None) -> dict[str, Any]:
         if result is None: return {"kind": "none", "item_count": 0}
