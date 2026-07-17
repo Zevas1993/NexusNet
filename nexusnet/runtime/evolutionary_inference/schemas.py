@@ -5,58 +5,15 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
-class HardwareNode(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    node_id: str
-    kind: Literal["cpu", "system-ram", "storage", "gpu"]
-    name: str
-    backend: Literal["portable", "cuda", "rocm", "metal"] = "portable"
-    memory_bytes: int | None = Field(default=None, ge=0)
-    logical_units: int | None = Field(default=None, ge=1)
-    capabilities: list[str] = Field(default_factory=list)
-
-
-class HardwareLink(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    source_node_id: str
-    target_node_id: str
-    kind: Literal["memory-access", "storage-transfer", "accelerator-transfer"]
-    measured_bandwidth_gib_s: float | None = Field(default=None, ge=0)
-
-
-class AcceleratorAdapterObservation(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    backend: Literal["cuda", "rocm", "metal"]
-    available: bool
-    reason_code: str
-    device_count: int = Field(default=0, ge=0)
-
-
-class CalibrationMetric(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    metric_id: str
-    value: float = Field(gt=0)
-    unit: str
-    sample_count: int = Field(gt=0)
-    duration_ms: float = Field(gt=0)
-    target_node_ids: list[str] = Field(min_length=1)
-
-
-class HardwareCapabilityGraph(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    schema_version: Literal["1.0"] = "1.0"
-    host_fingerprint: str
-    collected_at: datetime
-    nodes: list[HardwareNode]
-    links: list[HardwareLink]
-    adapters: list[AcceleratorAdapterObservation]
-    calibration: list[CalibrationMetric] = Field(default_factory=list)
+from nexusnet.runtime.hardware_contracts import (
+    AcceleratorAdapterObservation,
+    AcceleratorBackend,
+    CalibrationMetric,
+    HardwareCapabilityGraph,
+    HardwareLink,
+    HardwareNode,
+    VerificationState,
+)
 
 
 class TensorGroupMetadata(BaseModel):
