@@ -123,11 +123,18 @@ class ArtifactDescriptor(BaseModel):
             parsed = urlsplit(value)
             _ = parsed.port
             decoded_path = _fully_decode_url_path(parsed.path)
+            decoded_netloc = _fully_decode_url_path(parsed.netloc)
+            decoded_query = _fully_decode_url_path(parsed.query)
             _validate_safe_text(decoded_path, label="artifact URL path")
             path_parts = PurePosixPath(decoded_path).parts
+            decoded_components = (decoded_netloc, decoded_path, decoded_query)
             if (parsed.scheme.lower() != "https" or not parsed.hostname or parsed.username is not None
                     or parsed.password is not None or parsed.fragment or ".." in path_parts
-                    or "\\" in decoded_path or any(character.isspace() for character in decoded_path)):
+                    or "\\" in value or any(
+                        "\\" in component or _CONTROL_CHARACTERS.search(component)
+                        or any(character.isspace() for character in component)
+                        for component in decoded_components
+                    )):
                 raise ValueError("artifact URL must use sanitized HTTPS transport")
         except ValueError as exc:
             raise ValueError("artifact URL must use sanitized HTTPS transport") from exc

@@ -51,6 +51,9 @@ def test_security_and_lifecycle_integers_are_type_strict(manifest_factory, overr
         "https://example.invalid/%252e%252e/private.zip",
         "https://example.invalid/bin%5cworker.zip",
         "https://example.invalid/worker%0a.zip",
+        r"https://example\invalid/worker.zip",
+        "https://example.invalid/worker.zip?next=%250a",
+        "https://example.invalid/worker.zip?next=\\",
     ],
 )
 def test_artifact_urls_require_sanitized_https_transport(manifest_factory, url):
