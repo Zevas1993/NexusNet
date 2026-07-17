@@ -34,6 +34,12 @@ def _execute_with_lease(harness: ToolActionHarness, tmp_path: Path, *, action_id
         evidence_refs=evidence_refs, sandbox_root=sandbox_root, execution_authority=authority, lease_id=lease["lease_id"])
 
 
+def _refresh_receipt_digest(payload: dict) -> None:
+    safe_fields = {key: value for key, value in payload.items() if key != "receipt_digest"}
+    encoded = json.dumps(safe_fields, allow_nan=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    payload["receipt_digest"] = f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
+
 def test_read_action_requires_matching_execution_authority_lease(tmp_path):
     root = _sandbox(tmp_path)
     rec = ToolActionHarness().execute_action(action_id="lease-required", tool_ref="fs", action_type="read",
@@ -277,3 +283,118 @@ def test_mutating_action_never_calls_supplied_authority_or_toolbox(tmp_path, mon
 
     assert rec["status"] == "blocked-plan-only"
     assert calls == {"authority": 0, "toolbox": 0}
+
+
+def test_authority_binding_rejects_objects_with_hostile_equality(tmp_path):
+    root = _sandbox(tmp_path)
+
+    class EqualToAnything:
+        def __eq__(self, _other):
+            return True
+
+    class HostileAuthority:
+        def evaluate(self, **_kwargs):
+            value = EqualToAnything()
+            return {"decision": {
+                "lease_id": value,
+                "capability": value,
+                "scope_hash": value,
+                "execution_allowed": True,
+                "reason": "allowed",
+            }}
+
+    rec = ToolActionHarness().execute_action(
+        action_id="hostile-equality",
+        tool_ref="fs",
+        action_type="read",
+        target="doc.txt",
+        evidence_refs=["ev://1"],
+        sandbox_root=root,
+        execution_authority=HostileAuthority(),
+        lease_id="lease::hostile-equality",
+    )
+
+    assert rec["executed"] is False
+    assert rec["execution_authority_reason"] == "authority_invalid_response"
+    assert "result" not in rec
+
+
+def test_authority_binding_exception_is_sanitized_and_fail_closed(tmp_path):
+    root = _sandbox(tmp_path)
+    secret = r"C:\secrets\comparison-token"
+
+    class ThrowingEquality:
+        def __eq__(self, _other):
+            raise OSError(secret)
+
+    class HostileAuthority:
+        def evaluate(self, **_kwargs):
+            value = ThrowingEquality()
+            return {"decision": {
+                "lease_id": value,
+                "capability": value,
+                "scope_hash": value,
+                "execution_allowed": True,
+                "reason": "allowed",
+            }}
+
+    rec = ToolActionHarness().execute_action(
+        action_id="throwing-equality",
+        tool_ref="fs",
+        action_type="read",
+        target="doc.txt",
+        evidence_refs=["ev://1"],
+        sandbox_root=root,
+        execution_authority=HostileAuthority(),
+        lease_id="lease::throwing-equality",
+    )
+
+    assert rec["executed"] is False
+    assert rec["execution_authority_reason"] == "authority_invalid_response"
+    assert secret not in repr(rec)
+
+
+def test_recomputed_digest_cannot_bless_contradictory_authority_semantics(tmp_path):
+    root = _sandbox(tmp_path)
+    artifacts = tmp_path / "artifacts"
+    harness = ToolActionHarness(artifacts_dir=artifacts)
+    _execute_with_lease(
+        harness,
+        tmp_path,
+        action_id="semantic-authority-tamper",
+        tool_ref="fs",
+        action_type="read",
+        target="doc.txt",
+        evidence_refs=["ev://1"],
+        sandbox_root=root,
+    )
+    receipt_path = next((artifacts / "tools" / "action-harness" / "executions").glob("*.json"))
+    payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+    payload["execution_authority_reason"] = "denied"
+    _refresh_receipt_digest(payload)
+    receipt_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert ToolActionHarness(artifacts_dir=artifacts).summary()["execution_count"] == 0
+
+
+def test_recomputed_digest_cannot_bless_invalid_hash_metadata(tmp_path):
+    root = _sandbox(tmp_path)
+    artifacts = tmp_path / "artifacts"
+    harness = ToolActionHarness(artifacts_dir=artifacts)
+    _execute_with_lease(
+        harness,
+        tmp_path,
+        action_id="semantic-metadata-tamper",
+        tool_ref="fs",
+        action_type="hash",
+        target="doc.txt",
+        evidence_refs=["ev://1"],
+        sandbox_root=root,
+    )
+    receipt_path = next((artifacts / "tools" / "action-harness" / "executions").glob("*.json"))
+    payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+    payload["result_metadata"]["item_count"] = 0
+    _refresh_receipt_digest(payload)
+    receipt_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert ToolActionHarness(artifacts_dir=artifacts).summary()["execution_count"] == 0

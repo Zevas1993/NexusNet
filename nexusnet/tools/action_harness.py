@@ -108,6 +108,14 @@ AUTHORITY_REASON_CATEGORIES = {
     "denied", "lease_expired", "lease_not_found", "lease_not_granted", "lease_required",
     "mutation_not_available", "not_evaluated", "scope_mismatch",
 }
+AUTHORITY_DENIAL_REASONS = {
+    "authority_invalid_response", "authority_unavailable", "capability_mismatch", "denied",
+    "lease_expired", "lease_not_found", "lease_not_granted", "scope_mismatch",
+}
+SANDBOX_ERROR_CATEGORIES = {
+    "FileNotFoundError", "IsADirectoryError", "NotADirectoryError", "OSError",
+    "PermissionError", "UnicodeError", "ValueError",
+}
 EXECUTION_STATUS_FLAGS = {
     "blocked-plan-only": (False, False),
     "blocked-evidence": (False, False),
@@ -301,18 +309,25 @@ class ToolActionHarness:
         authority_failure = ""
         try:
             evaluation = execution_authority.evaluate(lease_id=lease_id, capability=capability, scope=scope)
-            if not isinstance(evaluation, dict) or not isinstance(evaluation.get("decision"), dict):
-                raise TypeError("authority evaluation must contain a decision object")
-            decision = evaluation["decision"]
         except KeyError:
-            authority_failure, decision = "lease_not_found", {}
+            authority_failure = "lease_not_found"
         except Exception:
-            authority_failure, decision = "authority_unavailable", {}
-        if not authority_failure and decision.get("execution_allowed") is True:
-            if not self._authority_allow_decision_matches(decision, lease_id=lease_id, capability=capability, scope=scope):
+            authority_failure = "authority_unavailable"
+        else:
+            try:
+                if type(evaluation) is not dict or type(evaluation.get("decision")) is not dict:
+                    raise TypeError("authority evaluation must contain a plain decision object")
+                decision = evaluation["decision"]
+                if decision.get("execution_allowed") is True:
+                    if not self._authority_allow_decision_matches(
+                            decision, lease_id=lease_id, capability=capability, scope=scope):
+                        authority_failure = "authority_invalid_response"
+                elif decision.get("execution_allowed") is False:
+                    authority_failure = self._authority_reason_category(decision.get("reason"))
+                else:
+                    authority_failure = "authority_invalid_response"
+            except Exception:
                 authority_failure = "authority_invalid_response"
-        elif not authority_failure:
-            authority_failure = self._authority_reason_category(decision.get("reason"))
         if authority_failure:
             return self._finish_execution(action_id, tool_ref, action_type, target_digest, root_digest, lease_id, capability,
                 "blocked-authority", False, False, [f"execution_authority::{authority_failure}"], authority_failure,
@@ -321,7 +336,8 @@ class ToolActionHarness:
             result = SafeReadOnlyToolbox(root).run(action_type, target)
         except (OSError, PermissionError, UnicodeError, ValueError) as exc:
             return self._finish_execution(action_id, tool_ref, action_type, target_digest, root_digest, lease_id, capability,
-                "blocked-sandbox", False, True, ["execution_error"], "allowed", evidence_refs, None, type(exc).__name__, started)
+                "blocked-sandbox", False, True, ["execution_error"], "allowed", evidence_refs, None,
+                self._sandbox_error_category(exc), started)
         return self._finish_execution(action_id, tool_ref, action_type, target_digest, root_digest, lease_id, capability,
             "executed-readonly", True, True, [], "allowed", evidence_refs, result, "", started)
 
@@ -440,13 +456,7 @@ class ToolActionHarness:
         expected_flags = EXECUTION_STATUS_FLAGS.get(receipt["status"])
         if expected_flags is None or (receipt["executed"], receipt["execution_allowed"]) != expected_flags:
             raise ValueError("tool execution receipt status flags are inconsistent")
-        if receipt["status"] == "executed-readonly":
-            expected_kind = {"read": "text", "list": "entries", "hash": "sha256"}.get(receipt["action_type"])
-            if (not receipt["result_digest"] or receipt["result_metadata"].get("kind") != expected_kind
-                    or receipt["findings"] or receipt["error_category"]):
-                raise ValueError("executed tool receipt result fields are inconsistent")
-        elif receipt["result_digest"] or receipt["result_metadata"] != {"kind": "none", "item_count": 0}:
-            raise ValueError("blocked tool receipt must not claim a result")
+        self._validate_execution_semantics(receipt)
         if receipt["execution_id"] != self._execution_id(receipt["action_id"], receipt["lease_id"], receipt["target_digest"], receipt["sandbox_root_digest"]):
             raise ValueError("tool execution receipt id does not match its safe inputs")
         if receipt["receipt_digest"] != self._receipt_digest(receipt):
@@ -466,14 +476,78 @@ class ToolActionHarness:
                                           capability: str, scope: dict[str, Any]) -> bool:
         encoded_scope = json.dumps(scope, sort_keys=True, separators=(",", ":"), default=str)
         expected_scope_hash = hashlib.sha256(encoded_scope.encode("utf-8")).hexdigest()[:16]
-        return (decision.get("lease_id") == lease_id
+        binding_values = tuple(decision.get(key) for key in ("lease_id", "capability", "scope_hash", "reason"))
+        return (all(type(value) is str for value in binding_values)
+                and decision.get("lease_id") == lease_id
                 and decision.get("capability") == capability
                 and decision.get("scope_hash") == expected_scope_hash
                 and decision.get("reason") == "allowed")
 
     def _authority_reason_category(self, reason: Any) -> str:
-        normalized = str(reason or "denied").strip().lower()
-        return normalized if normalized in AUTHORITY_REASON_CATEGORIES - {"allowed"} else "denied"
+        if type(reason) is not str:
+            return "authority_invalid_response"
+        normalized = reason.strip().lower() or "denied"
+        return normalized if normalized in AUTHORITY_DENIAL_REASONS else "denied"
+
+    def _sandbox_error_category(self, error: Exception) -> str:
+        for error_type, category in (
+            (PermissionError, "PermissionError"),
+            (FileNotFoundError, "FileNotFoundError"),
+            (IsADirectoryError, "IsADirectoryError"),
+            (NotADirectoryError, "NotADirectoryError"),
+            (UnicodeError, "UnicodeError"),
+            (ValueError, "ValueError"),
+            (OSError, "OSError"),
+        ):
+            if isinstance(error, error_type):
+                return category
+        return "OSError"
+
+    def _validate_execution_semantics(self, receipt: dict[str, Any]) -> None:
+        status = receipt["status"]
+        reason = receipt["execution_authority_reason"]
+        findings = receipt["findings"]
+        error_category = receipt["error_category"]
+        no_result = receipt["result_digest"] == "" and receipt["result_metadata"] == {
+            "kind": "none", "item_count": 0,
+        }
+
+        if status == "executed-readonly":
+            expected_kind = {"read": "text", "list": "entries", "hash": "sha256"}.get(receipt["action_type"])
+            metadata = receipt["result_metadata"]
+            valid_metadata = metadata.get("kind") == expected_kind
+            if expected_kind in {"text", "sha256"}:
+                valid_metadata = valid_metadata and metadata.get("item_count") == 1
+            if expected_kind == "text":
+                valid_metadata = valid_metadata and set(metadata) == {"kind", "item_count", "char_count"}
+            elif expected_kind in {"entries", "sha256"}:
+                valid_metadata = valid_metadata and set(metadata) == {"kind", "item_count"}
+            if (reason != "allowed" or findings or error_category or not receipt["result_digest"]
+                    or not valid_metadata):
+                raise ValueError("executed tool receipt semantics are inconsistent")
+            return
+
+        if not no_result:
+            raise ValueError("blocked tool receipt must not claim a result")
+        if status == "blocked-plan-only":
+            valid = (reason == "mutation_not_available"
+                     and findings == ["mutating_action_not_executable_plan_only"]
+                     and not error_category
+                     and self._is_mutating_action(action_id=receipt["action_id"], tool_ref=receipt["tool_ref"],
+                                                  action_type=receipt["action_type"]))
+        elif status == "blocked-evidence":
+            valid = reason == "not_evaluated" and findings == ["tool_action_requires_evidence_refs"] and not error_category
+        elif status == "blocked-authority":
+            expected_findings = (["execution_authority_lease_required"] if reason == "lease_required"
+                                 else [f"execution_authority::{reason}"] if reason in AUTHORITY_DENIAL_REASONS else [])
+            valid = bool(expected_findings) and findings == expected_findings and not error_category
+        elif status == "blocked-sandbox":
+            valid = (reason == "allowed" and findings == ["execution_error"]
+                     and error_category in SANDBOX_ERROR_CATEGORIES)
+        else:
+            valid = False
+        if not valid:
+            raise ValueError("blocked tool receipt semantics are inconsistent")
 
     def _result_metadata(self, result: dict[str, Any] | None) -> dict[str, Any]:
         if result is None: return {"kind": "none", "item_count": 0}
