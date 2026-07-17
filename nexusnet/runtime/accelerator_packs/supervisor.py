@@ -256,6 +256,7 @@ class WorkerSupervisor:
         self._windows_job: int | None = None
         self._launch_cancel: threading.Event | None = None
         self._active_request_id: str | None = None
+        self._active_request_ready: threading.Event | None = None
         self._control_request_ids: set[str] = set()
 
     @property
@@ -520,8 +521,10 @@ class WorkerSupervisor:
                 raise WorkerSupervisorError("worker-request-invalid") from None
 
             deadline = time.monotonic() + timeout
+            request_ready = threading.Event()
             with self._lifecycle_lock:
-                self._active_request_id = request.request_id
+                self._active_request_id = None
+                self._active_request_ready = request_ready
                 self._control_request_ids.clear()
             try:
                 self._start_with_deadline(deadline)
@@ -532,6 +535,11 @@ class WorkerSupervisor:
                     self._terminate()
                     raise WorkerSupervisorError("worker-start-failed")
                 self._write_encoded(process, encoded, deadline)
+                with self._lifecycle_lock:
+                    if self._process is not process or self._active_request_ready is not request_ready:
+                        raise WorkerSupervisorError("worker-exited")
+                    self._active_request_id = request.request_id
+                    request_ready.set()
 
                 frames: list[WorkerFrame] = []
                 response_bytes = 0
@@ -579,22 +587,34 @@ class WorkerSupervisor:
                 raise WorkerSupervisorError("worker-frame-limit-exceeded")
             finally:
                 with self._lifecycle_lock:
-                    if self._active_request_id == request.request_id:
+                    if self._active_request_ready is request_ready:
                         self._active_request_id = None
+                        self._active_request_ready = None
                     self._control_request_ids.clear()
+                request_ready.set()
 
     def cancel(self, *, timeout_s: float | None = None) -> None:
         try:
             timeout = 2.0 if timeout_s is None else _validate_timeout(timeout_s, label="cancel-timeout")
-            with self._lifecycle_lock:
-                process = self._process
-                target_request_id = self._active_request_id
-            if process is None or process.poll() is not None or target_request_id is None:
-                raise WorkerSupervisorError("worker-cancel-unavailable")
+            deadline = time.monotonic() + timeout
+            deadline_unix_ms = int((time.time() + timeout) * 1000)
+            while True:
+                with self._lifecycle_lock:
+                    process = self._process
+                    target_request_id = self._active_request_id
+                    request_ready = self._active_request_ready
+                if process is not None and process.poll() is None and target_request_id is not None:
+                    break
+                if request_ready is None:
+                    raise WorkerSupervisorError("worker-cancel-unavailable")
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise WorkerSupervisorError("worker-timeout")
+                request_ready.wait(timeout=min(remaining, 0.05))
             cancel_request = WorkerRequest(
                 request_id=f"request-{uuid4().hex}",
                 operation=WorkerOperation.CANCEL,
-                deadline_unix_ms=int((time.time() + timeout) * 1000),
+                deadline_unix_ms=deadline_unix_ms,
                 sanitized_model_ref="model::none",
                 workload_profile={},
                 execution_mode=ExecutionMode.AUTO,
@@ -607,8 +627,11 @@ class WorkerSupervisor:
         except Exception:
             raise WorkerSupervisorError("worker-cancel-invalid") from None
         with self._lifecycle_lock:
+            if (self._process is not process or process.poll() is not None
+                    or self._active_request_id != target_request_id):
+                raise WorkerSupervisorError("worker-cancel-unavailable")
             self._control_request_ids.add(cancel_request.request_id)
-        self._write_encoded(process, encoded, time.monotonic() + timeout)
+        self._write_encoded(process, encoded, deadline)
 
     def _write_encoded(self, process: subprocess.Popen[bytes], encoded: bytes, deadline: float) -> None:
         result_queue: queue.Queue[str | None] = queue.Queue(maxsize=1)
@@ -668,6 +691,7 @@ class WorkerSupervisor:
             reader = self._reader
             reader_stop = self._reader_stop
             windows_job = self._windows_job
+            active_request_ready = self._active_request_ready
             self._launch_cancel = None
             self._process = None
             self._frames = queue.Queue(maxsize=_FRAME_QUEUE_SIZE)
@@ -675,11 +699,14 @@ class WorkerSupervisor:
             self._reader_stop = None
             self._windows_job = None
             self._active_request_id = None
+            self._active_request_ready = None
             self._control_request_ids.clear()
         if launch_cancel is not None:
             launch_cancel.set()
         if reader_stop is not None:
             reader_stop.set()
+        if active_request_ready is not None:
+            active_request_ready.set()
         if process is not None:
             self._cleanup_launched_process(process, windows_job)
         elif windows_job is not None and os.name == "nt":

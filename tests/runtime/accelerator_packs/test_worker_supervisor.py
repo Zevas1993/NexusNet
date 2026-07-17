@@ -351,6 +351,55 @@ def test_supervisor_cancel_preempts_an_active_inference():
         request_thread.join(timeout=1)
 
 
+def test_supervisor_never_writes_cancel_before_its_target_request(monkeypatch):
+    original_write = WorkerSupervisor._write_encoded
+    inference_writer_entered = threading.Event()
+    release_inference_writer = threading.Event()
+
+    def delayed_inference_write(supervisor, process, encoded, deadline):
+        if b'"operation":"infer"' in encoded:
+            inference_writer_entered.set()
+            assert release_inference_writer.wait(timeout=1)
+        return original_write(supervisor, process, encoded, deadline)
+
+    monkeypatch.setattr(WorkerSupervisor, "_write_encoded", delayed_inference_write)
+    supervisor = WorkerSupervisor(command=_command(), request_timeout_s=2)
+    frames = []
+    request_failures = []
+    cancel_failures = []
+
+    def request_inference():
+        try:
+            frames.extend(_request(supervisor, WorkerOperation.INFER, payload={"await_cancel": True}))
+        except WorkerSupervisorError as error:
+            request_failures.append(error.reason_code)
+
+    def cancel_inference():
+        try:
+            supervisor.cancel(timeout_s=1)
+        except WorkerSupervisorError as error:
+            cancel_failures.append(error.reason_code)
+
+    request_thread = threading.Thread(target=request_inference, name="supervisor-delayed-inference")
+    cancel_thread = threading.Thread(target=cancel_inference, name="supervisor-ordered-cancel")
+    request_thread.start()
+    assert inference_writer_entered.wait(timeout=1)
+    cancel_thread.start()
+    time.sleep(0.05)
+    release_inference_writer.set()
+    request_thread.join(timeout=3)
+    cancel_thread.join(timeout=2)
+
+    try:
+        assert not request_thread.is_alive()
+        assert not cancel_thread.is_alive()
+        assert request_failures == []
+        assert cancel_failures == []
+        assert frames[-1].reason_code == "worker-cancelled"
+    finally:
+        supervisor.stop()
+
+
 def test_supervisor_caps_aggregate_response_bytes():
     supervisor = WorkerSupervisor(
         command=_command(),
