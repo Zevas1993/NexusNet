@@ -400,6 +400,71 @@ def test_supervisor_never_writes_cancel_before_its_target_request(monkeypatch):
         supervisor.stop()
 
 
+def test_supervisor_does_not_reuse_a_worker_after_cancel_loses_to_target_completion(monkeypatch):
+    original_write = WorkerSupervisor._write_encoded
+    original_decode = JsonLineCodec.decode_frame
+    target_accepted = threading.Event()
+    cancel_writer_entered = threading.Event()
+    release_cancel_writer = threading.Event()
+    target_terminal_decoded = threading.Event()
+
+    def delayed_cancel_write(supervisor, process, encoded, deadline):
+        if b'"operation":"cancel"' in encoded:
+            cancel_writer_entered.set()
+            assert release_cancel_writer.wait(timeout=1)
+        return original_write(supervisor, process, encoded, deadline)
+
+    def coordinated_decode(codec, raw):
+        frame = original_decode(codec, raw)
+        if frame.event == "accepted" and not target_accepted.is_set():
+            target_accepted.set()
+            assert cancel_writer_entered.wait(timeout=1)
+        if frame.event == "result" and frame.payload.get("text") == "worker:fast":
+            target_terminal_decoded.set()
+        return frame
+
+    monkeypatch.setattr(WorkerSupervisor, "_write_encoded", delayed_cancel_write)
+    monkeypatch.setattr(JsonLineCodec, "decode_frame", coordinated_decode)
+    supervisor = WorkerSupervisor(command=_command(), request_timeout_s=2)
+    frames = []
+    request_failures = []
+    cancel_failures = []
+
+    def request_inference():
+        try:
+            frames.extend(_request(supervisor, WorkerOperation.INFER, payload={"prompt": "fast"}))
+        except WorkerSupervisorError as error:
+            request_failures.append(error.reason_code)
+
+    def cancel_inference():
+        try:
+            supervisor.cancel(timeout_s=1)
+        except WorkerSupervisorError as error:
+            cancel_failures.append(error.reason_code)
+
+    request_thread = threading.Thread(target=request_inference, name="supervisor-fast-inference")
+    cancel_thread = threading.Thread(target=cancel_inference, name="supervisor-late-cancel")
+    request_thread.start()
+    assert target_accepted.wait(timeout=1)
+    cancel_thread.start()
+    assert cancel_writer_entered.wait(timeout=1)
+    assert target_terminal_decoded.wait(timeout=1)
+    release_cancel_writer.set()
+    request_thread.join(timeout=2)
+    cancel_thread.join(timeout=2)
+
+    try:
+        assert not request_thread.is_alive()
+        assert not cancel_thread.is_alive()
+        assert request_failures == []
+        assert cancel_failures == []
+        assert frames[-1].payload["text"] == "worker:fast"
+        health = _request(supervisor, WorkerOperation.HEALTH)
+        assert health[-1].payload["available"] is True
+    finally:
+        supervisor.stop()
+
+
 def test_supervisor_caps_aggregate_response_bytes():
     supervisor = WorkerSupervisor(
         command=_command(),
