@@ -1935,7 +1935,7 @@ Run:
 
 ```powershell
 python -m pytest tests/runtime/accelerator_packs -q
-python -m pytest tests/runtime/test_evolutionary_inference_foundation.py tests/runtime/test_evolutionary_inference_system.py tests/test_corpus_assimilation_runtime.py -q
+python -m pytest tests/runtime/test_evolutionary_inference_foundation.py tests/runtime/test_evolutionary_inference_system.py tests/test_model_registry.py -q
 python -m pytest -q
 python -c "import sys; import nexusnet.runtime.accelerator_packs; banned=('torch','onnxruntime','openvino','intel_extension_for_pytorch'); assert not any(n == b or n.startswith(b + '.') for n in sys.modules for b in banned)"
 git diff --check
