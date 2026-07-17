@@ -218,6 +218,27 @@ def test_auto_and_hybrid_accept_only_matching_compute_routes(manifest_factory):
     assert _evaluate(hybrid_manifest, _matching_gpu(), requested_mode=ExecutionMode.HYBRID).compatible is True
 
 
+def test_auto_rejects_cpu_when_manifest_has_only_hybrid_mode(manifest_factory):
+    manifest = manifest_factory(
+        accelerator_apis=["cpu"],
+        device_matches=[],
+        execution_modes=["hybrid"],
+        capabilities=["hybrid-offload"],
+    )
+    cpu = HardwareNode(
+        node_id="cpu:0",
+        kind="cpu",
+        name="CPU",
+        backend="cpu",
+        accelerator_apis=["cpu"],
+    )
+
+    decision = _evaluate(manifest, cpu, requested_mode=ExecutionMode.AUTO)
+
+    assert decision.compatible is False
+    assert "auto-has-no-concrete-mode" in decision.reason_codes
+
+
 def test_mode_and_api_mismatch_reason_codes_are_preserved(manifest_factory):
     wrong_mode = _evaluate(
         manifest_factory(),
@@ -254,6 +275,42 @@ def test_prerequisites_fail_closed_on_invalid_constraints_or_missing_dependencie
         "dependency-constraint-unverified",
         "dependency-unavailable",
     }.issubset(decision.reason_codes)
+
+
+@pytest.mark.parametrize(
+    ("manifest_overrides", "evaluation_overrides", "reason_code"),
+    [
+        (
+            {"minimum_driver_version": "9" * 5_000},
+            {},
+            "driver-version-constraint-invalid",
+        ),
+        (
+            {"dependency_constraints": {"runtime": ">=" + "9" * 5_000}},
+            {"dependency_versions": {"runtime": "1.0"}},
+            "dependency-constraint-unverified",
+        ),
+        (
+            {"dependency_constraints": {"runtime": ">=1.0"}},
+            {"dependency_versions": {"runtime": "9" * 5_000}},
+            "dependency-constraint-unverified",
+        ),
+    ],
+)
+def test_oversized_versions_fail_closed_without_integer_conversion_crashes(
+    manifest_factory,
+    manifest_overrides,
+    evaluation_overrides,
+    reason_code,
+):
+    decision = _evaluate(
+        manifest_factory(**manifest_overrides),
+        _matching_gpu(),
+        **evaluation_overrides,
+    )
+
+    assert decision.compatible is False
+    assert reason_code in decision.reason_codes
 
 
 def test_device_predicates_enforce_memory_and_decisions_are_deeply_immutable(manifest_factory):

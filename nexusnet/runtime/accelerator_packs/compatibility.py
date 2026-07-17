@@ -13,12 +13,26 @@ from .contracts import ExecutionMode, ModelFormat, RuntimePackManifest, Workload
 _VERSION = re.compile(r"^\d+(?:\.\d+)*$")
 _CONSTRAINT = re.compile(r"^(==|!=|>=|<=|>|<)?(\d+(?:\.\d+)*)$")
 _DEPENDENCY_SEPARATOR = re.compile(r"[-_.]+")
+_MAX_VERSION_LENGTH = 128
+_MAX_VERSION_COMPONENTS = 16
+_MAX_VERSION_COMPONENT_DIGITS = 18
+_MAX_CONSTRAINT_LENGTH = 512
+_MAX_CONSTRAINT_CLAUSES = 16
 
 
 def _numeric_version(value: object) -> tuple[int, ...] | None:
-    if not isinstance(value, str) or not _VERSION.fullmatch(value):
+    if not isinstance(value, str) or len(value) > _MAX_VERSION_LENGTH or not _VERSION.fullmatch(value):
         return None
-    parts = [int(part) for part in value.split(".")]
+    component_text = value.split(".")
+    if (
+        len(component_text) > _MAX_VERSION_COMPONENTS
+        or any(len(part) > _MAX_VERSION_COMPONENT_DIGITS for part in component_text)
+    ):
+        return None
+    try:
+        parts = [int(part) for part in component_text]
+    except ValueError:
+        return None
     while len(parts) > 1 and parts[-1] == 0:
         parts.pop()
     return tuple(parts)
@@ -33,10 +47,18 @@ def _compare_versions(left: tuple[int, ...], right: tuple[int, ...]) -> int:
 
 def _satisfies_constraint(version: object, constraint: object) -> bool | None:
     actual = _numeric_version(version)
-    if actual is None or not isinstance(constraint, str):
+    if (
+        actual is None
+        or not isinstance(constraint, str)
+        or len(constraint) > _MAX_CONSTRAINT_LENGTH
+    ):
         return None
     clauses = constraint.split(",")
-    if not clauses or any(not clause for clause in clauses):
+    if (
+        not clauses
+        or len(clauses) > _MAX_CONSTRAINT_CLAUSES
+        or any(not clause for clause in clauses)
+    ):
         return None
     for clause in clauses:
         match = _CONSTRAINT.fullmatch(clause)
@@ -162,9 +184,8 @@ class PackCompatibilityEvaluator:
                 "cpu": ExecutionMode.CPU,
                 "gpu": ExecutionMode.GPU,
             }.get(device.kind)
-            if device_mode is None or (
-                device_mode not in concrete_modes and ExecutionMode.HYBRID not in concrete_modes
-            ):
+            hybrid_available = device.kind == "gpu" and ExecutionMode.HYBRID in concrete_modes
+            if device_mode is None or (device_mode not in concrete_modes and not hybrid_available):
                 reasons.append("auto-has-no-concrete-mode")
 
         device_apis = set(device.accelerator_apis or [device.backend])
