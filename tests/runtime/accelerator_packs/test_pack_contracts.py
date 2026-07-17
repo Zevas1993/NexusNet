@@ -47,6 +47,10 @@ def test_security_and_lifecycle_integers_are_type_strict(manifest_factory, overr
         "https://example.invalid/worker\n.zip",
         "https://example.invalid:bad/worker.zip",
         r"https://example.invalid\@evil.invalid/worker.zip",
+        "https://example.invalid/%2e%2e/private.zip",
+        "https://example.invalid/%252e%252e/private.zip",
+        "https://example.invalid/bin%5cworker.zip",
+        "https://example.invalid/worker%0a.zip",
     ],
 )
 def test_artifact_urls_require_sanitized_https_transport(manifest_factory, url):
@@ -63,6 +67,7 @@ def test_artifact_urls_require_sanitized_https_transport(manifest_factory, url):
         {"command": ["worker.exe", "../outside"]},
         {"command": ["worker.exe"], "working_directory_ref": "../outside"},
         {"command": ["worker.exe"], "environment_allowlist": ["TEMP=outside"]},
+        {"command": ["worker.exe"], "environment_allowlist": ["TEMP", "temp"]},
     ],
 )
 def test_worker_launch_references_are_normalized_and_sanitized(manifest_factory, launch):
@@ -96,6 +101,16 @@ def test_approved_manifest_collections_are_deeply_immutable_and_json_serializabl
     dumped = manifest.model_dump(mode="json")
     assert dumped["capabilities"] == ["streaming"]
     assert dumped["dependency_constraints"] == {"runtime": ">=1.0"}
+
+
+def test_default_dependency_constraints_are_also_immutable(manifest_factory):
+    manifest = manifest_factory()
+    payload = manifest.model_dump(mode="json")
+    payload.pop("dependency_constraints")
+    admitted = manifest.__class__.model_validate(payload)
+
+    with pytest.raises(TypeError):
+        admitted.dependency_constraints["runtime"] = "unbounded"
 
 
 def test_nested_contracts_reject_extra_fields_invalid_hashes_and_bounds(manifest_factory):

@@ -5,7 +5,7 @@ from pathlib import PurePosixPath, PureWindowsPath
 import re
 from types import MappingProxyType
 from typing import Annotated, Literal, Mapping
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from pydantic import (
     AfterValidator,
@@ -51,6 +51,16 @@ def _validate_package_relative_ref(value: str, *, label: str) -> str:
             or any(part in {".", ".."} for part in posix_path.parts) or str(posix_path) != value):
         raise ValueError(f"{label} must be a normalized package-relative reference")
     return value
+
+
+def _fully_decode_url_path(value: str) -> str:
+    decoded = value
+    for _ in range(5):
+        next_value = unquote(decoded)
+        if next_value == decoded:
+            return decoded
+        decoded = next_value
+    raise ValueError("artifact URL path uses excessive nested encoding")
 
 
 class PackType(str, Enum):
@@ -112,10 +122,12 @@ class ArtifactDescriptor(BaseModel):
             _validate_safe_text(value, label="artifact URL")
             parsed = urlsplit(value)
             _ = parsed.port
-            path_parts = PurePosixPath(parsed.path).parts
+            decoded_path = _fully_decode_url_path(parsed.path)
+            _validate_safe_text(decoded_path, label="artifact URL path")
+            path_parts = PurePosixPath(decoded_path).parts
             if (parsed.scheme.lower() != "https" or not parsed.hostname or parsed.username is not None
                     or parsed.password is not None or parsed.fragment or ".." in path_parts
-                    or "\\" in value or any(character.isspace() for character in value)):
+                    or "\\" in decoded_path or any(character.isspace() for character in decoded_path)):
                 raise ValueError("artifact URL must use sanitized HTTPS transport")
         except ValueError as exc:
             raise ValueError("artifact URL must use sanitized HTTPS transport") from exc
@@ -159,7 +171,8 @@ class WorkerLaunchContract(BaseModel):
     @field_validator("environment_allowlist")
     @classmethod
     def validate_environment_allowlist(cls, value: tuple[str, ...]) -> tuple[str, ...]:
-        if len(value) != len(set(value)) or any(not _ENVIRONMENT_NAME.fullmatch(item) for item in value):
+        normalized_names = [item.casefold() for item in value]
+        if len(value) != len(set(normalized_names)) or any(not _ENVIRONMENT_NAME.fullmatch(item) for item in value):
             raise ValueError("environment allowlist entries must be unique environment variable names")
         return value
 
@@ -189,7 +202,7 @@ class RuntimePackManifest(BaseModel):
     minimum_os_build: StrictInt | None = Field(default=None, ge=0)
     minimum_driver_version: StrictStr | None = None
     python_abi: StrictStr | None = None
-    dependency_constraints: FrozenStringMapping = Field(default_factory=dict)
+    dependency_constraints: FrozenStringMapping = Field(default_factory=dict, validate_default=True)
     launch: WorkerLaunchContract
     execution_modes: tuple[ExecutionMode, ...] = Field(min_length=1)
     health_probe: WorkerProbeContract
