@@ -6,6 +6,7 @@ from pathlib import Path
 import signal
 import subprocess
 import sys
+import threading
 import time
 
 import pytest
@@ -196,21 +197,25 @@ def test_supervisor_enforces_aggregate_windows_launch_block_bounds():
         )
 
 
-def test_supervisor_falls_back_cleanly_when_job_containment_is_unavailable(monkeypatch):
+def test_supervisor_fails_closed_before_resume_when_job_containment_is_unavailable(monkeypatch, tmp_path):
     import nexusnet.runtime.accelerator_packs.supervisor as supervisor_module
 
     def fail_job_assignment(process):
         raise OSError("private job-assignment failure")
 
     monkeypatch.setattr(supervisor_module, "_create_windows_job", fail_job_assignment)
-    supervisor = WorkerSupervisor(command=_command(), request_timeout_s=2)
+    child_pid_path = tmp_path / "uncontained-child.pid"
+    command = _command() + ["--spawn-and-exit", str(child_pid_path)]
+    supervisor = WorkerSupervisor(command=command, request_timeout_s=2)
     try:
-        result = _request(supervisor, WorkerOperation.HEALTH)
+        with pytest.raises(WorkerSupervisorError, match="worker-start-failed"):
+            _request(supervisor, WorkerOperation.HEALTH)
+        time.sleep(0.2)
+        assert not child_pid_path.exists()
     finally:
         supervisor.stop()
-
-    assert result[-1].payload["available"] is True
-    assert supervisor.running is False
+        if child_pid_path.exists():
+            _force_kill(int(child_pid_path.read_text(encoding="ascii")))
 
 
 def test_supervisor_sanitizes_start_and_request_validation_failures(tmp_path):
@@ -255,6 +260,154 @@ def test_supervisor_snapshots_the_admitted_codec_frame_limit():
         _request(supervisor, WorkerOperation.SELF_TEST, payload={"oversized": True})
 
     assert supervisor.running is False
+
+
+def test_supervisor_bounds_delayed_start_and_cleans_up_late_process(monkeypatch):
+    import nexusnet.runtime.accelerator_packs.supervisor as supervisor_module
+
+    original_popen = supervisor_module.subprocess.Popen
+    launched = []
+
+    def delayed_popen(*arguments, **keywords):
+        time.sleep(0.3)
+        process = original_popen(*arguments, **keywords)
+        launched.append(process)
+        return process
+
+    monkeypatch.setattr(supervisor_module.subprocess, "Popen", delayed_popen)
+    supervisor = WorkerSupervisor(command=_command(), request_timeout_s=0.1)
+    started = time.monotonic()
+    try:
+        with pytest.raises(WorkerSupervisorError, match="worker-timeout"):
+            _request(supervisor, WorkerOperation.HEALTH)
+        assert time.monotonic() - started < 0.5
+
+        deadline = time.monotonic() + 1
+        while not launched and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert launched
+        launched[0].wait(timeout=2)
+        assert supervisor.running is False
+    finally:
+        supervisor.stop()
+
+
+def test_supervisor_bounds_a_pipe_filling_stdin_write():
+    supervisor = WorkerSupervisor(command=_command() + ["--no-read"], request_timeout_s=0.1)
+    started = time.monotonic()
+    with pytest.raises(WorkerSupervisorError, match="worker-timeout"):
+        _request(supervisor, WorkerOperation.INFER, payload={"prompt": "x" * 900_000})
+    assert time.monotonic() - started < 0.5
+    assert supervisor.running is False
+
+
+def test_supervisor_stop_preempts_an_active_request():
+    supervisor = WorkerSupervisor(command=_command(), request_timeout_s=1.5)
+    supervisor.start()
+    failures = []
+
+    def request_hang():
+        try:
+            _request(supervisor, WorkerOperation.BENCHMARK, payload={"hang": True})
+        except WorkerSupervisorError as error:
+            failures.append(error.reason_code)
+
+    request_thread = threading.Thread(target=request_hang, name="supervisor-hanging-request")
+    request_thread.start()
+    time.sleep(0.1)
+    started = time.monotonic()
+    supervisor.stop()
+    elapsed = time.monotonic() - started
+    request_thread.join(timeout=1)
+
+    assert elapsed < 0.5
+    assert not request_thread.is_alive()
+    assert failures
+    assert supervisor.running is False
+
+
+def test_supervisor_cancel_preempts_an_active_inference():
+    supervisor = WorkerSupervisor(command=_command(), request_timeout_s=2)
+    frames = []
+
+    def request_inference():
+        frames.extend(
+            _request(supervisor, WorkerOperation.INFER, payload={"await_cancel": True})
+        )
+
+    request_thread = threading.Thread(target=request_inference, name="supervisor-cancellable-request")
+    request_thread.start()
+    deadline = time.monotonic() + 1
+    while not supervisor.running and time.monotonic() < deadline:
+        time.sleep(0.01)
+    try:
+        supervisor.cancel(timeout_s=0.5)
+        request_thread.join(timeout=1)
+        assert not request_thread.is_alive()
+        assert frames[-1].event == "error"
+        assert frames[-1].reason_code == "worker-cancelled"
+    finally:
+        supervisor.stop()
+        request_thread.join(timeout=1)
+
+
+def test_supervisor_caps_aggregate_response_bytes():
+    supervisor = WorkerSupervisor(
+        command=_command(),
+        request_timeout_s=2,
+        codec=JsonLineCodec(max_frame_bytes=4096),
+        max_response_bytes=8192,
+    )
+    with pytest.raises(WorkerSupervisorError, match="worker-response-too-large"):
+        _request(
+            supervisor,
+            WorkerOperation.SELF_TEST,
+            payload={"aggregate_frames": True, "frame_size": 3000, "frame_count": 8},
+        )
+    assert supervisor.running is False
+
+
+def test_supervisor_sanitizes_reader_thread_start_failure(monkeypatch):
+    original_start = threading.Thread.start
+
+    def fail_reader_start(thread):
+        if thread.name == "nexusnet-pack-worker-reader":
+            raise RuntimeError("private reader failure")
+        return original_start(thread)
+
+    monkeypatch.setattr(threading.Thread, "start", fail_reader_start)
+    supervisor = WorkerSupervisor(command=_command(), request_timeout_s=2)
+    with pytest.raises(WorkerSupervisorError, match="worker-start-failed") as error:
+        _request(supervisor, WorkerOperation.HEALTH)
+    assert "private" not in str(error.value)
+    assert supervisor.running is False
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows pre-assignment containment contract")
+def test_supervisor_contains_children_spawned_at_worker_start(monkeypatch, tmp_path):
+    import nexusnet.runtime.accelerator_packs.supervisor as supervisor_module
+
+    original_create_job = supervisor_module._create_windows_job
+
+    def delayed_job_assignment(process):
+        time.sleep(0.2)
+        return original_create_job(process)
+
+    monkeypatch.setattr(supervisor_module, "_create_windows_job", delayed_job_assignment)
+    child_pid_path = tmp_path / "preassignment-child.pid"
+    command = _command() + ["--spawn-immediately", str(child_pid_path)]
+    supervisor = WorkerSupervisor(command=command, request_timeout_s=0.5)
+    child_pid = None
+    try:
+        with pytest.raises(WorkerSupervisorError, match="worker-timeout"):
+            _request(supervisor, WorkerOperation.BENCHMARK, payload={"hang": True})
+        assert child_pid_path.exists()
+        child_pid = int(child_pid_path.read_text(encoding="ascii"))
+        assert not _process_is_running(child_pid)
+    finally:
+        supervisor.stop()
+        if child_pid is not None:
+            _force_kill(child_pid)
 
 
 def test_supervisor_can_restart_without_stale_reader_events_poisoning_the_new_worker():

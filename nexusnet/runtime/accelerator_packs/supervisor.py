@@ -27,6 +27,8 @@ _MAX_ENVIRONMENT_VALUE_LENGTH = 32_767
 _MAX_ENVIRONMENT_BLOCK_LENGTH = 32_767
 _MAX_TIMEOUT_SECONDS = 3600.0
 _MAX_RESPONSE_FRAMES = 4096
+_MAX_RESPONSE_BYTES_LIMIT = 1024 * 1024 * 1024
+_DEFAULT_MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 _FRAME_QUEUE_SIZE = 16
 _RESERVED_ENVIRONMENT = {"pythonnousersite", "pythonunbuffered"}
 
@@ -136,6 +138,18 @@ if os.name == "nt":
         ]
 
 
+    class _ThreadEntry32(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", wintypes.DWORD),
+            ("cntUsage", wintypes.DWORD),
+            ("th32ThreadID", wintypes.DWORD),
+            ("th32OwnerProcessID", wintypes.DWORD),
+            ("tpBasePri", wintypes.LONG),
+            ("tpDeltaPri", wintypes.LONG),
+            ("dwFlags", wintypes.DWORD),
+        ]
+
+
     _KERNEL32.CreateJobObjectW.argtypes = (ctypes.c_void_p, wintypes.LPCWSTR)
     _KERNEL32.CreateJobObjectW.restype = wintypes.HANDLE
     _KERNEL32.SetInformationJobObject.argtypes = (
@@ -149,6 +163,16 @@ if os.name == "nt":
     _KERNEL32.AssignProcessToJobObject.restype = wintypes.BOOL
     _KERNEL32.CloseHandle.argtypes = (wintypes.HANDLE,)
     _KERNEL32.CloseHandle.restype = wintypes.BOOL
+    _KERNEL32.CreateToolhelp32Snapshot.argtypes = (wintypes.DWORD, wintypes.DWORD)
+    _KERNEL32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    _KERNEL32.Thread32First.argtypes = (wintypes.HANDLE, ctypes.POINTER(_ThreadEntry32))
+    _KERNEL32.Thread32First.restype = wintypes.BOOL
+    _KERNEL32.Thread32Next.argtypes = (wintypes.HANDLE, ctypes.POINTER(_ThreadEntry32))
+    _KERNEL32.Thread32Next.restype = wintypes.BOOL
+    _KERNEL32.OpenThread.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    _KERNEL32.OpenThread.restype = wintypes.HANDLE
+    _KERNEL32.ResumeThread.argtypes = (wintypes.HANDLE,)
+    _KERNEL32.ResumeThread.restype = wintypes.DWORD
 
 
 def _create_windows_job(process: subprocess.Popen[bytes]) -> int | None:
@@ -172,6 +196,32 @@ def _create_windows_job(process: subprocess.Popen[bytes]) -> int | None:
     return int(job)
 
 
+def _resume_windows_process(process: subprocess.Popen[bytes]) -> bool:
+    if os.name != "nt":
+        return True
+    invalid_handle_value = ctypes.c_void_p(-1).value
+    snapshot = _KERNEL32.CreateToolhelp32Snapshot(0x00000004, 0)
+    if not snapshot or int(snapshot) == invalid_handle_value:
+        return False
+    thread_handle = None
+    try:
+        entry = _ThreadEntry32()
+        entry.dwSize = ctypes.sizeof(entry)
+        found = bool(_KERNEL32.Thread32First(snapshot, ctypes.byref(entry)))
+        while found:
+            if entry.th32OwnerProcessID == process.pid:
+                thread_handle = _KERNEL32.OpenThread(0x0002, False, entry.th32ThreadID)
+                break
+            found = bool(_KERNEL32.Thread32Next(snapshot, ctypes.byref(entry)))
+        if not thread_handle:
+            return False
+        return _KERNEL32.ResumeThread(thread_handle) != 0xFFFFFFFF
+    finally:
+        if thread_handle:
+            _KERNEL32.CloseHandle(thread_handle)
+        _KERNEL32.CloseHandle(snapshot)
+
+
 class WorkerSupervisor:
     _BASE_ENVIRONMENT = ("SYSTEMROOT", "WINDIR", "COMSPEC", "PATH", "PATHEXT", "TEMP", "TMP")
 
@@ -183,6 +233,7 @@ class WorkerSupervisor:
         environment: dict[str, str] | None = None,
         request_timeout_s: float = 30.0,
         codec: JsonLineCodec | None = None,
+        max_response_bytes: int = _DEFAULT_MAX_RESPONSE_BYTES,
     ) -> None:
         self._command = _validate_command(command)
         self._working_directory = _validate_working_directory(working_directory)
@@ -190,18 +241,28 @@ class WorkerSupervisor:
         self._request_timeout_s = _validate_timeout(request_timeout_s, label="request-timeout")
         if codec is not None and type(codec) is not JsonLineCodec:
             raise ValueError("worker-codec-invalid")
+        if (type(max_response_bytes) is not int or max_response_bytes <= 0
+                or max_response_bytes > _MAX_RESPONSE_BYTES_LIMIT):
+            raise ValueError("worker-response-limit-invalid")
         self._codec = JsonLineCodec(max_frame_bytes=codec.max_frame_bytes) if codec is not None else JsonLineCodec()
+        self._max_response_bytes = max_response_bytes
         self._process: subprocess.Popen[bytes] | None = None
         self._frames: queue.Queue[bytes | None] = queue.Queue(maxsize=_FRAME_QUEUE_SIZE)
         self._request_lock = threading.RLock()
+        self._write_lock = threading.Lock()
+        self._lifecycle_lock = threading.RLock()
         self._reader: threading.Thread | None = None
         self._reader_stop: threading.Event | None = None
         self._windows_job: int | None = None
+        self._launch_cancel: threading.Event | None = None
+        self._active_request_id: str | None = None
+        self._control_request_ids: set[str] = set()
 
     @property
     def running(self) -> bool:
-        process = self._process
-        return process is not None and process.poll() is None
+        with self._lifecycle_lock:
+            process = self._process
+            return process is not None and process.poll() is None
 
     def _worker_environment(self) -> dict[str, str]:
         inherited_by_name = {name.casefold(): (name, value) for name, value in os.environ.items()}
@@ -222,52 +283,168 @@ class WorkerSupervisor:
 
     def start(self) -> None:
         with self._request_lock:
-            if self.running:
+            self._start_with_deadline(time.monotonic() + self._request_timeout_s)
+
+    def _start_with_deadline(self, deadline: float) -> None:
+        with self._lifecycle_lock:
+            if self._process is not None and self._process.poll() is None:
                 return
+            if self._launch_cancel is not None:
+                raise WorkerSupervisorError("worker-start-in-progress")
+            launch_cancel = threading.Event()
+            self._launch_cancel = launch_cancel
+
+        result_queue: queue.Queue[tuple[str, subprocess.Popen[bytes] | None, int | None]] = queue.Queue(maxsize=1)
+        handoff_lock = threading.Lock()
+        launcher = threading.Thread(
+            target=self._launch_worker,
+            args=(launch_cancel, handoff_lock, result_queue),
+            name="nexusnet-pack-worker-launcher",
+            daemon=True,
+        )
+        try:
+            launcher.start()
+        except RuntimeError:
+            with self._lifecycle_lock:
+                if self._launch_cancel is launch_cancel:
+                    self._launch_cancel = None
+            raise WorkerSupervisorError("worker-start-failed") from None
+
+        result: tuple[str, subprocess.Popen[bytes] | None, int | None] | None = None
+        while result is None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                result = self._cancel_launch(launch_cancel, handoff_lock, result_queue)
+                with self._lifecycle_lock:
+                    if self._launch_cancel is launch_cancel:
+                        self._launch_cancel = None
+                if result is not None and result[1] is not None:
+                    self._cleanup_launched_process(result[1], result[2])
+                raise WorkerSupervisorError("worker-timeout")
+            if launch_cancel.is_set():
+                with self._lifecycle_lock:
+                    if self._launch_cancel is launch_cancel:
+                        self._launch_cancel = None
+                raise WorkerSupervisorError("worker-exited")
+            try:
+                result = result_queue.get(timeout=min(remaining, 0.05))
+            except queue.Empty:
+                continue
+
+        status, process, windows_job = result
+        if status != "ok" or process is None:
+            with self._lifecycle_lock:
+                if self._launch_cancel is launch_cancel:
+                    self._launch_cancel = None
+            raise WorkerSupervisorError("worker-start-failed")
+
+        frame_queue: queue.Queue[bytes | None] = queue.Queue(maxsize=_FRAME_QUEUE_SIZE)
+        reader_stop = threading.Event()
+        reader = threading.Thread(
+            target=self._read_stdout,
+            args=(process, frame_queue, reader_stop),
+            name="nexusnet-pack-worker-reader",
+            daemon=True,
+        )
+        with self._lifecycle_lock:
+            if launch_cancel.is_set() or self._launch_cancel is not launch_cancel:
+                publish = False
+            else:
+                self._launch_cancel = None
+                self._process = process
+                self._frames = frame_queue
+                self._reader_stop = reader_stop
+                self._reader = reader
+                self._windows_job = windows_job
+                publish = True
+        if not publish:
+            self._cleanup_launched_process(process, windows_job)
+            raise WorkerSupervisorError("worker-exited")
+        try:
+            reader.start()
+        except RuntimeError:
             self._terminate()
-            frame_queue: queue.Queue[bytes | None] = queue.Queue(maxsize=_FRAME_QUEUE_SIZE)
-            reader_stop = threading.Event()
+            raise WorkerSupervisorError("worker-start-failed") from None
+
+    def _launch_worker(
+        self,
+        launch_cancel: threading.Event,
+        handoff_lock: threading.Lock,
+        result_queue: queue.Queue[tuple[str, subprocess.Popen[bytes] | None, int | None]],
+    ) -> None:
+        process: subprocess.Popen[bytes] | None = None
+        windows_job: int | None = None
+        status = "error"
+        try:
             creationflags = 0
             popen_options: dict[str, object] = {}
             if os.name == "nt":
-                creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(
-                    subprocess, "CREATE_NEW_PROCESS_GROUP", 0
+                creationflags = (
+                    getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                    | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                    | 0x00000004
                 )
             else:
                 popen_options["start_new_session"] = True
-            try:
-                process = subprocess.Popen(
-                    self._command,
-                    cwd=self._working_directory,
-                    env=self._worker_environment(),
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                    bufsize=0,
-                    creationflags=creationflags,
-                    **popen_options,
-                )
-            except (OSError, ValueError, subprocess.SubprocessError):
-                raise WorkerSupervisorError("worker-start-failed") from None
-            self._process = process
-            self._frames = frame_queue
-            self._reader_stop = reader_stop
-            try:
-                self._windows_job = _create_windows_job(process)
-            except Exception:
-                self._windows_job = None
-            reader = threading.Thread(
-                target=self._read_stdout,
-                args=(process, frame_queue, reader_stop),
-                name="nexusnet-pack-worker-reader",
-                daemon=True,
+            process = subprocess.Popen(
+                self._command,
+                cwd=self._working_directory,
+                env=self._worker_environment(),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                bufsize=0,
+                creationflags=creationflags,
+                **popen_options,
             )
-            self._reader = reader
+            if launch_cancel.is_set():
+                self._cleanup_launched_process(process, None)
+                return
+            if os.name == "nt":
+                windows_job = _create_windows_job(process)
+                if windows_job is None or launch_cancel.is_set() or not _resume_windows_process(process):
+                    self._cleanup_launched_process(process, windows_job)
+                    process = None
+                    windows_job = None
+                else:
+                    status = "ok"
+            else:
+                status = "ok"
+        except Exception:
+            if process is not None:
+                self._cleanup_launched_process(process, windows_job)
+            process = None
+            windows_job = None
+
+        with handoff_lock:
+            cancelled = launch_cancel.is_set()
+            if not cancelled:
+                result_queue.put_nowait((status, process, windows_job))
+        if cancelled and process is not None:
+            self._cleanup_launched_process(process, windows_job)
+
+    @staticmethod
+    def _cancel_launch(
+        launch_cancel: threading.Event,
+        handoff_lock: threading.Lock,
+        result_queue: queue.Queue[tuple[str, subprocess.Popen[bytes] | None, int | None]],
+    ) -> tuple[str, subprocess.Popen[bytes] | None, int | None] | None:
+        with handoff_lock:
+            launch_cancel.set()
             try:
-                reader.start()
-            except RuntimeError:
-                self._terminate()
-                raise WorkerSupervisorError("worker-start-failed") from None
+                return result_queue.get_nowait()
+            except queue.Empty:
+                return None
+
+    @classmethod
+    def _cleanup_launched_process(cls, process: subprocess.Popen[bytes], windows_job: int | None) -> None:
+        cls._terminate_process_tree(process, windows_job)
+        for stream in (process.stdin, process.stdout):
+            if stream is not None:
+                try:
+                    stream.close()
+                except OSError:
+                    pass
 
     def _read_stdout(
         self,
@@ -316,6 +493,9 @@ class WorkerSupervisor:
         payload: dict[str, Any] | None = None,
         timeout_s: float | None = None,
     ) -> list[WorkerFrame]:
+        if operation == WorkerOperation.CANCEL:
+            self.cancel(timeout_s=timeout_s)
+            return []
         with self._request_lock:
             try:
                 timeout = (
@@ -333,98 +513,192 @@ class WorkerSupervisor:
                     policy_receipt_ref=policy_receipt_ref,
                     payload={} if payload is None else payload,
                 )
+                encoded = self._codec.encode(request)
+            except ProtocolError as error:
+                raise WorkerSupervisorError(error.reason_code) from None
             except Exception:
                 raise WorkerSupervisorError("worker-request-invalid") from None
 
-            self.start()
-            process = self._process
-            frame_queue = self._frames
-            if process is None or process.stdin is None:
-                self._terminate()
-                raise WorkerSupervisorError("worker-start-failed")
-            try:
-                process.stdin.write(self._codec.encode(request))
-                process.stdin.flush()
-            except ProtocolError as error:
-                self._terminate()
-                raise WorkerSupervisorError(error.reason_code) from None
-            except (BrokenPipeError, OSError, ValueError):
-                self._terminate()
-                raise WorkerSupervisorError("worker-write-failed") from None
-
             deadline = time.monotonic() + timeout
-            frames: list[WorkerFrame] = []
-            while len(frames) < _MAX_RESPONSE_FRAMES:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
+            with self._lifecycle_lock:
+                self._active_request_id = request.request_id
+                self._control_request_ids.clear()
+            try:
+                self._start_with_deadline(deadline)
+                with self._lifecycle_lock:
+                    process = self._process
+                    frame_queue = self._frames
+                if process is None or process.stdin is None:
                     self._terminate()
-                    raise WorkerSupervisorError("worker-timeout")
+                    raise WorkerSupervisorError("worker-start-failed")
+                self._write_encoded(process, encoded, deadline)
+
+                frames: list[WorkerFrame] = []
+                response_bytes = 0
+                while len(frames) < _MAX_RESPONSE_FRAMES:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        self._terminate()
+                        raise WorkerSupervisorError("worker-timeout")
+                    try:
+                        raw = frame_queue.get(timeout=min(remaining, 0.05))
+                    except queue.Empty:
+                        with self._lifecycle_lock:
+                            active_process = self._process
+                        if active_process is not process:
+                            raise WorkerSupervisorError("worker-exited") from None
+                        continue
+                    if raw is None:
+                        self._terminate()
+                        raise WorkerSupervisorError("worker-exited")
+                    response_bytes += len(raw)
+                    if response_bytes > self._max_response_bytes:
+                        self._terminate()
+                        raise WorkerSupervisorError("worker-response-too-large")
+                    try:
+                        frame = self._codec.decode_frame(raw)
+                    except ProtocolError as error:
+                        self._terminate()
+                        raise WorkerSupervisorError(error.reason_code) from None
+                    if frame.request_id != request.request_id:
+                        with self._lifecycle_lock:
+                            is_control = frame.request_id in self._control_request_ids
+                            if is_control and frame.terminal:
+                                self._control_request_ids.discard(frame.request_id)
+                        if is_control:
+                            continue
+                        self._terminate()
+                        raise WorkerSupervisorError("worker-request-mismatch")
+                    if frame.sequence != len(frames):
+                        self._terminate()
+                        raise WorkerSupervisorError("worker-sequence-invalid")
+                    frames.append(frame)
+                    if frame.terminal:
+                        return frames
+                self._terminate()
+                raise WorkerSupervisorError("worker-frame-limit-exceeded")
+            finally:
+                with self._lifecycle_lock:
+                    if self._active_request_id == request.request_id:
+                        self._active_request_id = None
+                    self._control_request_ids.clear()
+
+    def cancel(self, *, timeout_s: float | None = None) -> None:
+        try:
+            timeout = 2.0 if timeout_s is None else _validate_timeout(timeout_s, label="cancel-timeout")
+            with self._lifecycle_lock:
+                process = self._process
+                target_request_id = self._active_request_id
+            if process is None or process.poll() is not None or target_request_id is None:
+                raise WorkerSupervisorError("worker-cancel-unavailable")
+            cancel_request = WorkerRequest(
+                request_id=f"request-{uuid4().hex}",
+                operation=WorkerOperation.CANCEL,
+                deadline_unix_ms=int((time.time() + timeout) * 1000),
+                sanitized_model_ref="model::none",
+                workload_profile={},
+                execution_mode=ExecutionMode.AUTO,
+                policy_receipt_ref="receipt::cancel",
+                payload={"target_request_id": target_request_id},
+            )
+            encoded = self._codec.encode(cancel_request)
+        except WorkerSupervisorError:
+            raise
+        except Exception:
+            raise WorkerSupervisorError("worker-cancel-invalid") from None
+        with self._lifecycle_lock:
+            self._control_request_ids.add(cancel_request.request_id)
+        self._write_encoded(process, encoded, time.monotonic() + timeout)
+
+    def _write_encoded(self, process: subprocess.Popen[bytes], encoded: bytes, deadline: float) -> None:
+        result_queue: queue.Queue[str | None] = queue.Queue(maxsize=1)
+
+        def write_request() -> None:
+            try:
+                with self._write_lock:
+                    if process.stdin is None:
+                        raise BrokenPipeError
+                    process.stdin.write(encoded)
+                    process.stdin.flush()
+                result_queue.put_nowait(None)
+            except Exception:
                 try:
-                    raw = frame_queue.get(timeout=remaining)
-                except queue.Empty:
-                    self._terminate()
-                    raise WorkerSupervisorError("worker-timeout") from None
-                if raw is None:
-                    self._terminate()
-                    raise WorkerSupervisorError("worker-exited")
-                try:
-                    frame = self._codec.decode_frame(raw)
-                except ProtocolError as error:
-                    self._terminate()
-                    raise WorkerSupervisorError(error.reason_code) from None
-                if frame.request_id != request.request_id:
-                    self._terminate()
-                    raise WorkerSupervisorError("worker-request-mismatch")
-                if frame.sequence != len(frames):
-                    self._terminate()
-                    raise WorkerSupervisorError("worker-sequence-invalid")
-                frames.append(frame)
-                if frame.terminal:
-                    return frames
+                    result_queue.put_nowait("worker-write-failed")
+                except queue.Full:
+                    pass
+
+        writer = threading.Thread(
+            target=write_request,
+            name="nexusnet-pack-worker-writer",
+            daemon=True,
+        )
+        try:
+            writer.start()
+        except RuntimeError:
             self._terminate()
-            raise WorkerSupervisorError("worker-frame-limit-exceeded")
+            raise WorkerSupervisorError("worker-write-failed") from None
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                self._terminate()
+                writer.join(timeout=0.5)
+                raise WorkerSupervisorError("worker-timeout")
+            try:
+                reason = result_queue.get(timeout=min(remaining, 0.05))
+            except queue.Empty:
+                with self._lifecycle_lock:
+                    active_process = self._process
+                if active_process is not process:
+                    raise WorkerSupervisorError("worker-exited") from None
+                continue
+            writer.join(timeout=0.5)
+            if reason is not None:
+                self._terminate()
+                raise WorkerSupervisorError(reason)
+            return
 
     def stop(self) -> None:
-        with self._request_lock:
-            if not self.running:
-                self._terminate()
-                return
-            try:
-                self.request(
-                    WorkerOperation.SHUTDOWN,
-                    sanitized_model_ref="model::none",
-                    execution_mode=ExecutionMode.AUTO,
-                    policy_receipt_ref="receipt::shutdown",
-                    timeout_s=min(2.0, self._request_timeout_s),
-                )
-            except WorkerSupervisorError:
-                pass
-            finally:
-                self._terminate()
+        self._terminate()
 
     def _terminate(self) -> None:
-        process = self._process
-        reader = self._reader
-        reader_stop = self._reader_stop
-        windows_job = self._windows_job
-        self._process = None
-        self._reader = None
-        self._reader_stop = None
-        self._windows_job = None
+        with self._lifecycle_lock:
+            launch_cancel = self._launch_cancel
+            process = self._process
+            frame_queue = self._frames
+            reader = self._reader
+            reader_stop = self._reader_stop
+            windows_job = self._windows_job
+            self._launch_cancel = None
+            self._process = None
+            self._frames = queue.Queue(maxsize=_FRAME_QUEUE_SIZE)
+            self._reader = None
+            self._reader_stop = None
+            self._windows_job = None
+            self._active_request_id = None
+            self._control_request_ids.clear()
+        if launch_cancel is not None:
+            launch_cancel.set()
         if reader_stop is not None:
             reader_stop.set()
         if process is not None:
-            self._terminate_process_tree(process, windows_job)
-            for stream in (process.stdin, process.stdout):
-                if stream is not None:
-                    try:
-                        stream.close()
-                    except OSError:
-                        pass
+            self._cleanup_launched_process(process, windows_job)
         elif windows_job is not None and os.name == "nt":
             _KERNEL32.CloseHandle(wintypes.HANDLE(windows_job))
-        if reader is not None and reader is not threading.current_thread():
-            reader.join(timeout=1)
+        if (reader is not None and reader is not threading.current_thread()
+                and reader.ident is not None):
+            try:
+                reader.join(timeout=1)
+            except RuntimeError:
+                pass
+        while True:
+            try:
+                frame_queue.get_nowait()
+            except queue.Empty:
+                break
+        try:
+            frame_queue.put_nowait(None)
+        except queue.Full:
+            pass
 
     @staticmethod
     def _terminate_process_tree(process: subprocess.Popen[bytes], windows_job: int | None) -> None:
@@ -452,22 +726,32 @@ class WorkerSupervisor:
                     )
                 except (OSError, subprocess.SubprocessError):
                     pass
-        elif process.poll() is None:
+            try:
+                process.wait(timeout=2)
+                return
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+            if process.poll() is None:
+                try:
+                    process.kill()
+                    process.wait(timeout=2)
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
+            return
+        else:
             try:
                 os.killpg(process.pid, signal.SIGTERM)
             except OSError:
                 pass
-        try:
-            process.wait(timeout=2)
-            return
-        except (OSError, subprocess.TimeoutExpired):
-            pass
-        if process.poll() is None:
             try:
-                if os.name != "nt":
-                    os.killpg(process.pid, signal.SIGKILL)
-                else:
-                    process.kill()
+                process.wait(timeout=0.5)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except OSError:
+                pass
+            try:
                 process.wait(timeout=2)
             except (OSError, subprocess.TimeoutExpired):
                 pass
