@@ -56,6 +56,10 @@ class WorkerOperation(str, Enum):
     SHUTDOWN = "shutdown"
 
 
+def _contains_unicode_surrogate(value: str) -> bool:
+    return any(0xD800 <= ord(character) <= 0xDFFF for character in value)
+
+
 def _freeze_json(value: object, *, depth: int, item_count: list[int]) -> object:
     if depth > _MAX_JSON_DEPTH:
         raise ValueError("JSON value exceeds nesting limit")
@@ -64,8 +68,11 @@ def _freeze_json(value: object, *, depth: int, item_count: list[int]) -> object:
             raise ValueError("JSON integer exceeds range")
         if type(value) is float and not math.isfinite(value):
             raise ValueError("JSON number must be finite")
-        if type(value) is str and len(value) > _MAX_JSON_STRING:
-            raise ValueError("JSON string exceeds length limit")
+        if type(value) is str:
+            if len(value) > _MAX_JSON_STRING:
+                raise ValueError("JSON string exceeds length limit")
+            if _contains_unicode_surrogate(value):
+                raise ValueError("JSON string contains an unpaired Unicode surrogate")
         return value
     if isinstance(value, Mapping):
         item_count[0] += len(value)
@@ -73,7 +80,9 @@ def _freeze_json(value: object, *, depth: int, item_count: list[int]) -> object:
             raise ValueError("JSON object exceeds item limit")
         frozen: dict[str, object] = {}
         for key, item in value.items():
-            if type(key) is not str or not key or len(key) > 256 or any(character in "\r\n\x00" for character in key):
+            if (type(key) is not str or not key or len(key) > 256
+                    or any(character in "\r\n\x00" for character in key)
+                    or _contains_unicode_surrogate(key)):
                 raise ValueError("JSON object key is invalid")
             frozen[key] = _freeze_json(item, depth=depth + 1, item_count=item_count)
         return MappingProxyType(frozen)
@@ -119,8 +128,11 @@ def _freeze_workload_profile(value: object) -> Mapping[str, object]:
             raise ValueError("workload profile integer exceeds range")
         if type(item) is float and not math.isfinite(item):
             raise ValueError("workload profile number must be finite")
-        if type(item) is str and len(item) > 256:
-            raise ValueError("workload profile string exceeds length limit")
+        if type(item) is str:
+            if len(item) > 256:
+                raise ValueError("workload profile string exceeds length limit")
+            if _contains_unicode_surrogate(item):
+                raise ValueError("workload profile string contains an unpaired Unicode surrogate")
         frozen[key] = item
     return MappingProxyType(frozen)
 
@@ -151,6 +163,20 @@ class WorkerRequest(BaseModel):
     execution_mode: ExecutionMode
     policy_receipt_ref: StrictStr
     payload: FrozenJsonObject = Field(default_factory=dict, validate_default=True)
+
+    @field_validator("operation", mode="before")
+    @classmethod
+    def validate_operation_type(cls, value: object) -> object:
+        if type(value) is not str and not isinstance(value, WorkerOperation):
+            raise ValueError("operation must be a string enum value")
+        return value
+
+    @field_validator("execution_mode", mode="before")
+    @classmethod
+    def validate_execution_mode_type(cls, value: object) -> object:
+        if type(value) is not str and not isinstance(value, ExecutionMode):
+            raise ValueError("execution_mode must be a string enum value")
+        return value
 
     @field_validator("request_id")
     @classmethod

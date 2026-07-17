@@ -115,6 +115,45 @@ def test_protocol_models_are_deeply_immutable_and_json_bounded():
 
 
 @pytest.mark.parametrize(
+    ("marker", "replacement"),
+    [
+        (b'"payload":{}', b'"payload":{"value":"\\ud800"}'),
+        (b'"payload":{}', b'"payload":{"\\udfff":"value"}'),
+        (b'"workload_profile":{"batch_size":1}', b'"workload_profile":{"label":"\\ud800"}'),
+    ],
+)
+def test_protocol_rejects_unpaired_unicode_surrogates(marker, replacement):
+    codec = JsonLineCodec()
+    encoded = codec.encode(_request())
+
+    with pytest.raises(ProtocolError, match="worker-frame-invalid"):
+        codec.decode_request(encoded.replace(marker, replacement))
+
+
+def test_protocol_round_trips_valid_unicode_surrogate_pairs():
+    codec = JsonLineCodec()
+    encoded = codec.encode(_request())
+    encoded = encoded.replace(b'"payload":{}', b'"payload":{"emoji":"\\ud83d\\ude00"}')
+
+    decoded = codec.decode_request(encoded)
+
+    assert decoded.payload["emoji"] == chr(0x1F600)
+    assert codec.decode_request(codec.encode(decoded)) == decoded
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"operation": b"health"},
+        {"execution_mode": b"auto"},
+    ],
+)
+def test_protocol_request_rejects_byte_enum_inputs(override):
+    with pytest.raises(ValidationError):
+        _request(**override)
+
+
+@pytest.mark.parametrize(
     "override",
     [
         {"deadline_unix_ms": True},
