@@ -1,4 +1,8 @@
 import json
+from pathlib import Path
+import subprocess
+import sys
+import time
 
 import pytest
 
@@ -273,3 +277,190 @@ def test_registry_rejects_private_or_malformed_persisted_reason_codes(tmp_path, 
         RuntimePackRegistry(path)
 
     assert "Private" not in str(invalid.value)
+
+
+def test_quarantined_active_version_blocks_unrelated_activation_until_rollback_is_resolved(
+    tmp_path,
+    manifest_factory,
+):
+    registry = RuntimePackRegistry(tmp_path / "registry-v1.json")
+    first = manifest_factory(version="1.0.0")
+    second = manifest_factory(version="1.1.0", rollback_compatible_from=["1.0.0"])
+    third = manifest_factory(version="1.2.0", rollback_compatible_from=[])
+    for manifest in (first, second):
+        registry.register_manifest(manifest)
+        _advance_to_verifying(registry, manifest.pack_id, manifest.version)
+        registry.activate(manifest.pack_id, manifest.version)
+    registry.transition(second.pack_id, second.version, PackLifecycleState.QUARANTINED)
+
+    assert registry.snapshot().failed_versions[first.pack_id] == second.version
+    registry.register_manifest(third)
+    _advance_to_verifying(registry, third.pack_id, third.version)
+    with pytest.raises(RegistryError, match="quarantine-resolution-required"):
+        registry.activate(third.pack_id, third.version)
+
+    assert registry.rollback(first.pack_id, reason_code="failed-version-rejected").manifest.version == first.version
+
+
+def test_separate_registry_instances_merge_serialized_mutations_without_lost_updates(tmp_path, manifest_factory):
+    path = tmp_path / "registry-v1.json"
+    first_instance = RuntimePackRegistry(path)
+    second_instance = RuntimePackRegistry(path)
+    first_manifest = manifest_factory(pack_id="org.nexusnet.test.first")
+    second_manifest = manifest_factory(pack_id="org.nexusnet.test.second")
+
+    first_instance.register_manifest(first_manifest)
+    second_instance.register_manifest(second_manifest)
+
+    restored = RuntimePackRegistry(path)
+    assert restored.get(first_manifest.pack_id, first_manifest.version).manifest == first_manifest
+    assert restored.get(second_manifest.pack_id, second_manifest.version).manifest == second_manifest
+
+
+def test_separate_processes_serialize_registry_writes_without_lost_updates(tmp_path, manifest_factory):
+    path = tmp_path / "registry-v1.json"
+    start = tmp_path / "start"
+    worker = """
+import sys
+import time
+from pathlib import Path
+from nexusnet.runtime.accelerator_packs.contracts import RuntimePackManifest
+from nexusnet.runtime.accelerator_packs.registry import RuntimePackRegistry
+
+registry_path, manifest_path, ready_path, start_path = map(Path, sys.argv[1:])
+registry = RuntimePackRegistry(registry_path)
+manifest = RuntimePackManifest.model_validate_json(manifest_path.read_bytes())
+ready_path.write_text("ready", encoding="utf-8")
+deadline = time.monotonic() + 10
+while not start_path.exists():
+    if time.monotonic() >= deadline:
+        raise SystemExit("start-timeout")
+    time.sleep(0.01)
+registry.register_manifest(manifest)
+"""
+    processes = []
+    manifests = [
+        manifest_factory(pack_id="org.nexusnet.test.process-first"),
+        manifest_factory(pack_id="org.nexusnet.test.process-second"),
+    ]
+    for index, manifest in enumerate(manifests):
+        manifest_path = tmp_path / f"manifest-{index}.json"
+        ready_path = tmp_path / f"ready-{index}"
+        manifest_path.write_bytes(manifest.model_dump_json().encode("utf-8"))
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                worker,
+                str(path),
+                str(manifest_path),
+                str(ready_path),
+                str(start),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        processes.append((process, ready_path))
+
+    deadline = time.monotonic() + 10
+    while not all(ready.exists() for _, ready in processes):
+        if time.monotonic() >= deadline:
+            pytest.fail("registry writer processes did not become ready")
+        time.sleep(0.01)
+    start.write_text("start", encoding="utf-8")
+    for process, _ in processes:
+        stdout, stderr = process.communicate(timeout=15)
+        assert process.returncode == 0, (stdout, stderr)
+
+    restored = RuntimePackRegistry(path)
+    for manifest in manifests:
+        assert restored.get(manifest.pack_id, manifest.version).manifest == manifest
+
+
+def test_registry_rejects_oversized_serialized_state_before_touching_disk(
+    tmp_path,
+    manifest_factory,
+    monkeypatch,
+):
+    path = tmp_path / "registry-v1.json"
+    monkeypatch.setattr(registry_module, "_MAX_REGISTRY_BYTES", 1024)
+    registry = RuntimePackRegistry(path)
+
+    with pytest.raises(RegistryError, match="registry-size-limit"):
+        registry.register_manifest(manifest_factory())
+
+    assert not path.exists()
+    with pytest.raises(RegistryError, match="pack-version-not-registered"):
+        registry.get("org.nexusnet.test.cuda", "1.0.0")
+
+
+def test_registry_uses_bounded_reads_for_oversized_existing_state(tmp_path, monkeypatch):
+    path = tmp_path / "registry-v1.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "records": {},
+                "active_versions": {},
+                "previous_versions": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def forbid_unbounded_read(self, *args, **kwargs):
+        raise AssertionError("registry loader used unbounded Path.read_text")
+
+    monkeypatch.setattr(Path, "read_text", forbid_unbounded_read)
+
+    assert RuntimePackRegistry(path).snapshot().records == {}
+
+
+def test_cleanup_failure_never_masks_sanitized_persist_error(tmp_path, manifest_factory, monkeypatch):
+    path = tmp_path / "registry-v1.json"
+    registry = RuntimePackRegistry(path)
+    manifest = manifest_factory()
+    registry.register_manifest(manifest)
+    original_unlink = Path.unlink
+
+    def fail_replace(source, destination):
+        raise OSError("C:/Users/Private/replace-failed")
+
+    def fail_temp_unlink(self, *args, **kwargs):
+        if self.name.startswith(f"{path.name}.") and self.name.endswith(".tmp"):
+            raise OSError("C:/Users/Private/temp-locked")
+        return original_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(registry_module.os, "replace", fail_replace)
+    monkeypatch.setattr(Path, "unlink", fail_temp_unlink)
+    with pytest.raises(RegistryError, match="registry-persist-failed") as failure:
+        registry.transition(manifest.pack_id, manifest.version, PackLifecycleState.DOWNLOADING)
+
+    assert "Private" not in str(failure.value)
+
+
+def test_registry_scavenges_owned_stale_temp_files_during_startup(tmp_path):
+    path = tmp_path / "registry-v1.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    stale = path.parent / f"{path.name}.abandoned.tmp"
+    stale.write_text("C:/Users/Private/incomplete", encoding="utf-8")
+
+    RuntimePackRegistry(path)
+
+    assert not stale.exists()
+
+
+def test_rollback_after_quarantine_persists_the_supplied_reason(tmp_path, manifest_factory):
+    registry = RuntimePackRegistry(tmp_path / "registry-v1.json")
+    first = manifest_factory(version="1.0.0")
+    second = manifest_factory(version="1.1.0", rollback_compatible_from=["1.0.0"])
+    for manifest in (first, second):
+        registry.register_manifest(manifest)
+        _advance_to_verifying(registry, manifest.pack_id, manifest.version)
+        registry.activate(manifest.pack_id, manifest.version)
+    registry.transition(second.pack_id, second.version, PackLifecycleState.QUARANTINED)
+
+    registry.rollback(first.pack_id, reason_code="rollback-requested")
+
+    assert "rollback-requested" in registry.get(second.pack_id, second.version).reason_codes

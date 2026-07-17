@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import os
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -27,6 +28,68 @@ from .contracts import PackLifecycleState, RuntimePackManifest
 _CONTROL_CHARACTERS = re.compile(r"[\x00-\x1f\x7f]")
 _REASON_CODE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 _MAX_REGISTRY_BYTES = 16 * 1024 * 1024
+_MAX_RECORDS = 4096
+_MAX_PACK_POINTERS = 1024
+_PATH_LOCKS_GUARD = RLock()
+_PATH_LOCKS: dict[str, RLock] = {}
+
+
+def _shared_path_lock(path: Path) -> RLock:
+    key = os.path.normcase(str(path.resolve(strict=False)))
+    with _PATH_LOCKS_GUARD:
+        lock = _PATH_LOCKS.get(key)
+        if lock is None:
+            lock = RLock()
+            _PATH_LOCKS[key] = lock
+        return lock
+
+
+@contextmanager
+def _exclusive_file_lock(path: Path):
+    handle = None
+    locked = False
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = path.open("a+b")
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"\0")
+            handle.flush()
+        handle.seek(0)
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        locked = True
+    except OSError:
+        if handle is not None:
+            handle.close()
+        raise RegistryError("registry-lock-failed") from None
+    try:
+        yield
+    finally:
+        if handle is not None:
+            if locked:
+                try:
+                    handle.seek(0)
+                    if os.name == "nt":
+                        import msvcrt
+
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                    else:
+                        import fcntl
+
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                except OSError:
+                    pass
+            try:
+                handle.close()
+            except OSError:
+                pass
 
 
 class RegistryError(RuntimeError):
@@ -40,8 +103,8 @@ class RuntimePackRecord(BaseModel):
 
     manifest: RuntimePackManifest
     state: PackLifecycleState = PackLifecycleState.AVAILABLE
-    install_ref: StrictStr | None = None
-    reason_codes: tuple[StrictStr, ...] = ()
+    install_ref: StrictStr | None = Field(default=None, max_length=512)
+    reason_codes: tuple[StrictStr, ...] = Field(default=(), max_length=64, validate_default=True)
     updated_at: datetime
 
     @field_validator("install_ref")
@@ -122,9 +185,22 @@ class RegistrySnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal["1.0"] = "1.0"
-    records: FrozenRecordMapping = Field(default_factory=dict, validate_default=True)
-    active_versions: FrozenStringMapping = Field(default_factory=dict, validate_default=True)
-    previous_versions: FrozenStringMapping = Field(default_factory=dict, validate_default=True)
+    records: FrozenRecordMapping = Field(default_factory=dict, max_length=_MAX_RECORDS, validate_default=True)
+    active_versions: FrozenStringMapping = Field(
+        default_factory=dict,
+        max_length=_MAX_PACK_POINTERS,
+        validate_default=True,
+    )
+    previous_versions: FrozenStringMapping = Field(
+        default_factory=dict,
+        max_length=_MAX_PACK_POINTERS,
+        validate_default=True,
+    )
+    failed_versions: FrozenStringMapping = Field(
+        default_factory=dict,
+        max_length=_MAX_PACK_POINTERS,
+        validate_default=True,
+    )
 
     @model_validator(mode="after")
     def validate_references(self) -> "RegistrySnapshot":
@@ -147,6 +223,21 @@ class RegistrySnapshot(BaseModel):
                 raise ValueError("previous version reference is invalid")
             if self.active_versions.get(pack_id) == version:
                 raise ValueError("active and previous versions must differ")
+
+        for pack_id, version in self.failed_versions.items():
+            record = self.records.get(f"{pack_id}@{version}")
+            if record is None or record.manifest.pack_id != pack_id or record.state != PackLifecycleState.QUARANTINED:
+                raise ValueError("failed version reference is invalid")
+            if self.active_versions.get(pack_id) is not None:
+                raise ValueError("active and failed versions cannot coexist")
+
+        for pack_id, previous_version in self.previous_versions.items():
+            current_version = self.active_versions.get(pack_id) or self.failed_versions.get(pack_id)
+            if current_version is None:
+                raise ValueError("previous version lacks an active or failed successor")
+            current = self.records.get(f"{pack_id}@{current_version}")
+            if current is None or previous_version not in current.manifest.rollback_compatible_from:
+                raise ValueError("previous version is not declared rollback compatible")
 
         for record in self.records.values():
             pack_id = record.manifest.pack_id
@@ -176,8 +267,12 @@ _ALLOWED_TRANSITIONS = {
 class RuntimePackRegistry:
     def __init__(self, registry_path: str | Path):
         self._path = Path(registry_path)
+        self._lock_path = self._path.with_name(f"{self._path.name}.lock")
         self._lock = RLock()
-        self._snapshot = self._load()
+        self._path_lock = _shared_path_lock(self._path)
+        with self._path_lock, _exclusive_file_lock(self._lock_path):
+            self._cleanup_stale_temps()
+            self._snapshot = self._load()
 
     @staticmethod
     def _key(pack_id: str, version: str) -> str:
@@ -214,34 +309,66 @@ class RuntimePackRegistry:
         if not self._path.exists():
             return RegistrySnapshot()
         try:
-            if self._path.stat().st_size > _MAX_REGISTRY_BYTES:
+            with self._path.open("rb") as handle:
+                payload = handle.read(_MAX_REGISTRY_BYTES + 1)
+            if len(payload) > _MAX_REGISTRY_BYTES:
                 raise ValueError("registry exceeds size limit")
-            return RegistrySnapshot.model_validate_json(self._path.read_text(encoding="utf-8"))
+            return RegistrySnapshot.model_validate_json(payload)
         except (OSError, UnicodeError, ValidationError, ValueError, TypeError):
             raise RegistryError("registry-invalid") from None
 
+    def _cleanup_stale_temps(self) -> None:
+        if not self._path.parent.exists():
+            return
+        try:
+            for candidate in self._path.parent.glob(f"{self._path.name}.*.tmp"):
+                candidate.unlink(missing_ok=True)
+        except OSError:
+            raise RegistryError("registry-temp-cleanup-failed") from None
+
+    @contextmanager
+    def _mutation(self):
+        with self._lock, self._path_lock, _exclusive_file_lock(self._lock_path):
+            self._cleanup_stale_temps()
+            self._snapshot = self._load()
+            yield
+
     def _persist(self, snapshot: RegistrySnapshot) -> None:
+        try:
+            serialized = snapshot.model_dump_json(indent=2).encode("utf-8")
+        except (UnicodeError, ValueError, TypeError):
+            raise RegistryError("registry-persist-failed") from None
+        if len(serialized) > _MAX_REGISTRY_BYTES:
+            raise RegistryError("registry-size-limit")
+
         temporary_path: Path | None = None
+        replaced = False
+        persist_failed = False
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
+                mode="wb",
                 dir=self._path.parent,
                 prefix=f"{self._path.name}.",
                 suffix=".tmp",
                 delete=False,
             ) as handle:
                 temporary_path = Path(handle.name)
-                handle.write(snapshot.model_dump_json(indent=2))
+                handle.write(serialized)
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary_path, self._path)
+            replaced = True
         except (OSError, UnicodeError, ValueError, TypeError):
-            raise RegistryError("registry-persist-failed") from None
+            persist_failed = True
         finally:
-            if temporary_path is not None:
-                temporary_path.unlink(missing_ok=True)
+            if temporary_path is not None and not replaced:
+                try:
+                    temporary_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        if persist_failed:
+            raise RegistryError("registry-persist-failed") from None
         self._snapshot = snapshot
 
     def snapshot(self) -> RegistrySnapshot:
@@ -249,7 +376,7 @@ class RuntimePackRegistry:
             return RegistrySnapshot.model_validate(self._snapshot.model_dump(mode="json"))
 
     def register_manifest(self, manifest: RuntimePackManifest) -> RuntimePackRecord:
-        with self._lock:
+        with self._mutation():
             key = self._key(manifest.pack_id, manifest.version)
             existing = self._snapshot.records.get(key)
             if existing is not None:
@@ -287,7 +414,7 @@ class RuntimePackRegistry:
         install_ref: str | None = None,
         reason_code: str | None = None,
     ) -> RuntimePackRecord:
-        with self._lock:
+        with self._mutation():
             current = self.get(pack_id, version)
             try:
                 target = PackLifecycleState(target)
@@ -315,31 +442,44 @@ class RuntimePackRegistry:
             records = {**self._snapshot.records, self._key(pack_id, version): updated}
             active_versions = dict(self._snapshot.active_versions)
             previous_versions = dict(self._snapshot.previous_versions)
+            failed_versions = dict(self._snapshot.failed_versions)
+            is_pending_failure = failed_versions.get(pack_id) == version
+            if is_pending_failure and previous_versions.get(pack_id) is not None:
+                raise RegistryError("quarantine-resolution-required")
             if current.state in {PackLifecycleState.ACTIVE, PackLifecycleState.DEGRADED}:
                 if target == PackLifecycleState.QUARANTINED and active_versions.get(pack_id) == version:
                     active_versions.pop(pack_id, None)
+                    failed_versions[pack_id] = version
             if target == PackLifecycleState.REMOVED:
                 if active_versions.get(pack_id) == version:
                     active_versions.pop(pack_id, None)
                 if previous_versions.get(pack_id) == version:
                     previous_versions.pop(pack_id, None)
+                if failed_versions.get(pack_id) == version:
+                    failed_versions.pop(pack_id, None)
+            if target == PackLifecycleState.STAGED and failed_versions.get(pack_id) == version:
+                failed_versions.pop(pack_id, None)
             snapshot = self._new_snapshot(
                 records=records,
                 active_versions=active_versions,
                 previous_versions=previous_versions,
+                failed_versions=failed_versions,
             )
             self._persist(snapshot)
             return updated
 
     def activate(self, pack_id: str, version: str) -> RuntimePackRecord:
-        with self._lock:
+        with self._mutation():
             candidate = self.get(pack_id, version)
             if candidate.state != PackLifecycleState.VERIFYING:
                 raise RegistryError("lifecycle-transition-invalid")
             records = dict(self._snapshot.records)
             active_versions = dict(self._snapshot.active_versions)
             previous_versions = dict(self._snapshot.previous_versions)
+            failed_versions = dict(self._snapshot.failed_versions)
             previous = active_versions.get(pack_id)
+            if failed_versions.get(pack_id) is not None and previous_versions.get(pack_id) is not None:
+                raise RegistryError("quarantine-resolution-required")
             if previous and previous != version:
                 if previous not in candidate.manifest.rollback_compatible_from:
                     raise RegistryError("rollback-incompatible")
@@ -374,19 +514,22 @@ class RuntimePackRegistry:
             )
             records[self._key(pack_id, version)] = activated
             active_versions[pack_id] = version
+            failed_versions.pop(pack_id, None)
             self._persist(
                 self._new_snapshot(
                     records=records,
                     active_versions=active_versions,
                     previous_versions=previous_versions,
+                    failed_versions=failed_versions,
                 )
             )
             return activated
 
     def rollback(self, pack_id: str, *, reason_code: str) -> RuntimePackRecord:
-        with self._lock:
+        with self._mutation():
             self._validate_reason_code(reason_code)
             current_version = self._snapshot.active_versions.get(pack_id)
+            failed_version = self._snapshot.failed_versions.get(pack_id)
             target_version = self._snapshot.previous_versions.get(pack_id)
             if target_version is None:
                 raise RegistryError("rollback-unavailable")
@@ -404,6 +547,17 @@ class RuntimePackRegistry:
                     reason_codes=(*current.reason_codes, reason_code),
                     updated_at=self._now(),
                 )
+            elif failed_version is not None:
+                failed = self.get(pack_id, failed_version)
+                if failed.state != PackLifecycleState.QUARANTINED:
+                    raise RegistryError("rollback-unavailable")
+                records[self._key(pack_id, failed_version)] = self._updated_record(
+                    failed,
+                    reason_codes=(*failed.reason_codes, reason_code),
+                    updated_at=self._now(),
+                )
+            else:
+                raise RegistryError("rollback-unavailable")
             restored = self._updated_record(
                 target,
                 state=PackLifecycleState.ACTIVE,
@@ -413,11 +567,14 @@ class RuntimePackRegistry:
             active_versions = {**self._snapshot.active_versions, pack_id: target_version}
             previous_versions = dict(self._snapshot.previous_versions)
             previous_versions.pop(pack_id, None)
+            failed_versions = dict(self._snapshot.failed_versions)
+            failed_versions.pop(pack_id, None)
             self._persist(
                 self._new_snapshot(
                     records=records,
                     active_versions=active_versions,
                     previous_versions=previous_versions,
+                    failed_versions=failed_versions,
                 )
             )
             return restored
