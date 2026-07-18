@@ -26,14 +26,48 @@ def _torch():
 class TorchKernel:
     def __init__(self) -> None:
         self.backend = os.environ.get("NEXUSNET_TORCH_BACKEND", "").casefold()
+        self.family = os.environ.get("NEXUSNET_TORCH_FAMILY", "").casefold()
         self.model: tuple[object, object] | None = None
 
     def _device(self, torch):
+        if not self._family_available(torch):
+            raise RuntimeError("torch-family-unavailable")
         if self.backend == "cpu":
             return torch.device("cpu")
-        if self.backend == "cuda" and torch.cuda.is_available() and torch.cuda.device_count() >= 1:
+        if self.backend in {"cuda", "rocm-windows"} and torch.cuda.is_available() and torch.cuda.device_count() >= 1:
             return torch.device("cuda:0")
+        if self.backend == "xpu" and torch.xpu.is_available() and torch.xpu.device_count() >= 1:
+            return torch.device("xpu:0")
         raise RuntimeError("backend-unavailable")
+
+    def _family_available(self, torch) -> bool:
+        if not self.family:
+            return True
+        expected_family = {
+            "cpu": "torch-cpu",
+            "cuda": "torch-cuda",
+            "xpu": "torch-xpu",
+            "rocm-windows": "torch-rocm-windows",
+        }.get(self.backend)
+        if self.family != expected_family:
+            return False
+        version = str(getattr(torch, "__version__", "")).casefold()
+        torch_version = getattr(torch, "version", None)
+        cuda_version = getattr(torch_version, "cuda", None)
+        hip_version = getattr(torch_version, "hip", None)
+        if self.family == "torch-cpu":
+            return "+cpu" in version and not cuda_version and not hip_version
+        if self.family == "torch-cuda":
+            return "+cu" in version and bool(cuda_version) and not hip_version
+        if self.family == "torch-xpu":
+            return "+xpu" in version and hasattr(torch, "xpu") and torch.xpu.is_available()
+        return "+rocm" in version and bool(hip_version) and self.backend == "rocm-windows"
+
+    def _synchronize(self, torch, device) -> None:
+        if self.backend in {"cuda", "rocm-windows"}:
+            torch.cuda.synchronize(device)
+        elif self.backend == "xpu":
+            torch.xpu.synchronize(device)
 
     @staticmethod
     def _number(value: object) -> float:
@@ -51,7 +85,7 @@ class TorchKernel:
         return [cls._number(item) for item in value]
 
     def handle(self, request: WorkerRequest) -> tuple[dict[str, Any] | None, str | None, bool]:
-        if self.backend not in {"cpu", "cuda"}:
+        if self.backend not in {"cpu", "cuda", "xpu", "rocm-windows"}:
             return None, "torch-backend-invalid", False
         try:
             torch = _torch()
@@ -63,7 +97,7 @@ class TorchKernel:
                     "backend": self.backend,
                     "device_count": 0,
                     "capabilities": {},
-                    "reason_codes": ["torch-backend-unavailable"],
+                    "reason_codes": ["torch-family-unavailable" if self.family else "torch-backend-unavailable"],
                 }, None, False
             return None, "torch-backend-unavailable", False
 
@@ -71,6 +105,7 @@ class TorchKernel:
             return {
                 "worker": "nexusnet-torch",
                 "backend": self.backend,
+                "distribution_family": self.family or "legacy-unpinned",
                 "protocol_version": "1.0",
                 "execution_modes": ["cpu" if self.backend == "cpu" else "gpu"],
             }, None, False
@@ -78,7 +113,14 @@ class TorchKernel:
             return {
                 "available": True,
                 "backend": self.backend,
-                "device_count": 1 if self.backend == "cpu" else int(torch.cuda.device_count()),
+                "distribution_family": self.family or "legacy-unpinned",
+                "device_count": (
+                    1
+                    if self.backend == "cpu"
+                    else int(torch.xpu.device_count())
+                    if self.backend == "xpu"
+                    else int(torch.cuda.device_count())
+                ),
                 "capabilities": {"numeric-model": True, "tensor-execution": True},
             }, None, False
         expected_mode = "cpu" if self.backend == "cpu" else "gpu"
@@ -87,8 +129,7 @@ class TorchKernel:
         if request.operation == WorkerOperation.SELF_TEST:
             values = torch.tensor([1.0, 2.0], dtype=torch.float32, device=device)
             output = values * 2.0 + 1.0
-            if self.backend == "cuda":
-                torch.cuda.synchronize(device)
+            self._synchronize(torch, device)
             passed = output.detach().cpu().tolist() == [3.0, 5.0]
             return {"passed": passed, "backend": self.backend}, None, False
         if request.operation == WorkerOperation.LOAD_MODEL:
@@ -111,8 +152,7 @@ class TorchKernel:
                 return None, "inference-payload-invalid", False
             tensor = torch.tensor(values, dtype=torch.float32, device=device)
             output = tensor * self.model[0] + self.model[1]
-            if self.backend == "cuda":
-                torch.cuda.synchronize(device)
+            self._synchronize(torch, device)
             return {"values": output.detach().cpu().tolist(), "backend": self.backend}, None, False
         if request.operation == WorkerOperation.BENCHMARK:
             try:
@@ -126,8 +166,7 @@ class TorchKernel:
             output = tensor
             for _ in range(iterations):
                 output = output * 1.0001 + 0.0001
-            if self.backend == "cuda":
-                torch.cuda.synchronize(device)
+            self._synchronize(torch, device)
             duration_ms = max((time.perf_counter() - started) * 1000.0, 1e-9)
             return {
                 "iterations": iterations,
@@ -137,8 +176,10 @@ class TorchKernel:
             }, None, False
         if request.operation == WorkerOperation.UNLOAD_MODEL:
             self.model = None
-            if self.backend == "cuda":
+            if self.backend in {"cuda", "rocm-windows"}:
                 torch.cuda.empty_cache()
+            elif self.backend == "xpu":
+                torch.xpu.empty_cache()
             return {"unloaded": True}, None, False
         if request.operation == WorkerOperation.CANCEL:
             return None, "worker-cancel-unavailable", False

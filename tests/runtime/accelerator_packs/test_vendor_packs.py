@@ -88,9 +88,10 @@ def test_common_catalog_adds_vendor_candidates_but_preserves_cpu_fallback() -> N
 
     assert [item.manifest.pack_id for item in candidates] == [
         "org.nexusnet.cpu.reference",
+        "org.nexusnet.torch.cpu",
         "org.nexusnet.native.amd-vulkan",
     ]
-    assert candidates[1].reason_codes[-1] == "runtime-pack-unverified"
+    assert candidates[2].reason_codes[-1] == "runtime-pack-unverified"
 
 
 def test_support_matrix_is_immutable_data_with_source_and_runtime_identity() -> None:

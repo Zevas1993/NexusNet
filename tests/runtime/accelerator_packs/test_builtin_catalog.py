@@ -47,18 +47,22 @@ def _graph(*, cuda: bool) -> HardwareCapabilityGraph:
     )
 
 
-def test_builtin_catalog_always_projects_cpu_and_only_projects_cuda_with_driver_evidence():
+def test_builtin_catalog_projects_reference_and_locked_torch_cpu_then_cuda_only_with_driver_evidence():
     cpu_only = BuiltInPackCatalog().candidates(_graph(cuda=False))
     mixed = BuiltInPackCatalog().candidates(_graph(cuda=True))
 
-    assert [candidate.manifest.pack_id for candidate in cpu_only] == ["org.nexusnet.cpu.reference"]
+    assert [candidate.manifest.pack_id for candidate in cpu_only] == [
+        "org.nexusnet.cpu.reference",
+        "org.nexusnet.torch.cpu",
+    ]
     assert [candidate.manifest.pack_id for candidate in mixed] == [
         "org.nexusnet.cpu.reference",
+        "org.nexusnet.torch.cpu",
         "org.nexusnet.torch.cuda",
     ]
     assert all(candidate.verification_state == "unverified" for candidate in mixed)
-    assert mixed[1].device_node_id == "gpu:0"
-    assert mixed[1].reason_codes == ("cuda-driver-detected", "runtime-pack-unverified")
+    assert mixed[2].device_node_id == "gpu:0"
+    assert mixed[2].reason_codes == ("cuda-driver-detected", "runtime-pack-unverified")
 
 
 def test_builtin_catalog_does_not_turn_cim_only_nvidia_detection_into_cuda_candidate():
@@ -83,4 +87,64 @@ def test_builtin_catalog_does_not_turn_cim_only_nvidia_detection_into_cuda_candi
 
     candidates = BuiltInPackCatalog().candidates(graph)
 
-    assert [candidate.manifest.pack_id for candidate in candidates] == ["org.nexusnet.cpu.reference"]
+    assert [candidate.manifest.pack_id for candidate in candidates] == [
+        "org.nexusnet.cpu.reference",
+        "org.nexusnet.torch.cpu",
+    ]
+
+
+def test_builtin_catalog_projects_isolated_torch_cpu_cuda_and_xpu_families():
+    graph = _graph(cuda=True)
+    graph = graph.model_copy(
+        update={
+            "nodes": [
+                *graph.nodes,
+                HardwareNode(
+                    node_id="gpu:intel",
+                    kind="gpu",
+                    name="Intel Arc",
+                    backend="xpu",
+                    vendor_id="8086",
+                    architecture="arc",
+                    accelerator_apis=["xpu"],
+                    verification_state="detected",
+                ),
+            ]
+        }
+    )
+
+    candidates = BuiltInPackCatalog().candidates(graph)
+    by_id = {candidate.manifest.pack_id: candidate for candidate in candidates}
+
+    assert "org.nexusnet.torch.cpu" in by_id
+    assert "org.nexusnet.torch.cuda" in by_id
+    assert "org.nexusnet.torch.xpu" in by_id
+    assert by_id["org.nexusnet.torch.cpu"].manifest.dependency_constraints["environment_lock_id"] == "torch-cpu-2.11.0-cp311-win-amd64"
+    assert by_id["org.nexusnet.torch.xpu"].manifest.dependency_constraints["environment_lock_id"] == "torch-xpu-2.10.0-cp311-win-amd64"
+    assert all("training" not in candidate.manifest.capabilities for candidate in by_id.values())
+
+
+def test_windows_rocm_torch_candidate_requires_cp312_and_supported_architecture():
+    graph = _graph(cuda=False).model_copy(
+        update={
+            "nodes": [
+                *_graph(cuda=False).nodes,
+                HardwareNode(
+                    node_id="gpu:amd",
+                    kind="gpu",
+                    name="AMD Radeon",
+                    backend="hip",
+                    vendor_id="1002",
+                    architecture="gfx1100",
+                    accelerator_apis=["hip"],
+                    verification_state="detected",
+                ),
+            ]
+        }
+    )
+
+    cp311 = BuiltInPackCatalog().candidates(graph, python_abi="cp311")
+    cp312 = BuiltInPackCatalog().candidates(graph, python_abi="cp312")
+
+    assert "org.nexusnet.torch.rocm-windows" not in {item.manifest.pack_id for item in cp311}
+    assert "org.nexusnet.torch.rocm-windows" in {item.manifest.pack_id for item in cp312}
