@@ -3171,13 +3171,17 @@ def test_successful_chat_auto_runs_release_supervisor_and_production_spine_lifec
     assert initial["active_production_mutation_allowed"] is False
     assert initial["active_production_mutated"] is False
 
-    assert matrix["coverage_status"] == "covered"
+    assert matrix["coverage_status"] == "partial"
+    assert rows["domain_expert_growth_admin_replay"]["status"] == "missing"
+    assert rows["domain_expert_growth_admin_replay"]["blockers"] == [
+        "domain_expert_growth_admin_replay_not_run"
+    ]
     assert rows["boot_supervisor"]["status"] == "covered"
     assert rows["initial_release_supervisor"]["status"] == "covered"
     assert rows["production_spine_release_lifecycle"]["status"] == "covered"
     assert rows["production_spine_lifecycle_rollback"]["status"] == "covered"
     assert release_run_history["runtime_state"] == "live-evidence"
-    assert release_run_history["latest_status"] == "release-wrapper-live-product-path-covered"
+    assert release_run_history["latest_status"] == "release-wrapper-live-product-path-partial"
     assert release_run_history["run_count"] == 1
     assert release_run_history["latest_run"]["run_kind"] == "release-wrapper-live-product-path"
     assert release_run_history["latest_run"]["active_production_mutated"] is False

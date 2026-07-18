@@ -931,32 +931,6 @@ class ReleaseWrapperRuntime:
             interaction["federated_packet_import_governed_update_status"] = live_federated_import.get(
                 "governed_update_status"
             )
-        live_release_supervisor = self._record_live_release_supervisor_product_lifecycle(
-            session_id=session_id,
-            interaction=interaction,
-        )
-        if live_release_supervisor.get("status") != "skipped-existing-release-supervisor-evidence":
-            interaction["production_spine_release_lifecycle_run_id"] = live_release_supervisor.get(
-                "production_spine_release_lifecycle_run_id"
-            )
-            interaction["production_spine_release_lifecycle_rollback_id"] = live_release_supervisor.get(
-                "production_spine_release_lifecycle_rollback_id"
-            )
-            interaction["boot_supervisor_manifest_id"] = live_release_supervisor.get("boot_supervisor_manifest_id")
-            interaction["initial_release_supervisor_manifest_id"] = live_release_supervisor.get(
-                "initial_release_supervisor_manifest_id"
-            )
-            interaction["release_supervisor_product_lifecycle_status"] = live_release_supervisor.get("status")
-        live_release_run = self._record_live_release_run_history_and_refresh_canon_contract(
-            session_id=session_id,
-            interaction=interaction,
-            forward_pass_receipt=forward_pass_receipt,
-            cache_entry=cache_entry,
-        )
-        if live_release_run.get("status") != "skipped-no-forward-pass-receipt":
-            interaction["release_run_history_run_id"] = live_release_run.get("run_id")
-            interaction["release_run_history_status"] = live_release_run.get("latest_status")
-            interaction["final_canon_contract_receipt_id"] = live_release_run.get("canon_contract_receipt_id")
         latest_native_runtime_growth_receipt = native_runtime_growth_receipt
         try:
             latest_global_growth = (
@@ -1051,6 +1025,32 @@ class ReleaseWrapperRuntime:
             self._whole_system_heartbeat_ticks = self._whole_system_heartbeat_ticks[:100]
             self._whole_system_heartbeat_live_tick_count += 1
             self._persist_whole_system_heartbeat_tick(post_repair_tick)
+        live_release_supervisor = self._record_live_release_supervisor_product_lifecycle(
+            session_id=session_id,
+            interaction=interaction,
+        )
+        if live_release_supervisor.get("status") != "skipped-existing-release-supervisor-evidence":
+            interaction["production_spine_release_lifecycle_run_id"] = live_release_supervisor.get(
+                "production_spine_release_lifecycle_run_id"
+            )
+            interaction["production_spine_release_lifecycle_rollback_id"] = live_release_supervisor.get(
+                "production_spine_release_lifecycle_rollback_id"
+            )
+            interaction["boot_supervisor_manifest_id"] = live_release_supervisor.get("boot_supervisor_manifest_id")
+            interaction["initial_release_supervisor_manifest_id"] = live_release_supervisor.get(
+                "initial_release_supervisor_manifest_id"
+            )
+            interaction["release_supervisor_product_lifecycle_status"] = live_release_supervisor.get("status")
+        live_release_run = self._record_live_release_run_history_and_refresh_canon_contract(
+            session_id=session_id,
+            interaction=interaction,
+            forward_pass_receipt=forward_pass_receipt,
+            cache_entry=cache_entry,
+        )
+        if live_release_run.get("status") != "skipped-no-forward-pass-receipt":
+            interaction["release_run_history_run_id"] = live_release_run.get("run_id")
+            interaction["release_run_history_status"] = live_release_run.get("latest_status")
+            interaction["final_canon_contract_receipt_id"] = live_release_run.get("canon_contract_receipt_id")
         self._persist_native_hive_heartbeat_record(native_hive_heartbeat_record)
         self._persist_interaction_event(
             session_ref_digest=interaction["session_ref_digest"],
