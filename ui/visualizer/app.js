@@ -1368,7 +1368,7 @@ function renderLivePosture() {
     <div class="metric release-wrapper-operation-receipts"><strong>${escapeHtml(`${releaseCoveredOperationReceiptRows.length}/${releaseOperationReceiptRows.length}`)}</strong><small>Harness operation receipts</small></div>
     <div class="metric release-wrapper-import-receipt"><strong>${escapeHtml(latestFederatedImportReceipt.status || "not-imported")}</strong><small>Harness import receipt</small></div>
     <div class="metric release-wrapper-self-repair-operation-receipt"><strong>${escapeHtml(String(releaseSelfRepairOperationReceiptActions.length || 0))}</strong><small>self-repair operation receipt</small></div>
-    <div class="metric release-wrapper-canonical-ao-coverage"><strong>${escapeHtml(String(releaseCanonicalAoCoverage.receipt_count || 0))}</strong><small>Harness canonical AOs</small></div>
+    <div class="metric release-wrapper-canonical-ao-coverage"><strong>${escapeHtml(String(releaseCanonicalAoCoverage.receipt_count || 0))}</strong><small>Wrapper canonical AOs</small></div>
     <div class="metric release-wrapper-domain-ao-routing"><strong>${escapeHtml(releaseDomainAoRouting.latest_domain_ao || "not-routed")}</strong><small>Harness domain AO</small></div>
     <div class="metric release-wrapper-domain-teacher-eval"><strong>${escapeHtml(releaseDomainTeacherEval.latest_domain_ao || "not-linked")}</strong><small>Harness domain teacher/eval</small></div>
     <div class="metric release-wrapper-expert-growth"><strong>${escapeHtml(String(releaseDomainTeacherEval.expert_growth_candidate_count || 0))}</strong><small>Harness expert growth</small></div>
@@ -1376,7 +1376,7 @@ function renderLivePosture() {
     <div class="metric release-wrapper-expert-growth-sandbox-takeover"><strong>${escapeHtml(releaseDomainTeacherEval.latest_sandbox_takeover_evidence_status || "not-run")}</strong><small>Harness takeover evidence</small></div>
     <div class="metric release-wrapper-context-window-posture"><strong>${escapeHtml(String(releaseContextWindowPosture.observed_effective_context_tokens || 0))}</strong><small>Harness effective ctx tokens</small></div>
     <div class="metric release-wrapper-context-capability"><strong>${escapeHtml(String(releaseContextCapability.host_context_cap_tokens || 0))}</strong><small>Harness context cap</small></div>
-    <div class="metric release-wrapper-provider-readiness"><strong>${escapeHtml(String(releaseProviderReadiness.usable_provider_count || 0))}</strong><small>Harness usable providers</small></div>
+    <div class="metric release-wrapper-provider-readiness"><strong>${escapeHtml(String(releaseProviderReadiness.usable_provider_count || 0))}</strong><small>Wrapper usable providers</small></div>
     <div class="metric release-wrapper-developmental-release-contract"><strong>${escapeHtml(developmentalReleaseContract.latest_status || "not-recorded")}</strong><small>Harness developmental release contract</small></div>
     <div class="metric release-wrapper-first-run-readiness"><strong>${escapeHtml(releaseFirstRunReadiness.decision || "not-run")}</strong><small>Harness first-run readiness</small></div>
     <div class="metric release-wrapper-first-run-scope"><strong>${escapeHtml(releaseFirstRunReadiness.product_scope || "wrapper-session")}</strong><small>Whole-system first-run scope</small></div>
@@ -1405,8 +1405,8 @@ function renderLivePosture() {
     <div class="metric release-wrapper-ao-guard"><strong>${escapeHtml(String(latestSelfRepairGuardReceipts.length || releaseSelfRepairLedger.ao_guard_passed_count || 0))}</strong><small>Harness AO guard receipts</small></div>
     <div class="metric release-wrapper-authority-receipts"><strong>${escapeHtml(String(releaseSelfRepairLedger.authority_decision_count || 0))}</strong><small>Harness authority receipts</small></div>
     <div class="metric"><strong>${escapeHtml(String(releaseTelemetryFederation.packet_count || 0))}</strong><small>Harness federated packets</small></div>
-    <div class="metric release-wrapper-federated-packet-outbox"><strong>${escapeHtml(String(releaseFederatedPacketOutbox.packet_count || 0))}</strong><small>Harness packet outbox</small></div>
-    <div class="metric release-wrapper-federated-packet-inbox"><strong>${escapeHtml(String(releaseFederatedPacketInbox.import_count || 0))}</strong><small>Harness packet inbox</small></div>
+    <div class="metric release-wrapper-federated-packet-outbox"><strong>${escapeHtml(String(releaseFederatedPacketOutbox.packet_count || 0))}</strong><small>Wrapper packet outbox</small></div>
+    <div class="metric release-wrapper-federated-packet-inbox"><strong>${escapeHtml(String(releaseFederatedPacketInbox.import_count || 0))}</strong><small>Wrapper packet inbox</small></div>
     <div class="metric"><strong>${escapeHtml(String(releaseTelemetryGrowth.global_captures || 0))}</strong><small>Harness growth captures</small></div>
     <div class="metric release-wrapper-failure-learning"><strong>${escapeHtml(String(releaseTelemetryFailureLearning.captured_count || 0))}</strong><small>failure learning captures</small></div>
     <div class="metric"><strong>${escapeHtml(physiology.thermal_mode || "unknown")}</strong><small>Thermal Mode</small></div>
