@@ -67,6 +67,17 @@ class AcceleratorAdapterObservation(BaseModel):
     probe_source: str | None = None
 
 
+class HardwareProbeObservation(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    probe_id: str
+    available: bool
+    reason_code: str
+    device_count: int = Field(default=0, ge=0)
+    verification_state: VerificationState = "detected"
+    probe_source: str
+
+
 class CalibrationMetric(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -88,6 +99,7 @@ class HardwareCapabilityGraph(BaseModel):
     links: list[HardwareLink]
     adapters: list[AcceleratorAdapterObservation]
     calibration: list[CalibrationMetric] = Field(default_factory=list)
+    discovery_observations: list[HardwareProbeObservation] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_graph_references(self) -> "HardwareCapabilityGraph":

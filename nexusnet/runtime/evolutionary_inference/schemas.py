@@ -12,6 +12,7 @@ from nexusnet.runtime.hardware_contracts import (
     HardwareCapabilityGraph,
     HardwareLink,
     HardwareNode,
+    HardwareProbeObservation,
     VerificationState,
 )
 
