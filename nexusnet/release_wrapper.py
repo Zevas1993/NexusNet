@@ -912,7 +912,7 @@ class ReleaseWrapperRuntime:
             packet=federated_packet,
             provider_id=provider_id,
         )
-        if live_federated_import.get("status") != "skipped-no-federated-packet":
+        if not str(live_federated_import.get("status") or "").startswith("skipped-"):
             interaction["federated_packet_import_id"] = live_federated_import.get("import_id")
             interaction["federated_packet_import_status"] = live_federated_import.get("status")
             interaction["federated_packet_import_source_packet_ref"] = live_federated_import.get(
@@ -1078,6 +1078,16 @@ class ReleaseWrapperRuntime:
             return {
                 "surface_id": "release-wrapper-live-federated-import-readiness",
                 "status": "skipped-no-federated-packet",
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        provider_readiness_status = self._provider_readiness_status(provider_id)
+        if provider_readiness_status != "usable":
+            return {
+                "surface_id": "release-wrapper-live-federated-import-readiness",
+                "status": "skipped-provider-not-usable",
+                "provider_readiness_status": provider_readiness_status,
                 "raw_content_included": False,
                 "active_production_mutation_allowed": False,
                 "active_production_mutated": False,
@@ -6279,7 +6289,7 @@ class ReleaseWrapperRuntime:
                         packet=federated_packet,
                         provider_id=provider_id,
                     )
-                    if live_federated_import.get("status") != "skipped-no-federated-packet":
+                    if not str(live_federated_import.get("status") or "").startswith("skipped-"):
                         probe_interaction["federated_packet_import_id"] = live_federated_import.get("import_id")
                         probe_interaction["federated_packet_import_status"] = live_federated_import.get("status")
                         probe_interaction["federated_packet_import_source_packet_ref"] = (
