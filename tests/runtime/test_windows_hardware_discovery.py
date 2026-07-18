@@ -7,11 +7,112 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
+from nexusnet.runtime.evolutionary_inference.hardware import HardwareCapabilityDiscoverer
 from nexusnet.runtime.evolutionary_inference.windows_hardware import discover_windows_accelerators
 from nexusnet.runtime.evolutionary_inference.schemas import (
     HardwareCapabilityGraph,
     HardwareProbeObservation,
 )
+
+
+def test_hardware_discoverer_delegates_windows_accelerators_once_and_keeps_detected_evidence():
+    cim_json = json.dumps(
+        [
+            {
+                "Name": "Intel(R) UHD Graphics",
+                "PNPDeviceID": "PCI\\VEN_8086&DEV_9A49",
+                "AdapterRAM": str(1024**3),
+                "VideoProcessor": "Intel Xe",
+            },
+            {
+                "Name": "NVIDIA GeForce RTX 5090",
+                "PNPDeviceID": "PCI\\VEN_10DE&DEV_2C05",
+                "AdapterRAM": str(32 * 1024**3),
+                "VideoProcessor": "NVIDIA Ada",
+            },
+        ]
+    )
+    commands: list[tuple[str, ...]] = []
+
+    def runner(command: list[str], timeout: float):
+        commands.append(tuple(command))
+        if command[0] == "powershell.exe":
+            return SimpleNamespace(returncode=0, stdout=cim_json)
+        if command[0] == "nvidia-smi":
+            return SimpleNamespace(returncode=0, stdout="NVIDIA GeForce RTX 5090, 32607, 576.80")
+        raise FileNotFoundError(command[0])
+
+    graph = HardwareCapabilityDiscoverer(
+        command_runner=runner,
+        system_name="Windows",
+        machine="AMD64",
+        processor_name="Test CPU",
+        logical_cpu_count=16,
+        total_memory_bytes=64 * 1024**3,
+        disk_usage_reader=lambda _: SimpleNamespace(total=2 * 1024**4),
+        storage_root="F:/",
+    ).discover()
+
+    assert [node.kind for node in graph.nodes[:3]] == ["cpu", "system-ram", "storage"]
+    gpu_nodes = [node for node in graph.nodes if node.kind == "gpu"]
+    assert [(node.vendor_id, node.backend) for node in gpu_nodes] == [
+        ("8086", "portable"),
+        ("10de", "cuda"),
+    ]
+    accelerator_links = [link for link in graph.links if link.kind == "accelerator-transfer"]
+    assert [link.source_node_id for link in accelerator_links] == ["ram:0", "ram:0"]
+    assert [link.target_node_id for link in accelerator_links] == [node.node_id for node in gpu_nodes]
+    assert len({link.target_node_id for link in accelerator_links}) == 2
+    assert [(item.probe_id, item.reason_code) for item in graph.discovery_observations] == [
+        ("windows-cim-video-controller", "windows-cim-detected"),
+        ("nvidia-smi", "cuda-driver-detected"),
+    ]
+    assert [(item.backend, item.reason_code) for item in graph.adapters] == [
+        ("cuda", "cuda-driver-detected"),
+        ("rocm", "unsupported-platform"),
+        ("metal", "unsupported-platform"),
+    ]
+    assert sum(command[0] == "powershell.exe" for command in commands) == 1
+    assert sum(command[0] == "nvidia-smi" for command in commands) == 1
+    evidence = [*gpu_nodes, *graph.adapters, *graph.discovery_observations]
+    assert all(item.verification_state in {"detected", "unavailable"} for item in evidence)
+
+
+def test_hardware_discoverer_keeps_baseline_nodes_and_sanitized_receipts_when_windows_probes_fail():
+    private_path = "C:/Users/private/hardware-probe.txt"
+    commands: list[tuple[str, ...]] = []
+
+    def failing_runner(command: list[str], timeout: float):
+        commands.append(tuple(command))
+        return SimpleNamespace(returncode=1, stdout=private_path, stderr=private_path)
+
+    graph = HardwareCapabilityDiscoverer(
+        command_runner=failing_runner,
+        system_name="Windows",
+        machine="AMD64",
+        processor_name="Test CPU",
+        logical_cpu_count=16,
+        total_memory_bytes=64 * 1024**3,
+        disk_usage_reader=lambda _: SimpleNamespace(total=2 * 1024**4),
+        storage_root="F:/",
+    ).discover()
+
+    assert [node.kind for node in graph.nodes] == ["cpu", "system-ram", "storage"]
+    assert all(node.kind != "gpu" for node in graph.nodes)
+    assert [(item.probe_id, item.available, item.reason_code) for item in graph.discovery_observations] == [
+        ("windows-cim-video-controller", False, "probe-failed"),
+        ("nvidia-smi", False, "probe-failed"),
+    ]
+    assert [(item.backend, item.available, item.reason_code) for item in graph.adapters] == [
+        ("cuda", False, "probe-failed"),
+        ("rocm", False, "unsupported-platform"),
+        ("metal", False, "unsupported-platform"),
+    ]
+    assert sum(command[0] == "powershell.exe" for command in commands) == 1
+    assert sum(command[0] == "nvidia-smi" for command in commands) == 1
+    serialized = graph.model_dump_json()
+    assert private_path not in serialized
+    assert "stderr" not in serialized
 
 
 def test_windows_cim_discovers_portable_gpu_nodes_without_retaining_pnp_identity():
