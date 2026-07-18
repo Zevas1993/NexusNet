@@ -44,6 +44,28 @@ _HARDWARE_VOCABULARY = frozenset(
         "xe",
     }
 )
+_HARDWARE_DISPLAY_TOKENS = {
+    "adapter": "Adapter",
+    "amd": "AMD",
+    "arc": "Arc",
+    "controller": "Controller",
+    "display": "Display",
+    "geforce": "GeForce",
+    "gpu": "GPU",
+    "graphics": "Graphics",
+    "intel": "Intel",
+    "iris": "Iris",
+    "nvidia": "NVIDIA",
+    "quadro": "Quadro",
+    "radeon": "Radeon",
+    "rtx": "RTX",
+    "tesla": "Tesla",
+    "uhd": "UHD",
+    "video": "Video",
+    "xe": "Xe",
+}
+_SAFE_MODEL_TOKENS = frozenset({"ada", "ai", "max", "pro", "super", "ti", "xt", "xtx"})
+_SAFE_MODEL_IDENTIFIER = re.compile(r"(?:\d{1,5}|[a-z]{1,2}\d{2,5})\Z", re.IGNORECASE)
 _CIM_SCRIPT = (
     "$ErrorActionPreference='Stop'; "
     "@(Get-CimInstance -ClassName Win32_VideoController | "
@@ -339,8 +361,18 @@ def _sanitize_hardware_optional(value: Any) -> str | None:
         or _HOST_STYLE_PAYLOAD.search(rendered)
     ):
         return None
-    tokens = set(re.findall(r"[a-z0-9]+", rendered.lower()))
-    return rendered if tokens & _HARDWARE_VOCABULARY else None
+    normalized: list[str] = []
+    has_hardware_token = False
+    for token in re.findall(r"[A-Za-z0-9]+", rendered):
+        lowered = token.lower()
+        if lowered in _HARDWARE_VOCABULARY:
+            normalized.append(_HARDWARE_DISPLAY_TOKENS[lowered])
+            has_hardware_token = True
+        elif lowered in _SAFE_MODEL_TOKENS:
+            normalized.append(lowered.upper() if lowered == "ai" else lowered.title())
+        elif _SAFE_MODEL_IDENTIFIER.fullmatch(token):
+            normalized.append(token.upper() if token[0].isalpha() else token)
+    return " ".join(normalized) if has_hardware_token and normalized else None
 
 
 def _sanitize_driver_version(value: Any) -> str | None:

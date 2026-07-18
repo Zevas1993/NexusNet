@@ -214,6 +214,34 @@ def test_windows_discovery_rejects_overlong_numeric_driver_versions():
     assert overlong_version not in discovery.nodes[0].model_dump_json()
 
 
+def test_windows_discovery_reconstructs_labels_without_vendor_prefixed_host_bypasses():
+    cim_bypass = "NVIDIA-DESKTOP-7K3M"
+    smi_bypass = "NVIDIA_HOME"
+    cim_json = json.dumps(
+        [
+            {
+                "Name": cim_bypass,
+                "PNPDeviceID": "PCI\\VEN_8086&DEV_9A49",
+                "VideoProcessor": smi_bypass,
+            }
+        ]
+    )
+
+    def runner(command: list[str], timeout: float):
+        if command[0] == "powershell.exe":
+            return SimpleNamespace(returncode=0, stdout=cim_json)
+        return SimpleNamespace(returncode=0, stdout=f"{smi_bypass}, 16303, 596.36")
+
+    discovery = discover_windows_accelerators(runner)
+
+    serialized = "\n".join(node.model_dump_json() for node in discovery.nodes)
+    for prohibited in (cim_bypass, smi_bypass, "DESKTOP", "HOME"):
+        assert prohibited not in serialized
+    assert [node.name for node in discovery.nodes] == ["NVIDIA", "NVIDIA"]
+    assert discovery.nodes[0].architecture == "NVIDIA"
+    assert discovery.nodes[1].driver_version == "596.36"
+
+
 def test_cim_pnp_identity_is_canonicalized_before_deduplication_and_hashing():
     cim_json = json.dumps(
         [
@@ -237,14 +265,14 @@ def test_cim_pnp_identity_is_canonicalized_before_deduplication_and_hashing():
 def test_same_name_nvidia_rows_augment_cim_devices_in_source_order():
     controllers = [
         {"Name": "Intel Graphics", "PNPDeviceID": "PCI\\VEN_8086&DEV_0001"},
-        {"Name": "NVIDIA GeForce RTX", "PNPDeviceID": "PCI\\VEN_10DE&DEV_0001", "VideoProcessor": "NVIDIA Ada One"},
+        {"Name": "NVIDIA GeForce RTX", "PNPDeviceID": "PCI\\VEN_10DE&DEV_0001", "VideoProcessor": "NVIDIA Ada 1"},
     ]
     controllers.extend(
         {"Name": f"Intel Graphics {index}", "PNPDeviceID": f"PCI\\VEN_8086&DEV_{index:04X}"}
         for index in range(2, 8)
     )
     controllers.append(
-        {"Name": "NVIDIA GeForce RTX", "PNPDeviceID": "PCI\\VEN_10DE&DEV_0002", "VideoProcessor": "NVIDIA Ada Two"}
+        {"Name": "NVIDIA GeForce RTX", "PNPDeviceID": "PCI\\VEN_10DE&DEV_0002", "VideoProcessor": "NVIDIA Ada 2"}
     )
 
     def runner(command: list[str], timeout: float):
@@ -260,7 +288,7 @@ def test_same_name_nvidia_rows_augment_cim_devices_in_source_order():
     nvidia = [node for node in discovery.nodes if node.vendor_id == "10de"]
     assert [node.memory_bytes for node in nvidia] == [100 * 1024**2, 200 * 1024**2]
     assert [node.driver_version for node in nvidia] == ["600.01", "600.02"]
-    assert [node.architecture for node in nvidia] == ["NVIDIA Ada One", "NVIDIA Ada Two"]
+    assert [node.architecture for node in nvidia] == ["NVIDIA Ada 1", "NVIDIA Ada 2"]
 
 
 def test_nvidia_matching_uses_exact_original_ordinal_before_fallback():
@@ -283,7 +311,7 @@ def test_nvidia_matching_uses_exact_original_ordinal_before_fallback():
 
     first, second, fallback = discovery.nodes
     assert first.backend == "portable"
-    assert first.name == "NVIDIA GeForce RTX A"
+    assert first.name == "NVIDIA GeForce RTX"
     assert second.backend == "cuda"
     assert second.memory_bytes == 200 * 1024**2
     assert fallback.node_id == "gpu:windows:nvidia-smi:1"
