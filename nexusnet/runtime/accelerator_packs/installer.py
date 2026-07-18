@@ -125,6 +125,7 @@ class PackInstaller:
         verifier: PackVerifier,
         environment_builder: PrivateEnvironmentBuilder | None = None,
         requirements_locks: dict[str, Path] | None = None,
+        environment_lock_root: str | Path | None = None,
     ) -> None:
         self.registry = registry
         self.install_root = Path(install_root).resolve(strict=False)
@@ -132,6 +133,9 @@ class PackInstaller:
         self.verifier = verifier
         self.environment_builder = environment_builder
         self.requirements_locks = dict(requirements_locks or {})
+        self.environment_lock_root = Path(environment_lock_root or self.install_root / "environment-locks").resolve(
+            strict=False
+        )
 
     @staticmethod
     def _install_ref(manifest: RuntimePackManifest) -> str:
@@ -144,6 +148,27 @@ class PackInstaller:
     def _artifact_name(url: str, index: int) -> str:
         name = Path(urlsplit(url).path).name
         return name if index == 0 else f"{index}-{name}"
+
+    def _requirements_lock_for(self, manifest: RuntimePackManifest) -> Path | None:
+        explicit = self.requirements_locks.get(manifest.pack_id)
+        if explicit is not None:
+            return explicit
+        lock_id = manifest.dependency_constraints.get("environment_lock_id")
+        if lock_id is None:
+            return None
+        from .environment_locks import built_in_environment_locks
+
+        environment_lock = next((candidate for candidate in built_in_environment_locks() if candidate.lock_id == lock_id), None)
+        if environment_lock is None:
+            raise PackInstallError("environment-lock-unavailable")
+        return environment_lock.materialize(self.environment_lock_root)
+
+    @staticmethod
+    def _remove_owned_tree(root: Path, target: Path) -> None:
+        resolved_root = root.resolve(strict=False)
+        resolved_target = target.resolve(strict=False)
+        if resolved_target != resolved_root and resolved_root in resolved_target.parents:
+            shutil.rmtree(resolved_target, ignore_errors=True)
 
     def _quarantine(self, manifest: RuntimePackManifest, reason_code: str) -> None:
         try:
@@ -190,7 +215,7 @@ class PackInstaller:
                     root=self.install_root / "environments",
                     pack_id=manifest.pack_id,
                     version=manifest.version,
-                    requirements_lock=self.requirements_locks.get(manifest.pack_id),
+                    requirements_lock=self._requirements_lock_for(manifest),
                 )
             self.registry.transition(
                 manifest.pack_id,
@@ -230,8 +255,27 @@ class PackInstaller:
             raise PackInstallError(verification.reason_code)
         return self.registry.activate(pack_id, version)
 
+    def update(self, manifest: RuntimePackManifest, *, consent: bool) -> RuntimePackRecord:
+        return self.install(manifest, consent=consent)
+
+    def rollback(self, pack_id: str, *, reason_code: str) -> RuntimePackRecord:
+        try:
+            return self.registry.rollback(pack_id, reason_code=reason_code)
+        except RegistryError as error:
+            raise PackInstallError(error.reason_code) from None
+
     def uninstall(self, pack_id: str, version: str) -> RuntimePackRecord:
         record = self.registry.get(pack_id, version)
+        snapshot = self.registry.snapshot()
+        if (
+            snapshot.active_versions.get(pack_id) == version
+            and snapshot.previous_versions.get(pack_id) is not None
+        ):
+            try:
+                self.registry.rollback(pack_id, reason_code="pack-uninstall-rollback")
+                record = self.registry.get(pack_id, version)
+            except RegistryError as error:
+                raise PackInstallError(error.reason_code) from None
         if record.state in {PackLifecycleState.ACTIVE, PackLifecycleState.DEGRADED}:
             record = self.registry.transition(
                 pack_id,
@@ -249,6 +293,7 @@ class PackInstaller:
         removed = self.registry.transition(pack_id, version, PackLifecycleState.REMOVED)
         if install_ref is not None:
             target = (self.install_root / install_ref).resolve(strict=False)
-            if target != self.install_root and self.install_root in target.parents:
-                shutil.rmtree(target, ignore_errors=True)
+            self._remove_owned_tree(self.install_root, target)
+        environment = self.install_root / "environments" / record.manifest.pack_id / record.manifest.version
+        self._remove_owned_tree(self.install_root / "environments", environment)
         return removed

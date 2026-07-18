@@ -6,8 +6,9 @@ from pathlib import Path
 from threading import RLock
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictStr, field_validator, model_validator
 
+from .calibration import CalibrationKey, CalibrationRecord
 from .contracts import ExecutionMode, ModelFormat, WorkloadKind
 
 
@@ -38,6 +39,9 @@ class RouteEvidence(BaseModel):
     correctness_passed: StrictBool
     quarantined: StrictBool = False
     hybrid_offload_verified: StrictBool = False
+    calibration_key: CalibrationKey | None = None
+    calibration_verified: StrictBool = False
+    calibration_outcome: Literal["passed", "failed", "oom"] | None = None
     calibration_score: StrictFloat | None = None
     evidence_refs: tuple[StrictStr, ...] = Field(min_length=1)
 
@@ -55,6 +59,22 @@ class RouteEvidence(BaseModel):
             raise ValueError("evidence references must be sanitized")
         return value
 
+    @model_validator(mode="after")
+    def validate_calibration_identity(self) -> "RouteEvidence":
+        if self.calibration_key is not None and (
+            self.calibration_key.route_id != self.route_id
+            or self.calibration_key.pack_id != self.pack_id
+            or self.calibration_key.pack_version != self.pack_version
+        ):
+            raise ValueError("route calibration key does not match route identity")
+        if self.calibration_verified and (
+            self.calibration_key is None
+            or self.calibration_outcome != "passed"
+            or self.calibration_score is None
+        ):
+            raise ValueError("verified route calibration requires an exact passed record")
+        return self
+
 
 class RouteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -62,6 +82,14 @@ class RouteRequest(BaseModel):
     execution_mode: ExecutionMode = ExecutionMode.AUTO
     workload: WorkloadKind = WorkloadKind.LLM_GENERATE
     model_format: ModelFormat = ModelFormat.TORCH
+    model_hash: StrictStr | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    workload_profile_hash: StrictStr | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_calibration_scope(self) -> "RouteRequest":
+        if (self.model_hash is None) != (self.workload_profile_hash is None):
+            raise ValueError("model and workload profile hashes must be supplied together")
+        return self
 
 
 class RouteDecision(BaseModel):
@@ -89,6 +117,42 @@ class VerifiedRouteSelector:
     def register(self, evidence: RouteEvidence) -> None:
         with self._lock:
             self._evidence[evidence.route_id] = evidence
+
+    def reconcile_calibration(self, record: CalibrationRecord) -> bool:
+        with self._lock:
+            evidence = self._evidence.get(record.key.route_id)
+            if (
+                evidence is None
+                or evidence.pack_id != record.key.pack_id
+                or evidence.pack_version != record.key.pack_version
+            ):
+                return False
+            verified = (
+                record.outcome == "passed"
+                and record.correctness_passed
+                and record.health_passed
+                and record.score is not None
+                and not record.is_stale()
+            )
+            self._evidence[evidence.route_id] = evidence.model_copy(
+                update={
+                    "calibration_key": record.key,
+                    "calibration_verified": verified,
+                    "calibration_outcome": record.outcome,
+                    "calibration_score": record.score if verified else None,
+                    "evidence_refs": tuple(dict.fromkeys((*evidence.evidence_refs, *record.evidence_refs))),
+                }
+            )
+            return True
+
+    def quarantine(self, *, pack_id: str, pack_version: str) -> tuple[str, ...]:
+        with self._lock:
+            quarantined: list[str] = []
+            for route_id, evidence in tuple(self._evidence.items()):
+                if evidence.pack_id == pack_id and evidence.pack_version == pack_version:
+                    self._evidence[route_id] = evidence.model_copy(update={"quarantined": True, "healthy": False})
+                    quarantined.append(route_id)
+            return tuple(sorted(quarantined))
 
     def routes(self) -> tuple[RouteEvidence, ...]:
         with self._lock:
@@ -125,7 +189,41 @@ class VerifiedRouteSelector:
             if (item.device_kind == "cpu" and ExecutionMode.CPU in item.execution_modes)
             or (item.device_kind == "gpu" and ExecutionMode.GPU in item.execution_modes)
         ]
-        return self._decision(candidates, requested_mode, "auto-best-verified-route", "no-verified-route")
+        calibrated = [item for item in candidates if self._calibration_matches(item, request)]
+        if calibrated:
+            return self._decision(
+                calibrated,
+                requested_mode,
+                "auto-calibration-verified",
+                "no-verified-route",
+            )
+        conservative_cpu = [
+            item
+            for item in candidates
+            if item.device_kind == "cpu" and ExecutionMode.CPU in item.execution_modes
+        ]
+        return self._decision(
+            conservative_cpu,
+            requested_mode,
+            "calibration-required",
+            "no-verified-route",
+        )
+
+    @staticmethod
+    def _calibration_matches(evidence: RouteEvidence, request: RouteRequest) -> bool:
+        return bool(
+            evidence.calibration_verified
+            and evidence.calibration_outcome == "passed"
+            and evidence.calibration_score is not None
+            and evidence.calibration_key is not None
+            and request.model_hash is not None
+            and request.workload_profile_hash is not None
+            and evidence.calibration_key.matches_scope(
+                workload=request.workload,
+                model_hash=request.model_hash,
+                workload_profile_hash=request.workload_profile_hash,
+            )
+        )
 
     @staticmethod
     def _decision(
@@ -139,7 +237,9 @@ class VerifiedRouteSelector:
         selected = max(
             candidates,
             key=lambda item: (
-                item.calibration_score if item.calibration_score is not None else 0.0,
+                item.calibration_score
+                if item.calibration_verified and item.calibration_score is not None
+                else 0.0,
                 item.device_kind == "cpu",
                 item.route_id,
             ),

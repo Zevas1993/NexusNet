@@ -202,3 +202,22 @@ def test_pack_installer_uninstall_removes_only_nexusnet_owned_pack_root(tmp_path
     assert removed.state == PackLifecycleState.REMOVED
     assert not pack_root.exists()
     assert unrelated.read_bytes() == b"preserve"
+
+
+def test_pack_installer_uninstall_of_active_update_restores_rollback_predecessor(tmp_path, manifest_factory):
+    registry = RuntimePackRegistry(tmp_path / "registry.json")
+    installer = PackInstaller(
+        registry=registry,
+        install_root=tmp_path / "installed",
+        acquirer=None,
+        verifier=lambda _manifest, _root: PackVerification(True, True, "pack-verified"),
+    )
+    v1 = manifest_factory(version="1.0.0", artifacts=[], rollback_compatible_from=[])
+    v2 = manifest_factory(version="2.0.0", artifacts=[], rollback_compatible_from=["1.0.0"])
+    installer.install(v1, consent=True)
+    installer.install(v2, consent=True)
+
+    removed = installer.uninstall(v2.pack_id, v2.version)
+
+    assert removed.state == PackLifecycleState.REMOVED
+    assert registry.active(v1.pack_id).manifest.version == "1.0.0"

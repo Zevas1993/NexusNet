@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -9,6 +10,7 @@ from nexus.runtimes import RuntimeRegistry
 from nexus.runtimes.base import RuntimeAdapter
 from nexus.storage import NexusStore
 from nexusnet.runtime.accelerator_packs.route_selection import RouteEvidence, RouteUnavailableError
+from nexusnet.runtime.accelerator_packs.calibration import CalibrationKey, CalibrationRecord
 
 
 class _PackAdapter(RuntimeAdapter):
@@ -72,3 +74,107 @@ def test_runtime_registry_operator_mode_survives_restart(tmp_path: Path) -> None
     assert second.accelerator_status()["mode"]["requested_mode"] == "Both"
     with pytest.raises(RouteUnavailableError, match="hybrid-route-unverified"):
         second.choose_execution_route()
+
+
+def test_runtime_registry_reconciles_exact_calibration_and_sanitizes_status(tmp_path: Path) -> None:
+    registry = _registry(tmp_path)
+    key = CalibrationKey(
+        route_id="cuda",
+        pack_id="org.nexusnet.cuda",
+        pack_version="1.0.0",
+        worker_version="1.0.0",
+        device_fingerprint="device::" + "1" * 32,
+        driver_version="driver-1.0",
+        model_hash="a" * 64,
+        workload="llm-generate",
+        workload_profile_hash="b" * 64,
+    )
+    now = datetime.now(timezone.utc)
+    record = CalibrationRecord(
+        key=key,
+        outcome="passed",
+        correctness_passed=True,
+        health_passed=True,
+        score=8.0,
+        latency_ms=5.0,
+        throughput_units_per_s=200.0,
+        peak_memory_bytes=1024,
+        measured_at=now,
+        valid_until=now + timedelta(days=1),
+        evidence_refs=("receipt::calibration",),
+    )
+    evidence = RouteEvidence(
+        route_id="cuda",
+        pack_id="org.nexusnet.cuda",
+        pack_version="1.0.0",
+        device_node_id="PCI\\VEN_10DE&DEV_PRIVATE",
+        device_kind="gpu",
+        execution_modes=("gpu",),
+        verified=True,
+        healthy=True,
+        correctness_passed=True,
+        calibration_key=key,
+        evidence_refs=("receipt::cuda",),
+    )
+    adapter = _PackAdapter({})
+
+    registry.record_accelerator_calibration(record)
+    registry.register_accelerator_route(evidence, adapter)
+
+    assert registry.choose_execution_route(
+        "Auto",
+        model_hash="a" * 64,
+        workload_profile_hash="b" * 64,
+    ) is adapter
+    status = registry.accelerator_status()
+    route = status["routes"][0]
+    assert route["calibration_verified"] is True
+    assert "device_node_id" not in route
+    assert route["device_ref"].startswith("device::")
+    assert "VEN_10DE" not in str(status)
+    assert set(status) == {
+        "status_label",
+        "mode",
+        "routes",
+        "active_decision",
+        "calibration",
+        "circuits",
+        "certification",
+    }
+
+
+def test_runtime_registry_opens_route_circuit_without_silent_fallback(tmp_path: Path) -> None:
+    registry = _registry(tmp_path)
+    key = CalibrationKey(
+        route_id="cuda",
+        pack_id="org.nexusnet.cuda",
+        pack_version="1.0.0",
+        worker_version="1.0.0",
+        device_fingerprint="device::" + "1" * 32,
+        driver_version="driver-1.0",
+        model_hash="a" * 64,
+        workload="llm-generate",
+        workload_profile_hash="b" * 64,
+    )
+    evidence = RouteEvidence(
+        route_id="cuda",
+        pack_id=key.pack_id,
+        pack_version=key.pack_version,
+        device_node_id="gpu:0",
+        device_kind="gpu",
+        execution_modes=("gpu",),
+        verified=True,
+        healthy=True,
+        correctness_passed=True,
+        calibration_key=key,
+        evidence_refs=("receipt::cuda",),
+    )
+    registry.register_accelerator_route(evidence, _PackAdapter({}))
+
+    for _ in range(3):
+        registry.record_accelerator_failure("cuda", reason_code="worker-crashed")
+
+    assert registry.accelerator_status()["circuits"]["open_count"] == 1
+    assert registry.accelerator_status()["routes"][0]["quarantined"] is True
+    with pytest.raises(RouteUnavailableError, match="accelerator-route-unavailable"):
+        registry.choose_execution_route("GPU")

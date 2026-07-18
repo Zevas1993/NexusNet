@@ -5792,6 +5792,11 @@ def create_app(project_root: str | None = None) -> FastAPI:
     def ops_runtime_acceleration():
         return services.runtime_registry.accelerator_status()
 
+    @application.get("/ops/runtime-acceleration/certification")
+    @application.get("/api/runtime-packs/certification")
+    def ops_runtime_acceleration_certification():
+        return services.runtime_registry.accelerator_status()["certification"]
+
     @application.put("/ops/runtime-acceleration/mode")
     @application.put("/api/runtime-packs/mode")
     def set_ops_runtime_acceleration_mode(payload: dict[str, Any] = Body(...)):

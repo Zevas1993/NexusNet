@@ -58,7 +58,7 @@ def test_forced_modes_never_silently_fall_back() -> None:
     assert "cpu" not in gpu.reason_codes
 
 
-def test_auto_uses_only_verified_healthy_correct_routes() -> None:
+def test_auto_uses_conservative_verified_cpu_without_exact_calibration() -> None:
     selector = VerifiedRouteSelector(
         [
             _route("cpu", device_kind="cpu", modes=("cpu",), score=1.0),
@@ -71,8 +71,8 @@ def test_auto_uses_only_verified_healthy_correct_routes() -> None:
     decision = selector.select(RouteRequest(execution_mode="auto"))
 
     assert decision.available is True
-    assert decision.route_id == "cuda"
-    assert decision.reason_codes == ("auto-best-verified-route",)
+    assert decision.route_id == "cpu"
+    assert decision.reason_codes == ("calibration-required",)
 
 
 def test_hybrid_requires_explicitly_verified_hybrid_offload() -> None:

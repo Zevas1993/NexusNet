@@ -5685,11 +5685,14 @@ async function loadSandboxAgentFactoryScorecard(session) {
 
 async function loadRuntimeAcceleration() {
   const payload = await fetchJSON("/api/runtime-packs/status");
+  const certification = payload.certification || await fetchJSON("/api/runtime-packs/certification");
   dom.runtimeAccelerationMode.value = payload.mode.requested_mode;
   const decision = payload.active_decision || {};
+  const calibrationSummary = `${certification.calibrated_route_count || 0}/${certification.verified_route_count || 0} calibrated`;
+  const blockers = (certification.blocker_codes || []).join(", ");
   dom.runtimeAccelerationStatus.textContent = decision.available
-    ? `${decision.route_id} (${payload.status_label})`
-    : `${payload.status_label}: ${(decision.reason_codes || []).join(", ")}`;
+    ? `${decision.route_id} (${payload.status_label}; ${calibrationSummary})`
+    : `${payload.status_label}: ${(decision.reason_codes || []).join(", ")} (${certification.support_state}; ${blockers})`;
 }
 
 async function applyRuntimeAccelerationMode() {
