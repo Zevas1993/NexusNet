@@ -1160,6 +1160,19 @@ class ReleaseWrapperRuntime:
         interaction: dict[str, Any],
     ) -> dict[str, Any]:
         session_ref_digest = _session_ref_digest(session_id)
+        if self.production_spine is None:
+            return {
+                "surface_id": "release-wrapper-live-release-supervisor-product-lifecycle",
+                "status": "degraded-production-spine-unavailable",
+                "production_spine_release_lifecycle_run_id": None,
+                "production_spine_release_lifecycle_rollback_id": None,
+                "boot_supervisor_manifest_id": None,
+                "initial_release_supervisor_manifest_id": None,
+                "blocker": "production_spine_unavailable",
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
         existing_lifecycle = self.production_spine_release_lifecycle(session_id=session_id)
         existing_run = (
             existing_lifecycle.get("latest_run")
