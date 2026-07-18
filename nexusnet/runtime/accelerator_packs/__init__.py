@@ -20,6 +20,14 @@ from .installer import (
     PrivateEnvironmentBuilder,
 )
 from .registry import RegistryError, RuntimePackRecord, RuntimePackRegistry
+from .route_selection import (
+    RouteDecision,
+    RouteEvidence,
+    RouteRequest,
+    RouteUnavailableError,
+    RuntimeModeStore,
+    VerifiedRouteSelector,
+)
 from .supervisor import WorkerSupervisor, WorkerSupervisorError
 from .worker_factory import WorkerAdapterFactory, WorkerFactoryError
 
@@ -44,9 +52,14 @@ __all__ = [
     "ProtocolError",
     "PrivateEnvironmentBuilder",
     "RegistryError",
+    "RouteDecision",
+    "RouteEvidence",
+    "RouteRequest",
+    "RouteUnavailableError",
     "RuntimePackManifest",
     "RuntimePackRecord",
     "RuntimePackRegistry",
+    "RuntimeModeStore",
     "WorkerFrame",
     "WorkerAdapterFactory",
     "WorkerFactoryError",
@@ -55,4 +68,5 @@ __all__ = [
     "WorkerSupervisor",
     "WorkerSupervisorError",
     "WorkloadKind",
+    "VerifiedRouteSelector",
 ]

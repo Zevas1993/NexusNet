@@ -3,6 +3,9 @@ const dom = {
   connectionText: document.getElementById("connectionText"),
   sessionInput: document.getElementById("sessionInput"),
   refreshButton: document.getElementById("refreshButton"),
+  runtimeAccelerationMode: document.getElementById("runtimeAccelerationMode"),
+  runtimeAccelerationApply: document.getElementById("runtimeAccelerationApply"),
+  runtimeAccelerationStatus: document.getElementById("runtimeAccelerationStatus"),
   canonCommandForm: document.getElementById("canonCommandForm"),
   canonCommandInput: document.getElementById("canonCommandInput"),
   canonCommandPriority: document.getElementById("canonCommandPriority"),
@@ -5680,12 +5683,38 @@ async function loadSandboxAgentFactoryScorecard(session) {
   }
 }
 
+async function loadRuntimeAcceleration() {
+  const payload = await fetchJSON("/api/runtime-packs/status");
+  dom.runtimeAccelerationMode.value = payload.mode.requested_mode;
+  const decision = payload.active_decision || {};
+  dom.runtimeAccelerationStatus.textContent = decision.available
+    ? `${decision.route_id} (${payload.status_label})`
+    : `${payload.status_label}: ${(decision.reason_codes || []).join(", ")}`;
+}
+
+async function applyRuntimeAccelerationMode() {
+  dom.runtimeAccelerationApply.disabled = true;
+  try {
+    await fetchJSON("/api/runtime-packs/mode", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: dom.runtimeAccelerationMode.value }),
+    });
+    await loadRuntimeAcceleration();
+  } catch (error) {
+    dom.runtimeAccelerationStatus.textContent = error.message;
+  } finally {
+    dom.runtimeAccelerationApply.disabled = false;
+  }
+}
+
 dom.sessionInput.value = sessionId();
 dom.refreshButton.addEventListener("click", () => {
   loadControlPanel().catch((error) => {
     setConnection("error", error.message);
   });
 });
+dom.runtimeAccelerationApply.addEventListener("click", applyRuntimeAccelerationMode);
 dom.sessionInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     localStorage.setItem("nn_session", dom.sessionInput.value || sessionId());
@@ -5709,4 +5738,7 @@ dom.datasetForgeManifestForm.addEventListener("submit", submitDatasetForgeManife
 
 loadControlPanel().catch((error) => {
   setConnection("error", error.message);
+});
+loadRuntimeAcceleration().catch((error) => {
+  dom.runtimeAccelerationStatus.textContent = error.message;
 });

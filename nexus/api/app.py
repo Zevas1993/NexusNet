@@ -5787,6 +5787,19 @@ def create_app(project_root: str | None = None) -> FastAPI:
     def ops_runtimes():
         return {"runtimes": [profile.model_dump(mode="json") for profile in services.runtime_registry.list_profiles()]}
 
+    @application.get("/ops/runtime-acceleration")
+    @application.get("/api/runtime-packs/status")
+    def ops_runtime_acceleration():
+        return services.runtime_registry.accelerator_status()
+
+    @application.put("/ops/runtime-acceleration/mode")
+    @application.put("/api/runtime-packs/mode")
+    def set_ops_runtime_acceleration_mode(payload: dict[str, Any] = Body(...)):
+        try:
+            return services.runtime_registry.set_execution_mode(payload.get("mode"))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     @application.get("/ops/tools")
     def ops_tools():
         entries = []

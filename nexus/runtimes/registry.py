@@ -10,6 +10,14 @@ from ..config import NexusPaths, env_flag
 from ..schemas import Message, RuntimeProfile
 from ..storage import NexusStore
 from .base import RuntimeAdapter, prompt_from_messages
+from nexusnet.runtime.accelerator_packs.route_selection import (
+    RouteEvidence,
+    RouteRequest,
+    RouteUnavailableError,
+    RuntimeModeStore,
+    VerifiedRouteSelector,
+    normalize_execution_mode,
+)
 
 
 class MockRuntimeAdapter(RuntimeAdapter):
@@ -206,6 +214,9 @@ class RuntimeRegistry:
             "transformers": TransformersRuntimeAdapter(inference_cfg.get("transformers", {})),
             "llama.cpp": LlamaCppRuntimeAdapter(inference_cfg.get("llama_cpp", {})),
         }
+        self._accelerator_adapters: dict[str, RuntimeAdapter] = {}
+        self._accelerator_selector = VerifiedRouteSelector()
+        self._runtime_mode_store = RuntimeModeStore(paths.state_dir / "runtime-acceleration-mode.json")
 
     def bootstrap(self) -> None:
         self.refresh_profiles()
@@ -233,6 +244,50 @@ class RuntimeRegistry:
             if profile.available:
                 return self.adapters[runtime_name]
         return self.adapters["mock"]
+
+    def register_accelerator_route(self, evidence: RouteEvidence, adapter: RuntimeAdapter) -> None:
+        if not evidence.verified or not evidence.healthy or not evidence.correctness_passed or evidence.quarantined:
+            raise ValueError("accelerator routes require verified, healthy correctness evidence")
+        self._accelerator_adapters[evidence.route_id] = adapter
+        self._accelerator_selector.register(evidence)
+
+    def choose_execution_route(self, mode: str | None = None) -> RuntimeAdapter:
+        stored_mode = self._runtime_mode_store.status()["execution_mode"]
+        execution_mode = normalize_execution_mode(mode or stored_mode)
+        decision = self._accelerator_selector.select(RouteRequest(execution_mode=execution_mode))
+        if not decision.available or decision.route_id is None:
+            raise RouteUnavailableError(",".join(decision.reason_codes))
+        return self._accelerator_adapters[decision.route_id]
+
+    def set_execution_mode(self, requested_mode: str) -> dict[str, Any]:
+        self._runtime_mode_store.set_mode(requested_mode)
+        return self.accelerator_status()
+
+    def accelerator_status(self) -> dict[str, Any]:
+        mode = self._runtime_mode_store.status()
+        decision = self._accelerator_selector.select(RouteRequest(execution_mode=mode["execution_mode"]))
+        routes = [
+            {
+                "route_id": evidence.route_id,
+                "pack_id": evidence.pack_id,
+                "pack_version": evidence.pack_version,
+                "device_node_id": evidence.device_node_id,
+                "device_kind": evidence.device_kind,
+                "execution_modes": [item.value for item in evidence.execution_modes],
+                "verified": evidence.verified,
+                "healthy": evidence.healthy,
+                "correctness_passed": evidence.correctness_passed,
+                "quarantined": evidence.quarantined,
+                "calibration_score": evidence.calibration_score,
+            }
+            for evidence in self._accelerator_selector.routes()
+        ]
+        return {
+            "status_label": "VERIFIED" if decision.available else "DEGRADED",
+            "mode": mode,
+            "routes": routes,
+            "active_decision": decision.model_dump(mode="json"),
+        }
 
 
 def _verified_runtime_parameters(metadata: dict[str, Any] | None) -> dict[str, Any]:

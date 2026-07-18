@@ -34,5 +34,6 @@ nexusnet-bootstrap = "nexusnet.cli.bootstrap:main"
 nexusnet-qes = "nexusnet.cli.qes:main"
 nexusnet-router-train = "nexusnet.cli.router_train:main"
 nexusnet-runtime-packs = "nexusnet.cli.runtime_packs:main"
+nexusnet-runtime-mode = "nexusnet.cli.runtime_mode:main"
 
 nexusnet-config = "nexusnet.cli.config:main"

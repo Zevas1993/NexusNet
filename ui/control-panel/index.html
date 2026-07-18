@@ -27,6 +27,19 @@
               <button id="refreshButton" type="button" title="Refresh live state">Refresh</button>
             </div>
           </div>
+          <div class="session-box runtime-acceleration-control">
+            <label for="runtimeAccelerationMode">Runtime Acceleration</label>
+            <div class="input-row">
+              <select id="runtimeAccelerationMode" title="Choose automatic, CPU, GPU, or verified hybrid execution">
+                <option value="Auto">Auto</option>
+                <option value="CPU">CPU</option>
+                <option value="GPU">GPU</option>
+                <option value="Both">Both</option>
+              </select>
+              <button id="runtimeAccelerationApply" type="button">Apply</button>
+            </div>
+            <small id="runtimeAccelerationStatus">Loading verified runtime routes...</small>
+          </div>
           <form id="canonCommandForm" class="session-box command-box">
             <label for="canonCommandInput">Issue NexusBrain Command</label>
             <textarea id="canonCommandInput" rows="3" placeholder="Command the NexusBrain, AO hive, expert hive, tools, memory, or evolution loop"></textarea>
