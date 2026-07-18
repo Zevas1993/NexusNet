@@ -1369,11 +1369,11 @@ function renderLivePosture() {
     <div class="metric release-wrapper-import-receipt"><strong>${escapeHtml(latestFederatedImportReceipt.status || "not-imported")}</strong><small>Harness import receipt</small></div>
     <div class="metric release-wrapper-self-repair-operation-receipt"><strong>${escapeHtml(String(releaseSelfRepairOperationReceiptActions.length || 0))}</strong><small>self-repair operation receipt</small></div>
     <div class="metric release-wrapper-canonical-ao-coverage"><strong>${escapeHtml(String(releaseCanonicalAoCoverage.receipt_count || 0))}</strong><small>Wrapper canonical AOs</small></div>
-    <div class="metric release-wrapper-domain-ao-routing"><strong>${escapeHtml(releaseDomainAoRouting.latest_domain_ao || "not-routed")}</strong><small>Harness domain AO</small></div>
-    <div class="metric release-wrapper-domain-teacher-eval"><strong>${escapeHtml(releaseDomainTeacherEval.latest_domain_ao || "not-linked")}</strong><small>Harness domain teacher/eval</small></div>
-    <div class="metric release-wrapper-expert-growth"><strong>${escapeHtml(String(releaseDomainTeacherEval.expert_growth_candidate_count || 0))}</strong><small>Harness expert growth</small></div>
-    <div class="metric release-wrapper-expert-growth-admin-replay"><strong>${escapeHtml(releaseDomainTeacherEval.latest_admin_eval_replay_status || "not-run")}</strong><small>Harness expert replay</small></div>
-    <div class="metric release-wrapper-expert-growth-sandbox-takeover"><strong>${escapeHtml(releaseDomainTeacherEval.latest_sandbox_takeover_evidence_status || "not-run")}</strong><small>Harness takeover evidence</small></div>
+    <div class="metric release-wrapper-domain-ao-routing"><strong>${escapeHtml(releaseDomainAoRouting.latest_domain_ao || "not-routed")}</strong><small>Wrapper domain AO</small></div>
+    <div class="metric release-wrapper-domain-teacher-eval"><strong>${escapeHtml(releaseDomainTeacherEval.latest_domain_ao || "not-linked")}</strong><small>Wrapper domain teacher/eval</small></div>
+    <div class="metric release-wrapper-expert-growth"><strong>${escapeHtml(String(releaseDomainTeacherEval.expert_growth_candidate_count || 0))}</strong><small>Wrapper expert growth</small></div>
+    <div class="metric release-wrapper-expert-growth-admin-replay"><strong>${escapeHtml(releaseDomainTeacherEval.latest_admin_eval_replay_status || "not-run")}</strong><small>Wrapper expert replay</small></div>
+    <div class="metric release-wrapper-expert-growth-sandbox-takeover"><strong>${escapeHtml(releaseDomainTeacherEval.latest_sandbox_takeover_evidence_status || "not-run")}</strong><small>Wrapper takeover evidence</small></div>
     <div class="metric release-wrapper-context-window-posture"><strong>${escapeHtml(String(releaseContextWindowPosture.observed_effective_context_tokens || 0))}</strong><small>Harness effective ctx tokens</small></div>
     <div class="metric release-wrapper-context-capability"><strong>${escapeHtml(String(releaseContextCapability.host_context_cap_tokens || 0))}</strong><small>Harness context cap</small></div>
     <div class="metric release-wrapper-provider-readiness"><strong>${escapeHtml(String(releaseProviderReadiness.usable_provider_count || 0))}</strong><small>Wrapper usable providers</small></div>

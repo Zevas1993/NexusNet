@@ -861,14 +861,21 @@ class ReleaseWrapperRuntime:
         self._interactions = self._interactions[:50]
         if isinstance(interaction.get("domain_teacher_eval_handoff"), dict):
             handoff = interaction["domain_teacher_eval_handoff"]
-            domain_replay = self.approve_domain_expert_growth_admin_replay(
-                session_id=session_id,
-                domain_ao=str(handoff.get("domain_ao") or ""),
-                handoff_id=str(handoff.get("handoff_id") or ""),
-                approved_by="admin",
-                approval_ref="operator-review::release-wrapper-domain-expert-growth-auto-replay",
-                requested_decision="approved",
-            )
+            handoff["admin_replay_status"] = "pending-admin-approval"
+            domain_replay = {
+                "surface_id": "release-wrapper-domain-expert-growth-admin-replay",
+                "status": "pending-admin-approval",
+                "session_ref_digest": interaction.get("session_ref_digest"),
+                "domain_ao": handoff.get("domain_ao"),
+                "teacher_subject": handoff.get("teacher_subject"),
+                "handoff_id": handoff.get("handoff_id"),
+                "approval_required": True,
+                "approval_endpoint": "/ops/approvals",
+                "execution_endpoint": "/ops/wrapper/domain-expert-growth/admin-replay",
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "mutation_boundary": "live-domain-handoff-proposal-only-until-explicit-admin-replay",
+            }
             interaction["domain_expert_growth_admin_replay"] = domain_replay
             interaction["domain_expert_growth_admin_replay_status"] = domain_replay.get("status")
         self._native_hive_heartbeats.insert(0, native_hive_heartbeat_record)
