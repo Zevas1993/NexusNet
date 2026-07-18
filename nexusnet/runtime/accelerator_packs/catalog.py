@@ -6,6 +6,7 @@ from typing import Literal
 from nexusnet.runtime.hardware_contracts import HardwareCapabilityGraph, HardwareNode
 
 from .contracts import RuntimePackManifest
+from .windows_ml import WindowsMlDiscovery, WindowsMlProviderObservation
 
 
 @dataclass(frozen=True)
@@ -78,8 +79,45 @@ def _cuda_manifest() -> RuntimePackManifest:
     )
 
 
+def _windows_ml_manifest(provider: WindowsMlProviderObservation) -> RuntimePackManifest:
+    is_cpu = provider.backend == "cpu"
+    suffix = "cpu" if is_cpu else "directml"
+    return RuntimePackManifest.model_validate(
+        {
+            "pack_id": f"org.nexusnet.windows-ml.{suffix}",
+            "version": "1.0.0",
+            "pack_type": "python-worker",
+            "publisher": "NexusNet",
+            "license_id": "MIT",
+            "supported_os": ["windows"],
+            "architectures": ["amd64"],
+            "workload_kinds": ["native-moe"],
+            "model_formats": ["onnx"],
+            "accelerator_apis": ["cpu" if is_cpu else "directml"],
+            "device_matches": [{"accelerator_apis": ["cpu" if is_cpu else "directml"]}],
+            "minimum_os_build": 26100,
+            "launch": {
+                "command": ["python", "-m", "nexusnet.runtime.accelerator_packs.workers.onnx_worker"],
+                "environment_allowlist": ["NEXUSNET_MODEL_ROOT", "NEXUSNET_ONNX_PROVIDER"],
+            },
+            "execution_modes": ["cpu" if is_cpu else "gpu"],
+            "health_probe": _probe("health", 15_000),
+            "self_test_probe": _probe("self_test", 30_000),
+            "benchmark_probe": _probe("benchmark", 60_000),
+            "artifacts": [],
+            "capabilities": ["onnx-inference", "explicit-provider-selection"],
+            "known_limitations": ["provider-correctness-required-before-activation"],
+        }
+    )
+
+
 class BuiltInPackCatalog:
-    def candidates(self, graph: HardwareCapabilityGraph) -> tuple[PackCandidate, ...]:
+    def candidates(
+        self,
+        graph: HardwareCapabilityGraph,
+        *,
+        windows_ml: WindowsMlDiscovery | None = None,
+    ) -> tuple[PackCandidate, ...]:
         cpu = next((node for node in graph.nodes if node.kind == "cpu"), None)
         candidates: list[PackCandidate] = []
         if cpu is not None:
@@ -99,6 +137,22 @@ class BuiltInPackCatalog:
                             reason_codes=("cuda-driver-detected", "runtime-pack-unverified"),
                         )
                     )
+        if windows_ml is not None and windows_ml.available:
+            known_nodes = {node.node_id for node in graph.nodes}
+            for provider in windows_ml.providers:
+                if provider.state != "ready" or not provider.certified or provider.device_node_id not in known_nodes:
+                    continue
+                candidates.append(
+                    PackCandidate(
+                        manifest=_windows_ml_manifest(provider),
+                        device_node_id=provider.device_node_id,
+                        reason_codes=(
+                            "windows-ml-provider-enumerated",
+                            "provider-correctness-unverified",
+                            "runtime-pack-unverified",
+                        ),
+                    )
+                )
         return tuple(candidates)
 
     @staticmethod

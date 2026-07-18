@@ -30,6 +30,12 @@ from .route_selection import (
 )
 from .supervisor import WorkerSupervisor, WorkerSupervisorError
 from .worker_factory import WorkerAdapterFactory, WorkerFactoryError
+from .windows_ml import (
+    WindowsMlCatalog,
+    WindowsMlDiscovery,
+    WindowsMlProviderDecision,
+    WindowsMlProviderObservation,
+)
 
 __all__ = [
     "AcquiredArtifact",
@@ -69,4 +75,8 @@ __all__ = [
     "WorkerSupervisorError",
     "WorkloadKind",
     "VerifiedRouteSelector",
+    "WindowsMlCatalog",
+    "WindowsMlDiscovery",
+    "WindowsMlProviderDecision",
+    "WindowsMlProviderObservation",
 ]
