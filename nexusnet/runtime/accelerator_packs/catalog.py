@@ -7,6 +7,7 @@ from nexusnet.runtime.hardware_contracts import HardwareCapabilityGraph, Hardwar
 
 from .contracts import RuntimePackManifest
 from .windows_ml import WindowsMlDiscovery, WindowsMlProviderObservation
+from .vendor_packs import VendorPackCatalog
 
 
 @dataclass(frozen=True)
@@ -153,6 +154,7 @@ class BuiltInPackCatalog:
                         ),
                     )
                 )
+        candidates.extend(VendorPackCatalog().candidates(graph))
         return tuple(candidates)
 
     @staticmethod

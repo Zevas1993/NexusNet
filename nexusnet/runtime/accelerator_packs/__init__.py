@@ -36,6 +36,7 @@ from .windows_ml import (
     WindowsMlProviderDecision,
     WindowsMlProviderObservation,
 )
+from .vendor_packs import VendorPackCandidate, VendorPackCatalog, VendorSupportRecord
 
 __all__ = [
     "AcquiredArtifact",
@@ -79,4 +80,7 @@ __all__ = [
     "WindowsMlDiscovery",
     "WindowsMlProviderDecision",
     "WindowsMlProviderObservation",
+    "VendorPackCandidate",
+    "VendorPackCatalog",
+    "VendorSupportRecord",
 ]
