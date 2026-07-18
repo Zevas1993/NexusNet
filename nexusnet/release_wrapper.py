@@ -904,6 +904,7 @@ class ReleaseWrapperRuntime:
             session_id=session_id,
             loop=automatic_repair_loop,
             trigger="wrapper-interaction-auto",
+            auto_execute=supervisor_tick.get("pulse_emitted") is True,
         )
         if automatic_repair_plan.get("status") != "not-required":
             interaction["release_health_automatic_repair_plan"] = automatic_repair_plan
@@ -1725,14 +1726,15 @@ class ReleaseWrapperRuntime:
                     requested_actions=[
                         {
                             "action_id": "release-wrapper-degraded-recovery-probe",
-                            "action_type": "write",
+                            "action_type": "inspect",
                             "target_ref": f"model::{_safe_ref(source_model)}",
                             "metadata": {
                                 "governed_recovery_probe": True,
+                                "read_only": True,
                                 "active_production_mutation_allowed": False,
-                                "requires_admin_approval": True,
-                                "requires_sandbox_eval": True,
-                                "requires_rollback": True,
+                                "requires_admin_approval": False,
+                                "requires_sandbox_eval": False,
+                                "requires_rollback": False,
                             },
                         }
                     ],
@@ -2048,6 +2050,7 @@ class ReleaseWrapperRuntime:
             session_id=session_id,
             loop=automatic_release_health,
             trigger="wrapper-interaction-auto",
+            auto_execute=supervisor_tick.get("pulse_emitted") is True,
         )
         if automatic_repair_plan.get("status") != "not-required":
             interaction["release_health_automatic_repair_plan"] = automatic_repair_plan
@@ -3472,7 +3475,15 @@ class ReleaseWrapperRuntime:
             for run in self._release_readiness_evidence_runs
             if not session_ref_digest or str(run.get("session_ref_digest") or "") == session_ref_digest
         ]
-        latest = runs[-1] if runs else None
+        latest = next(
+            (
+                run
+                for run in reversed(runs)
+                if str(run.get("status") or "")
+                != "planned-admin-approval-required-heartbeat-supervisor-repair"
+            ),
+            runs[-1] if runs else None,
+        )
         latest_heartbeat_repair = next(
             (
                 run
@@ -5617,6 +5628,7 @@ class ReleaseWrapperRuntime:
         session_id: str,
         loop: dict[str, Any],
         trigger: str,
+        auto_execute: bool,
     ) -> dict[str, Any]:
         repair_queue = loop.get("repair_queue") if isinstance(loop.get("repair_queue"), dict) else {}
         update_id = str(repair_queue.get("latest_update_id") or "")
@@ -5695,6 +5707,49 @@ class ReleaseWrapperRuntime:
         ):
             self.eval_registry.register(repair_plan["eval_suite_request"])
 
+        planned_envelopes = (
+            repair_plan.get("subsystem_repair_envelopes")
+            if isinstance(repair_plan.get("subsystem_repair_envelopes"), list)
+            else []
+        )
+        if not auto_execute:
+            pending_status = "planned-admin-approval-required-heartbeat-supervisor-repair"
+            readiness_run = self.record_release_readiness_evidence_run(
+                session_id=session_id,
+                update_id=update_id,
+                command=str(repair_plan.get("command") or command),
+                actions={},
+                status=pending_status,
+                subsystem_repair_envelopes=planned_envelopes,
+            )
+            return {
+                "surface_id": "release-health-automatic-repair-envelope-plan",
+                "status": pending_status,
+                "run_id": readiness_run.get("run_id"),
+                "update_id": update_id,
+                "safe_update_id": _safe_ref(update_id),
+                "source_loop_id": loop_id,
+                "source_heartbeat_id": latest_heartbeat_id,
+                "admin_approval_ref": repair_plan.get("approval_ref"),
+                "actions": {},
+                "readiness_evidence_run": readiness_run,
+                "lifecycle_run_id": None,
+                "lifecycle_status": "pending-admin-approval",
+                "subsystem_repair_envelopes": planned_envelopes,
+                "subsystem_repair_envelope_count": len(planned_envelopes),
+                "subsystem_repair_envelope_refs": [
+                    str(envelope.get("envelope_id") or "")
+                    for envelope in planned_envelopes
+                    if isinstance(envelope, dict)
+                ],
+                "run_release_health_heartbeat_supervisor_repair_ref": (
+                    "/ops/wrapper/release-health-heartbeat/supervisor/repair-run"
+                ),
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+
         lifecycle_run = self._record_autonomous_update_governance_lifecycle(
             session_id=session_id,
             update_id=update_id,
@@ -5711,11 +5766,6 @@ class ReleaseWrapperRuntime:
             else {"status": "not-linked", "update_id": update_id}
         )
         actions["shadow_eval_replay"] = linked_eval_replay
-        planned_envelopes = (
-            repair_plan.get("subsystem_repair_envelopes")
-            if isinstance(repair_plan.get("subsystem_repair_envelopes"), list)
-            else []
-        )
         envelopes = build_completed_release_health_heartbeat_subsystem_repair_envelopes(
             planned_envelopes,
             actions=actions,

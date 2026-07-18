@@ -1231,6 +1231,7 @@ def test_degraded_provider_forward_pass_records_cache_evidence_and_replays_after
         "production_spine": "covered",
         "developmental_cortex": "covered",
         "authority_evals_tools": "covered",
+        "ao_runtime_governance": "covered",
         "dream_research": "covered",
         "self_repair_update_governance": "covered",
         "storage_replay": "covered",
