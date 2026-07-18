@@ -9,6 +9,28 @@ from nexusnet.runtime.evolutionary_inference.schemas import (
 )
 
 
+@pytest.mark.parametrize(
+    ("field_name", "raw_value"),
+    [
+        ("probe_id", "PCI\\\\VEN_10DE&DEV_2C05"),
+        ("reason_code", "C:/Users/private"),
+        ("probe_source", "COMPUTERNAME=HOST"),
+        ("reason_code", "command output\\nwith multiple lines"),
+    ],
+)
+def test_hardware_probe_observation_rejects_raw_or_sensitive_receipt_values(field_name, raw_value):
+    observation = {
+        "probe_id": "windows-cim-video-controller",
+        "available": False,
+        "reason_code": "cim-query-failed",
+        "probe_source": "windows-cim",
+    }
+    observation[field_name] = raw_value
+
+    with pytest.raises(ValidationError):
+        HardwareProbeObservation(**observation)
+
+
 def test_hardware_graph_preserves_failed_windows_cim_probe_as_strict_observation():
     graph = HardwareCapabilityGraph(
         host_fingerprint="a" * 32,

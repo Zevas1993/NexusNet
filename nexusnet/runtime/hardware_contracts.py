@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -21,6 +21,10 @@ AcceleratorBackend = Literal[
     "metal",
 ]
 VerificationState = Literal["detected", "compatible", "verified", "supported", "unavailable", "unverified"]
+EvidenceToken = Annotated[
+    str,
+    Field(min_length=1, max_length=96, pattern=r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"),
+]
 
 
 class HardwareNode(BaseModel):
@@ -70,12 +74,12 @@ class AcceleratorAdapterObservation(BaseModel):
 class HardwareProbeObservation(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    probe_id: str
+    probe_id: EvidenceToken
     available: bool
-    reason_code: str
+    reason_code: EvidenceToken
     device_count: int = Field(default=0, ge=0)
     verification_state: VerificationState = "detected"
-    probe_source: str
+    probe_source: EvidenceToken
 
 
 class CalibrationMetric(BaseModel):
