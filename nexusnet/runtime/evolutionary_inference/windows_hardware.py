@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import subprocess
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from nexusnet.runtime.hardware_contracts import (
 CommandRunner = Callable[[list[str], float], Any]
 
 _MAX_STDOUT_BYTES = 1024 * 1024
+_MAX_MEMORY_BYTES = 2**64 - 1
 _PCI_VENDOR = re.compile(r"VEN_([0-9A-F]{4})", re.IGNORECASE)
 _PCI_DEVICE = re.compile(r"DEV_([0-9A-F]{4})", re.IGNORECASE)
 _SAFE_HARDWARE_PAYLOAD = re.compile(r"[A-Za-z0-9][A-Za-z0-9 .()_+\-]{0,119}\Z")
@@ -173,23 +175,27 @@ def _run_bounded(command_runner: CommandRunner, command: list[str]) -> tuple[str
         return None, "timeout"
     except (OSError, ValueError):
         return None, "probe-failed"
-    if int(getattr(result, "returncode", 1)) != 0:
-        return None, "probe-failed"
-    stdout = getattr(result, "stdout", "")
-    if isinstance(stdout, bytes):
-        if len(stdout) > _MAX_STDOUT_BYTES:
+    try:
+        returncode = int(getattr(result, "returncode", 1))
+        if returncode != 0:
+            return None, "probe-failed"
+        stdout = getattr(result, "stdout", "")
+        if isinstance(stdout, bytes):
+            if len(stdout) > _MAX_STDOUT_BYTES:
+                return None, "output-too-large"
+            return stdout.decode("utf-8", errors="replace"), "available"
+        rendered = str(stdout)
+        if len(rendered.encode("utf-8")) > _MAX_STDOUT_BYTES:
             return None, "output-too-large"
-        return stdout.decode("utf-8", errors="replace"), "available"
-    rendered = str(stdout)
-    if len(rendered.encode("utf-8")) > _MAX_STDOUT_BYTES:
-        return None, "output-too-large"
-    return rendered, "available"
+        return rendered, "available"
+    except (AttributeError, OSError, OverflowError, RecursionError, TypeError, UnicodeError, ValueError):
+        return None, "probe-failed"
 
 
 def _cim_nodes(stdout: str) -> tuple[list[_CimNode], str]:
     try:
         payload = json.loads(stdout)
-    except (TypeError, json.JSONDecodeError):
+    except (OverflowError, RecursionError, TypeError, UnicodeError, ValueError):
         return [], "unparseable-output"
     if payload == []:
         return [], "no-devices-detected"
@@ -287,21 +293,22 @@ def _augment_nvidia_nodes(
             continue
         unmatched.remove(match)
         node = nodes[match].node
-        augmented[match] = node.model_copy(
-            update={
-                "backend": "cuda",
-                "memory_bytes": row.memory_bytes,
-                "dedicated_memory_bytes": row.memory_bytes,
-                "driver_version": row.driver_version,
-                "accelerator_apis": ["cuda"],
-                "probe_source": "windows-cim+nvidia-smi",
-                "reason_codes": [
-                    "windows-cim-detected",
-                    "cuda-driver-detected",
-                    "runtime-pack-unverified",
-                ],
-            }
-        )
+        updates: dict[str, Any] = {
+            "backend": "cuda",
+            "accelerator_apis": ["cuda"],
+            "probe_source": "windows-cim+nvidia-smi",
+            "reason_codes": [
+                "windows-cim-detected",
+                "cuda-driver-detected",
+                "runtime-pack-unverified",
+            ],
+        }
+        if row.memory_bytes is not None:
+            updates["memory_bytes"] = row.memory_bytes
+            updates["dedicated_memory_bytes"] = row.memory_bytes
+        if row.driver_version is not None:
+            updates["driver_version"] = row.driver_version
+        augmented[match] = node.model_copy(update=updates)
     return augmented, unmatched_rows
 
 
@@ -328,19 +335,28 @@ def _nvidia_fallback_nodes(
 
 
 def _positive_int(value: Any) -> int | None:
+    if isinstance(value, bool) or (isinstance(value, str) and len(value) > 32):
+        return None
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
     try:
         parsed = int(value)
-    except (TypeError, ValueError):
+    except (OverflowError, TypeError, ValueError):
         return None
-    return parsed if parsed > 0 else None
+    return parsed if 0 < parsed <= _MAX_MEMORY_BYTES else None
 
 
 def _mib_bytes(value: Any) -> int | None:
-    try:
-        parsed = int(float(value))
-    except (TypeError, ValueError):
+    if isinstance(value, bool) or (isinstance(value, str) and len(value) > 32):
         return None
-    return parsed * 1024**2 if parsed > 0 else None
+    try:
+        parsed_float = float(value)
+        if not math.isfinite(parsed_float) or parsed_float <= 0:
+            return None
+        parsed = int(parsed_float)
+    except (OverflowError, TypeError, ValueError):
+        return None
+    return parsed * 1024**2 if 0 < parsed <= _MAX_MEMORY_BYTES // 1024**2 else None
 
 
 def _normalized_name(value: str) -> str:

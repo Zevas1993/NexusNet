@@ -115,6 +115,79 @@ def test_hardware_discoverer_keeps_baseline_nodes_and_sanitized_receipts_when_wi
     assert "stderr" not in serialized
 
 
+def test_hardware_discoverer_keeps_baseline_when_windows_numeric_payloads_are_pathological():
+    oversized_numeric_literal = "9" * 5000
+    cim_json = (
+        '[{"Name":"NVIDIA GeForce RTX 5090","PNPDeviceID":"PCI\\\\VEN_10DE&DEV_2C05",'
+        '"AdapterRAM":' + oversized_numeric_literal + '}]'
+    )
+
+    def runner(command: list[str], timeout: float):
+        if command[0] == "powershell.exe":
+            return SimpleNamespace(returncode=0, stdout=cim_json)
+        return SimpleNamespace(returncode=0, stdout="NVIDIA GeForce RTX 5090, 1e999, 596.36")
+
+    graph = HardwareCapabilityDiscoverer(
+        command_runner=runner,
+        system_name="Windows",
+        machine="AMD64",
+        processor_name="Test CPU",
+        logical_cpu_count=16,
+        total_memory_bytes=64 * 1024**3,
+        disk_usage_reader=lambda _: SimpleNamespace(total=2 * 1024**4),
+        storage_root="F:/",
+    ).discover()
+
+    assert [node.kind for node in graph.nodes[:3]] == ["cpu", "system-ram", "storage"]
+    gpu_nodes = [node for node in graph.nodes if node.kind == "gpu"]
+    assert len(gpu_nodes) == 1
+    assert gpu_nodes[0].memory_bytes is None
+    assert gpu_nodes[0].driver_version == "596.36"
+    assert [(item.probe_id, item.available, item.reason_code) for item in graph.discovery_observations] == [
+        ("windows-cim-video-controller", False, "unparseable-output"),
+        ("nvidia-smi", True, "cuda-driver-detected"),
+    ]
+    evidence = [*gpu_nodes, *graph.adapters, *graph.discovery_observations]
+    assert all(item.verification_state in {"detected", "unavailable"} for item in evidence)
+    assert oversized_numeric_literal not in graph.model_dump_json()
+
+
+def test_hardware_discoverer_sanitizes_malformed_return_code_and_stdout_conversion():
+    class MalformedReturnCode:
+        def __int__(self):
+            raise ValueError("C:/Users/private/return-code")
+
+    class RecursiveStdout:
+        def __str__(self):
+            raise RecursionError("C:/Users/private/stdout")
+
+    def runner(command: list[str], timeout: float):
+        if command[0] == "powershell.exe":
+            return SimpleNamespace(returncode=MalformedReturnCode(), stdout="")
+        return SimpleNamespace(returncode=0, stdout=RecursiveStdout())
+
+    graph = HardwareCapabilityDiscoverer(
+        command_runner=runner,
+        system_name="Windows",
+        machine="AMD64",
+        processor_name="Test CPU",
+        logical_cpu_count=16,
+        total_memory_bytes=64 * 1024**3,
+        disk_usage_reader=lambda _: SimpleNamespace(total=2 * 1024**4),
+        storage_root="F:/",
+    ).discover()
+
+    assert [node.kind for node in graph.nodes] == ["cpu", "system-ram", "storage"]
+    assert [(item.probe_id, item.reason_code) for item in graph.discovery_observations] == [
+        ("windows-cim-video-controller", "probe-failed"),
+        ("nvidia-smi", "probe-failed"),
+    ]
+    serialized = graph.model_dump_json()
+    assert "C:/Users/private" not in serialized
+    assert "return-code" not in serialized
+    assert "stdout" not in serialized
+
+
 def test_windows_cim_discovers_portable_gpu_nodes_without_retaining_pnp_identity():
     cim_json = """[
         {
@@ -225,6 +298,38 @@ def test_nvidia_smi_augments_matching_cim_nvidia_node_without_duplication():
     assert nvidia.probe_source == "windows-cim+nvidia-smi"
     assert nvidia.reason_codes == ["windows-cim-detected", "cuda-driver-detected", "runtime-pack-unverified"]
     assert nvidia.verification_state == "detected"
+
+
+def test_nvidia_smi_partial_row_retains_valid_cim_memory_and_driver():
+    cim_memory = 24 * 1024**3
+    cim_json = json.dumps(
+        [
+            {
+                "Name": "NVIDIA GeForce RTX 5090",
+                "PNPDeviceID": "PCI\\VEN_10DE&DEV_2C05",
+                "AdapterRAM": str(cim_memory),
+                "DriverVersion": "555.42",
+                "VideoProcessor": "NVIDIA Ada",
+            }
+        ]
+    )
+
+    def runner(command: list[str], timeout: float):
+        if command[0] == "powershell.exe":
+            return SimpleNamespace(returncode=0, stdout=cim_json)
+        return SimpleNamespace(returncode=0, stdout="NVIDIA GeForce RTX 5090, N/A, N/A")
+
+    discovery = discover_windows_accelerators(runner)
+
+    assert len(discovery.nodes) == 1
+    nvidia = discovery.nodes[0]
+    assert nvidia.memory_bytes == cim_memory
+    assert nvidia.dedicated_memory_bytes == cim_memory
+    assert nvidia.driver_version == "555.42"
+    assert nvidia.backend == "cuda"
+    assert nvidia.accelerator_apis == ["cuda"]
+    assert nvidia.verification_state == "detected"
+    assert nvidia.reason_codes == ["windows-cim-detected", "cuda-driver-detected", "runtime-pack-unverified"]
 
 
 def test_windows_discovery_redacts_unsafe_cim_and_nvidia_payloads_from_serialized_nodes():
