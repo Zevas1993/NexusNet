@@ -2,11 +2,15 @@
 
 **Date:** 2026-07-14
 
-**Status:** Approved umbrella architecture; implementation planning pending user review
+**Last amended:** 2026-07-18
+
+**Status:** Approved umbrella architecture; universal assimilation, execution-fit, runtime-control, and Pareto amendment approved
 
 **Authority:** NexusBrain
 
 **Baseline:** `fadac0d9`
+
+**Amendment baseline:** `9b3a6a65`
 
 **Supersedes:** The narrow assumption that inference assimilation should be organized per model or around one external runtime. The existing Colibri-native MoE work remains a valid primitive and evidence source inside this broader fabric.
 
@@ -26,6 +30,12 @@ The fabric will:
 6. use downtime to dream up, sandbox, benchmark, and validate better inference methods;
 7. transfer successful learning into global policies so later models and systems begin with stronger priors;
 8. promote only evidence-backed improvements and retain a verified rollback path.
+
+The 2026-07-18 amendment makes three decisions explicit:
+
+1. fit/admission, complete runtime control, live execution, and measured reconciliation are one cumulative A-C loop rather than alternative implementation choices;
+2. inference assimilation is dual-path: whole external engines remain executable baselines and fallbacks while their transferable mechanisms may also become typed primitives for Nexus-native composition;
+3. a Nexus-native inference method is an executable graph owned, compiled, admitted, controlled, and measured by NexusNet, not merely a route to the currently fastest external engine.
 
 The governing rule is:
 
@@ -84,6 +94,35 @@ Every optimized lane has a correctness-first reference path. A candidate cannot 
 
 Downtime research may generate hypotheses, configurations, policies, schedules, formats, compiler graphs, or kernel candidates. Nothing becomes active because it was dreamed. Promotion requires artifact trust, sandbox evidence, quality/equivalence evidence, performance evidence, monitoring, and rollback.
 
+### 3.6 External engines are participants, not the architecture
+
+llama.cpp, vLLM, SGLang, TensorRT-LLM, Transformers, ONNX Runtime, OpenVINO, MLC, MLX, ExLlama, Ollama, vendor runtimes, remote OpenAI-compatible runtimes, and future engines may enter through capability-discovered adapters. No adapter defines the universal control plane. Engines provide immediate execution, comparison baselines, fallbacks, and technique sources.
+
+The registry is open-ended. Supporting future methods must require a versioned method record and adapter or primitive implementation, not edits to a closed list of privileged runtimes.
+
+### 3.7 Fit, admission, control, execution, and reconciliation are inseparable
+
+Every external-engine plan and Nexus-native graph passes the same cumulative loop:
+
+```text
+model and workload fingerprint
+  -> hardware and runtime capability snapshot
+  -> model-aware fit calculation
+  -> admitted execution-fit receipt
+  -> complete supported-control binding
+  -> governed live execution
+  -> measured reconciliation
+  -> Pareto evidence and evolution-memory update
+```
+
+Prediction without live binding, runtime controls without fit admission, and execution without reconciliation are incomplete states. Unsupported controls must be rejected or surfaced as degraded; they cannot disappear silently.
+
+### 3.8 Superiority is scoped Pareto evidence
+
+NexusNet never claims one method is universally best. A candidate may be called superior only for the tested model fingerprint, quantization, hardware and topology snapshot, runtime and driver versions, workload, context range, SLO, and benchmark policy.
+
+Quality, correctness, safety, rights, reproducibility, and stability are hard gates. Among candidates that pass them, a promoted challenger must materially improve at least one governed objective such as latency, throughput, memory, energy, thermal behavior, capacity, stability, or cost while every other protected objective stays within its declared regression tolerance. Without a compatible locally measured baseline, the candidate remains experimental or promising and cannot be labeled superior.
+
 ## 4. Scope And Decomposition
 
 This is an umbrella architecture spanning multiple implementation projects. It must not be collapsed into one engine class or one implementation plan.
@@ -91,11 +130,14 @@ This is an umbrella architecture spanning multiple implementation projects. It m
 The implementation sequence is decomposed into:
 
 1. **Capability and calibration foundation** — hardware graph, model execution fingerprint, portable microbenchmarks, and sanitized evidence.
-2. **Inference primitive registry** — capability predicates, compatibility rules, fallbacks, and evidence contracts for current methods.
-3. **Heterogeneous residency and transfer fabric** — weights, experts, KV pages, adapters, draft state, and multimodal tensors across accelerator memory, pinned RAM, pageable RAM, and storage.
-4. **SLO and Pareto controller** — candidate composition, feasibility, shadow comparison, selection, drift detection, and rollback.
-5. **Downtime dream laboratory** — hypothesis generation, experiment planning, sandbox execution, champion/challenger evaluation, and transferable evolution memory.
-6. **Advanced kernel, decoding, distributed, and research assimilation** — specialized primitives promoted incrementally through the same contracts.
+2. **Dual-path method assimilation** — provenance-bound whole-engine records, reusable primitive extraction, adapter conformance, rights gates, and external-baseline execution.
+3. **Inference primitive registry and universal IR** — capability predicates, compatibility rules, fallbacks, evidence contracts, executable graph semantics, and backend-independent plan identity.
+4. **Cumulative A-C execution control** — model-aware RAM/VRAM/KV/MoE fit, pre-dispatch admission, complete capability-gated controls, live binding, and measured reconciliation.
+5. **Heterogeneous residency and transfer fabric** — weights, experts, KV pages, adapters, draft state, and multimodal tensors across accelerator memory, pinned RAM, pageable RAM, and storage.
+6. **Nexus-native graph compiler** — lowering, scheduling, placement, memory lifetime, synchronization, portable execution, and approved hardware-specific implementations.
+7. **SLO and Pareto controller** — candidate composition, feasibility, equivalent-condition comparison, selection, drift detection, and rollback.
+8. **Downtime dream laboratory** — hypothesis generation, experiment planning, sandbox execution, champion/challenger evaluation, and transferable evolution memory.
+9. **Advanced kernel, decoding, distributed, and research assimilation** — specialized primitives promoted incrementally through the same contracts.
 
 Each project receives its own implementation plan and evidence gates. This umbrella spec controls their shared boundaries and ordering.
 
@@ -282,6 +324,31 @@ promotion_state
 
 The registry separates algorithm identity from backend implementation. For example, paged KV allocation can have CUDA, ROCm, Metal, CPU, and portable implementations while retaining one semantic contract.
 
+### 6.4.1 `InferenceMethodRecord` And Assimilation Gateway
+
+Every assimilated method receives one provenance-bound record before it can affect planning:
+
+```text
+method_id and version
+source_kind: external-engine | primitive-family | nexus-native-graph
+source and artifact digests
+license, inference, evaluation, derivative, and redistribution rights
+claimed capabilities and upstream evidence
+locally reproduced capabilities and evidence
+supported models, operators, formats, precisions, and hardware
+tunable controls and control semantics
+known conflicts, fallbacks, and failure classes
+assimilation maturity: researched | adapted | reproduced | primitive-extracted | native | certified
+```
+
+The gateway may retain a complete engine, extract reusable semantic primitives, or do both. External claims remain discovery evidence until reproduced. Incompatible rights block code or artifact assimilation while still allowing an appropriately bounded research note when policy permits.
+
+### 6.4.2 `BackendFederation` And `RuntimeCapabilityProfile`
+
+Each runtime adapter publishes a versioned capability profile discovered from the installed implementation rather than copied from generic upstream documentation. The profile covers model and format support, controllable parameters, quantization and KV formats, scheduling and batching, placement and offload, observability, cancellation, failure semantics, and reference-output behavior.
+
+For each requested control, the adapter must report exactly one binding outcome: `applied`, `degraded`, `unsupported`, or `rejected`. A successful API call is not proof that the requested execution method was used.
+
 ### 6.5 `ExecutionPlanSynthesizer`
 
 The synthesizer combines compatible primitives into feasible plans. It uses constraint solving and learned priors to prune invalid or clearly dominated combinations before benchmarking.
@@ -296,6 +363,23 @@ It must account for interactions. Examples:
 - prefetch can improve hit rate while wasting bandwidth and energy.
 
 No candidate is promoted from isolated component scores alone.
+
+### 6.5.1 `UniversalInferenceIR`
+
+The universal IR is a typed executable graph independent of any one runtime. It represents:
+
+- operator semantics, shapes, layouts, precision, and quantization;
+- weights, experts, KV pages, activations, adapters, and temporary memory lifetimes;
+- device and tier placement, transfers, prefetch, eviction, and reuse;
+- prefill, decode, batching, speculation, routing, and distributed schedules;
+- synchronization, cancellation, failure, and fallback boundaries;
+- quality semantics, required evidence, and reversible parameters.
+
+An external adapter may execute an entire plan, a primitive implementation may satisfy one IR node family, and NexusNet may compile a mixed graph from both. Plan identity binds the graph, primitive and implementation digests, model fingerprint, hardware snapshot, runtime capabilities, and control parameters.
+
+### 6.5.2 `NexusNativeGraphCompiler`
+
+The compiler validates and lowers universal graphs into a portable correctness-first executor or approved hardware-specific implementations. Its first responsibility is semantic preservation and observable control binding, not novel kernel generation. Native kernel generation becomes an additional lowering path only after artifact trust, sandbox, equivalence, benchmark, approval, monitoring, and rollback gates exist.
 
 ### 6.6 `HeterogeneousResidencyFabric`
 
@@ -312,6 +396,32 @@ The fabric generalizes the proven MoE tiering pattern across:
 Tiers include accelerator memory, unified memory, bounded pinned RAM, pageable RAM, local storage, and approved remote stores. Each asset type owns its placement semantics while sharing integrity, leases, coalescing, eviction, prefetch, telemetry, and rollback contracts.
 
 The transfer engine supports batched contiguous movement, persistent pinned slabs, double/triple buffering, copy streams, events, adaptive prefetch depth, and compressed transit. Pinned memory is bounded because excessive pinning can degrade the host.
+
+### 6.6.1 `ExecutionFitRequest` And `ExecutionFitReceipt`
+
+The fit estimator is deterministic and side-effect free. Its request binds the model execution fingerprint, requested prompt/output/context and concurrency, quantization, hardware snapshot, runtime capability profile, candidate plan, and admission policy.
+
+The immutable sanitized receipt records:
+
+```text
+receipt, plan, model, hardware, runtime, and benchmark-policy identities
+decision: admitted | degraded | rejected
+machine-readable reason codes
+requested, selected, and safe context
+dense weights, expert weights, KV-per-token, total KV, buffers, and headroom
+GPU/accelerator, unified-memory, RAM, and storage placement
+predicted bottleneck and performance range with uncertainty
+every requested control, its evidence source, support state, and binding outcome
+declared fallback and rollback trigger
+```
+
+Dense and MoE calculations distinguish total resident parameters from active per-token parameters. KV-cache cost is derived from model structure, precision, batch, and context instead of static RAM/VRAM thresholds. The pre-dispatch gate consumes the receipt before model load or provider/kernel execution.
+
+The cumulative control surface includes, when a runtime supports them, context, output limit, weight and KV quantization, K/V cache types, generation and batch threads, batch and micro-batch sizes, GPU/accelerator layers, split mode, tensor split or override, expert placement and CPU/RAM offload, memory mapping/locking, scheduling, speculation, cache/reuse, distributed placement, and runtime-specific equivalents. Capability discovery, not a hard-coded llama.cpp vocabulary, determines binding.
+
+### 6.6.2 `ExecutionFitObservation` And Reconciler
+
+The observation binds to the receipt and records sanitized actual allocation, context achieved, TTFT, inter-token latency, throughput, utilization, transfers, cache/residency behavior, energy/thermals when available, control-binding proof, degradation, and failure. The reconciler classifies prediction error, invalidates stale assumptions, updates bounded transferable evidence, and triggers fallback or rollback when live behavior violates the receipt.
 
 ### 6.7 `DynamicSLOController`
 
@@ -392,10 +502,12 @@ The lab compares current champion, portable reference, and challengers under ide
 request and explicit/inferred SLO
   -> hardware capability and current-state snapshot
   -> model execution fingerprint
-  -> feasible verified-plan frontier
-  -> selected plan and declared fallback
-  -> governed execution
-  -> sanitized evidence and drift detection
+  -> runtime capability profiles and method registry
+  -> external-engine and Nexus-native candidate frontier
+  -> execution-fit request and pre-dispatch admission
+  -> selected plan, complete control bindings, and declared fallback
+  -> governed external-adapter or Nexus-native-graph execution
+  -> fit observation, reconciliation, and drift detection
   -> evolution memory update
   -> retain, degrade, or roll back plan
 ```
@@ -406,12 +518,13 @@ The live loop selects verified behavior. It does not generate and execute untrus
 
 ```text
 idle-capacity, thermal, power, memory, and budget gate
-  -> bottleneck and opportunity mining
-  -> hypothesis and candidate generation
+  -> external-method intake and bottleneck/opportunity mining
+  -> whole-engine baseline adaptation and primitive extraction
+  -> Nexus-native graph hypothesis and candidate generation
   -> feasibility and artifact-trust screening
-  -> isolated sandbox build/calibration
-  -> reference/champion/challenger benchmark
-  -> quality, safety, and Pareto evaluation
+  -> execution-fit admission and isolated sandbox build/calibration
+  -> equivalent-condition reference/champion/challenger benchmark
+  -> hard-gate validation and scoped Pareto evaluation
   -> candidate dossier and rollback plan
   -> shadow/canary promotion gate
   -> monitored activation or rejection
@@ -421,6 +534,12 @@ idle-capacity, thermal, power, memory, and budget gate
 Serving demand preempts dream work. The scheduler must cancel or checkpoint safely without leaving partial production artifacts.
 
 ## 8. Promotion And Autonomy Boundary
+
+### 8.0 Pareto promotion contract
+
+Benchmark policy declares the protected objectives, permitted regression tolerance per objective, minimum material improvement, repetitions, warmup handling, confidence rule, workload corpus, and environmental controls before results are observed. A candidate is eligible for the verified frontier only when all hard gates pass and the comparison is complete.
+
+Promotion requires a material improvement in at least one governed objective with no protected objective outside its declared tolerance. Results that trade advantages without dominating under the active policy may remain nondominated alternatives for a different SLO, but they cannot be described as globally better. Missing, corrupt, interrupted, thermally incomparable, or selectively omitted measurements invalidate the superiority claim.
 
 ### 8.1 Automatically promotable
 
@@ -464,6 +583,8 @@ The dream lab cannot:
 
 The design extends current surfaces rather than creating another authority plane:
 
+- `nexusnet/runtime/evolutionary_inference/` already provides schemas, primitives, feasibility, synthesis, benchmarking, Pareto selection, dream, promotion, transfer, evidence, and system orchestration. These are the authoritative extension points for this amendment.
+- `nexus/runtimes/registry.py` already federates mock, Ollama, OpenAI-compatible, vLLM, LM Studio, Transformers, and llama.cpp adapters. It should evolve toward capability profiles and conformance rather than embedding one preferred engine into the planner.
 - `nexusnet/runtime/moe_residency/` is the first working residency primitive and should become a consumer of shared transfer/capability contracts rather than remain the universal abstraction.
 - `nexusnet/runtime/inference_architecture.py` is the plan and strategy surface to evolve from shadow descriptions toward evidence-linked candidate composition.
 - `nexusnet/runtime/cache_ledger.py` and runtime workload scorecards provide existing evidence and promotion patterns.
@@ -481,6 +602,9 @@ The inference dream lab should bind these seams. It must not create an ungoverne
 | --- | --- |
 | Unknown model structure | Use the portable reference for supported operators; quarantine unsupported custom operations; collect bounded discovery evidence. |
 | Missing optimized backend | Remove that primitive implementation from feasible plans; retain semantic fallback. |
+| Unknown or stale runtime capability | Do not bind the affected control; reject or degrade the receipt explicitly and schedule bounded rediscovery. |
+| Adapter reports success without binding proof | Mark the control and run unverified, quarantine its performance evidence, and prevent superiority or promotion claims. |
+| Adapter disagreement with reference behavior | Quarantine the adapter/version and its evidence; retain other runtimes and the correctness-first path. |
 | Calibration failure | Mark affected measurements uncertain; use conservative advertised bounds and reference execution. |
 | Driver, runtime, or hardware drift | Invalidate only affected calibrations and compiled artifacts; remeasure selectively. |
 | Accelerator OOM | Stop new allocations/transfers, release safe candidates, record plan violation, and activate the declared fallback. |
@@ -490,6 +614,8 @@ The inference dream lab should bind these seams. It must not create an ungoverne
 | Corrupt evolution memory | Ignore incompatible records, rebuild from signed evidence, and continue from portable priors. |
 | Dream sandbox failure | Quarantine outputs; no production mutation; persist sanitized failure evidence. |
 | New native kernel fails trust or review | Keep it sandbox-only and continue with trusted implementations. |
+| Incomplete or incomparable benchmark | Persist the run as invalid evidence; do not update the verified frontier or promote. |
+| No compatible measured baseline | Keep the candidate experimental; do not claim superiority. |
 
 ## 11. Testing Strategy
 
@@ -500,6 +626,10 @@ The inference dream lab should bind these seams. It must not create an ungoverne
 - Primitive predicates accept and reject the intended capability combinations.
 - Conflicting primitives cannot compose into one plan.
 - Every optimized primitive declares and exercises a fallback.
+- Method records preserve provenance, rights, version, maturity, and local reproduction state.
+- Runtime adapters report `applied`, `degraded`, `unsupported`, or `rejected` for every requested control.
+- Universal IR rejects invalid types, shapes, lifetimes, placements, conflicts, and unsupported lowerings.
+- Execution-fit receipts are immutable, sanitized, identity-bound, and deterministic for fixed inputs.
 
 ### 11.2 Correctness and quality tests
 
@@ -507,6 +637,7 @@ The inference dream lab should bind these seams. It must not create an ungoverne
 - Structured output, tool calling, stop behavior, and determinism contracts survive optimization.
 - Quantized, sparse, speculative, and offloaded lanes cannot hide quality deltas.
 - Unknown/custom operators fail closed.
+- Portable, whole-engine, and Nexus-native executions meet the same declared output contract.
 
 ### 11.3 Performance tests
 
@@ -515,6 +646,9 @@ The inference dream lab should bind these seams. It must not create an ungoverne
 - Candidate comparisons use the same workload and hardware state.
 - Reported improvements include uncertainty and repeat counts.
 - Multi-objective results preserve the Pareto frontier rather than only a single score.
+- A superiority label requires a compatible baseline, complete measurements, a material improvement, and no protected regression outside policy tolerance.
+- Model-aware weight, KV, buffer, headroom, and MoE fit predictions are reconciled against measured allocation.
+- Verified receipt parameters reach the real adapter or native graph; silent control loss fails the test.
 
 ### 11.4 Hardware simulation and fixture tests
 
@@ -531,6 +665,8 @@ The inference dream lab should bind these seams. It must not create an ungoverne
 - Automatically promotable policies still require evidence and rollback.
 - Native code and irreversible changes cannot bypass approval.
 - Restart replay preserves champion, challenger, rejected, and rollback history without raw-content leakage.
+- External method intake can produce both an executable baseline adapter and separately governed reusable primitives.
+- At least one Nexus-native graph competes against external baselines and remains a candidate unless its local Pareto evidence passes.
 
 ## 12. Observability And Operator Truth
 
@@ -565,19 +701,22 @@ The initial portfolio will age. The forward radar therefore needs an inference-m
 
 External benchmarks are discovery evidence. Only NexusNet-controlled measurements can promote a trait.
 
-## 14. First Implementation Project
+## 14. Next Implementation Project
 
-The first implementation plan after approval should build the smallest foundation that makes later assimilation real:
+The capability, fingerprint, primitive, feasibility, synthesis, benchmark, Pareto, evidence, and dream foundations now exist in the repository and must be verified rather than recreated. The next implementation plan should deliver one runtime-visible universal-method vertical slice:
 
-1. `HardwareCapabilityGraph` schema and portable CPU/RAM/storage discovery.
-2. Optional CUDA/ROCm/Metal capability adapters that degrade cleanly when unavailable.
-3. Bounded calibration for memory capacity, transfer behavior, and representative compute.
-4. `ModelExecutionFingerprint` schema and a trusted synthetic-model fixture path.
-5. `InferencePrimitiveRegistry` with the portable reference plus the already implemented MoE residency primitive represented through shared contracts.
-6. A candidate feasibility result and evidence artifact; no live policy mutation yet.
-7. Runtime-visible status and focused tests proving sanitized restart-safe evidence.
+1. extend the existing method/primitive contracts with dual-path source, rights, maturity, capability-profile, and binding-evidence fields;
+2. add versioned capability and conformance profiles for every adapter currently registered in `nexus/runtimes/registry.py`, with unavailable features degrading honestly;
+3. implement deterministic `ExecutionFitRequest`, `ExecutionFitReceipt`, and `ExecutionFitObservation` contracts using model-aware weight, KV, buffer, headroom, quantization, dense/MoE, and heterogeneous-placement calculations;
+4. place the fit/admission gate before actual adapter, provider, model-load, or native-kernel execution;
+5. bind all supported controls through backend-neutral intent and record each adapter's applied, degraded, unsupported, or rejected outcome;
+6. introduce the smallest portable `UniversalInferenceIR` and `NexusNativeGraphCompiler` lane capable of executing one correctness-first candidate graph rather than routing to an external engine;
+7. run the Nexus-native graph and at least two available external-engine baselines through the same benchmark policy, output contract, receipt, and observation path;
+8. compute a scoped Pareto frontier, refuse superiority claims without complete local evidence, and retain negative results;
+9. expose sanitized method, fit, binding, benchmark, frontier, degradation, and rollback receipts through the existing runtime-visible surface;
+10. prove restart, failure, fallback, and rollback behavior with focused red/green tests and a live smoke on the hardware actually available.
 
-This slice creates the universal language the residency, SLO, Pareto, and dream projects require. It must not start by hard-coding more model-specific optimizations.
+This slice is intentionally vertical: it must prove assimilation, fit, runtime control, Nexus-native execution, comparison, and reconciliation together. It must not hard-code a preferred runtime, duplicate the evolutionary fabric, or claim coverage for engines and hardware that were not exercised.
 
 ## 15. Acceptance Criteria For The Umbrella Architecture
 
@@ -593,6 +732,11 @@ The evolutionary inference fabric is not considered realized until NexusNet can 
 8. A failed outcome becomes a negative prior rather than being silently discarded.
 9. Native executable candidates cannot bypass approval.
 10. The control panel exposes current state, uncertainty, evidence, and rollback truth without raw-content leakage.
+11. A newly registered external method can enter as a whole-engine baseline, reusable primitives, or both without becoming architectural authority.
+12. Every external and Nexus-native plan passes the same model-aware fit, pre-dispatch admission, control-binding, execution, and reconciliation loop.
+13. A Nexus-native executable graph competes against compatible external engines under one benchmark policy and output contract.
+14. A superiority claim is scoped, locally reproduced, materially better on at least one objective, and within tolerance on every protected objective.
+15. Unsupported or silently unbound runtime controls prevent verified-promotion claims and surface an honest degraded or rejected receipt.
 
 ## 16. Primary Research And Runtime References
 
