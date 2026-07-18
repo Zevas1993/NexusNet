@@ -17,8 +17,10 @@ from nexusnet.runtime.hardware_contracts import (
 CommandRunner = Callable[[list[str], float], Any]
 
 _MAX_STDOUT_BYTES = 1024 * 1024
-_PCI_VENDOR = re.compile(r"VEN_([0-9A-Fa-f]{4})")
-_PCI_DEVICE = re.compile(r"DEV_([0-9A-Fa-f]{4})")
+_PCI_VENDOR = re.compile(r"VEN_([0-9A-F]{4})", re.IGNORECASE)
+_PCI_DEVICE = re.compile(r"DEV_([0-9A-F]{4})", re.IGNORECASE)
+_SAFE_HARDWARE_PAYLOAD = re.compile(r"[A-Za-z0-9][A-Za-z0-9 .()_+\-]{0,119}\Z")
+_HOST_STYLE_PAYLOAD = re.compile(r"\b(?=[a-z0-9-]*[a-z])[a-z0-9-]+(?:\.[a-z0-9-]+)+\b", re.IGNORECASE)
 _CIM_SCRIPT = (
     "$ErrorActionPreference='Stop'; "
     "@(Get-CimInstance -ClassName Win32_VideoController | "
@@ -36,9 +38,7 @@ class WindowsAcceleratorDiscovery:
 
 def discover_windows_accelerators(command_runner: CommandRunner) -> WindowsAcceleratorDiscovery:
     cim_stdout, cim_reason = _run_bounded(command_runner, _cim_command())
-    nodes, cim_parsed = _cim_nodes(cim_stdout) if cim_stdout is not None else ([], False)
-    if cim_stdout is not None and not cim_parsed:
-        cim_reason = "unparseable-output"
+    nodes, cim_reason = _cim_nodes(cim_stdout) if cim_stdout is not None else ([], cim_reason)
     nvidia_stdout, nvidia_reason = _run_bounded(command_runner, _nvidia_smi_command())
     augmented_nodes = nodes
     nvidia_available = False
@@ -46,22 +46,13 @@ def discover_windows_accelerators(command_runner: CommandRunner) -> WindowsAccel
         nvidia_rows = _nvidia_rows(nvidia_stdout)
         nvidia_available = bool(nvidia_rows)
         nvidia_reason = "cuda-driver-detected" if nvidia_available else "unparseable-output"
-        augmented_nodes = _augment_nvidia_nodes(nodes, nvidia_rows)
-        if not nodes:
-            augmented_nodes = _nvidia_fallback_nodes(nvidia_rows)
+        augmented_nodes, unmatched_rows = _augment_nvidia_nodes(nodes, nvidia_rows)
+        augmented_nodes.extend(_nvidia_fallback_nodes(unmatched_rows))
     cim_available = bool(nodes)
     cim_observation_reason = "windows-cim-detected" if cim_available else cim_reason
     return WindowsAcceleratorDiscovery(
         nodes=tuple(augmented_nodes),
         adapters=(
-            AcceleratorAdapterObservation(
-                backend="portable",
-                available=cim_available,
-                reason_code=cim_observation_reason,
-                device_count=len(nodes),
-                verification_state="detected" if cim_available else "unavailable",
-                probe_source="windows-cim",
-            ),
             AcceleratorAdapterObservation(
                 backend="cuda",
                 available=nvidia_available,
@@ -135,14 +126,19 @@ def _run_bounded(command_runner: CommandRunner, command: list[str]) -> tuple[str
     return rendered, "available"
 
 
-def _cim_nodes(stdout: str) -> tuple[list[HardwareNode], bool]:
+def _cim_nodes(stdout: str) -> tuple[list[HardwareNode], str]:
     try:
         payload = json.loads(stdout)
     except (TypeError, json.JSONDecodeError):
-        return [], False
-    if not isinstance(payload, (dict, list)):
-        return [], False
-    records = payload if isinstance(payload, list) else [payload]
+        return [], "unparseable-output"
+    if payload == []:
+        return [], "no-devices-detected"
+    if isinstance(payload, dict):
+        records = [payload]
+    elif isinstance(payload, list) and payload and all(isinstance(record, dict) for record in payload):
+        records = payload
+    else:
+        return [], "unparseable-output"
     nodes: list[HardwareNode] = []
     seen_ids: set[str] = set()
     for record in records:
@@ -150,7 +146,7 @@ def _cim_nodes(stdout: str) -> tuple[list[HardwareNode], bool]:
         if node is not None and node.node_id not in seen_ids:
             seen_ids.add(node.node_id)
             nodes.append(node)
-    return nodes, True
+    return (nodes, "windows-cim-detected") if nodes else ([], "unparseable-output")
 
 
 def _cim_node(record: Any) -> HardwareNode | None:
@@ -159,22 +155,25 @@ def _cim_node(record: Any) -> HardwareNode | None:
     pnp_device_id = record.get("PNPDeviceID")
     if not isinstance(pnp_device_id, str) or not pnp_device_id:
         return None
-    vendor_match = _PCI_VENDOR.search(pnp_device_id)
-    device_match = _PCI_DEVICE.search(pnp_device_id)
+    canonical_identity = pnp_device_id.strip().upper()
+    if not canonical_identity:
+        return None
+    vendor_match = _PCI_VENDOR.search(canonical_identity)
+    device_match = _PCI_DEVICE.search(canonical_identity)
     memory = _positive_int(record.get("AdapterRAM"))
     reason_codes = ["windows-cim-detected", "runtime-unverified"]
     if memory is not None:
         reason_codes.append("memory-os-reported")
     return HardwareNode(
-        node_id="gpu:windows:" + hashlib.sha256(pnp_device_id.encode()).hexdigest()[:16],
+        node_id="gpu:windows:" + hashlib.sha256(canonical_identity.encode()).hexdigest()[:16],
         kind="gpu",
-        name=_clean_label(record.get("Name"), fallback="windows-gpu"),
+        name=_sanitize_label(record.get("Name"), fallback="windows-gpu"),
         backend="portable",
         memory_bytes=memory,
         vendor_id=vendor_match.group(1).lower() if vendor_match else None,
         device_id=device_match.group(1).lower() if device_match else None,
-        architecture=_clean_optional(record.get("VideoProcessor")),
-        driver_version=_clean_optional(record.get("DriverVersion")),
+        architecture=_sanitize_optional(record.get("VideoProcessor")),
+        driver_version=_sanitize_optional(record.get("DriverVersion")),
         dedicated_memory_bytes=memory,
         accelerator_apis=[],
         verification_state="detected",
@@ -190,19 +189,20 @@ def _nvidia_rows(stdout: str) -> list[tuple[str, int | None, str | None]]:
         if len(fields) < 3 or not fields[0]:
             continue
         rows.append((
-            _clean_label(fields[0], fallback="nvidia-gpu"),
+            _sanitize_label(fields[0], fallback="nvidia-gpu"),
             _mib_bytes(fields[1]),
-            _clean_optional(fields[2]),
+            _sanitize_optional(fields[2]),
         ))
     return rows
 
 
 def _augment_nvidia_nodes(
     nodes: list[HardwareNode], rows: list[tuple[str, int | None, str | None]]
-) -> list[HardwareNode]:
+) -> tuple[list[HardwareNode], list[tuple[int, tuple[str, int | None, str | None]]]]:
     augmented = list(nodes)
     nvidia_indexes = [index for index, node in enumerate(nodes) if node.vendor_id == "10de"]
-    unmatched = set(nvidia_indexes)
+    unmatched = list(nvidia_indexes)
+    unmatched_rows: list[tuple[int, tuple[str, int | None, str | None]]] = []
     for ordinal, (name, memory, driver_version) in enumerate(rows):
         normalized_name = _normalized_name(name)
         match = next(
@@ -213,9 +213,10 @@ def _augment_nvidia_nodes(
             ),
             None,
         )
-        if match is None and ordinal < len(nvidia_indexes) and nvidia_indexes[ordinal] in unmatched:
-            match = nvidia_indexes[ordinal]
+        if match is None and unmatched:
+            match = unmatched[0]
         if match is None:
+            unmatched_rows.append((ordinal, (name, memory, driver_version)))
             continue
         unmatched.remove(match)
         node = nodes[match]
@@ -234,10 +235,12 @@ def _augment_nvidia_nodes(
                 ],
             }
         )
-    return augmented
+    return augmented, unmatched_rows
 
 
-def _nvidia_fallback_nodes(rows: list[tuple[str, int | None, str | None]]) -> list[HardwareNode]:
+def _nvidia_fallback_nodes(
+    rows: list[tuple[int, tuple[str, int | None, str | None]]]
+) -> list[HardwareNode]:
     return [
         HardwareNode(
             node_id=f"gpu:windows:nvidia-smi:{index}",
@@ -253,7 +256,7 @@ def _nvidia_fallback_nodes(rows: list[tuple[str, int | None, str | None]]) -> li
             probe_source="nvidia-smi",
             reason_codes=["cuda-driver-detected", "runtime-pack-unverified"],
         )
-        for index, (name, memory, driver_version) in enumerate(rows)
+        for index, (name, memory, driver_version) in rows
     ]
 
 
@@ -277,11 +280,18 @@ def _normalized_name(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", value.lower())
 
 
-def _clean_label(value: Any, *, fallback: str) -> str:
-    cleaned = " ".join(str(value or "").replace("\x00", " ").split()).strip()
-    return cleaned[:120] or fallback
+def _sanitize_label(value: Any, *, fallback: str) -> str:
+    return _sanitize_optional(value) or fallback
 
 
-def _clean_optional(value: Any) -> str | None:
-    cleaned = _clean_label(value, fallback="")
-    return cleaned or None
+def _sanitize_optional(value: Any) -> str | None:
+    if not isinstance(value, (str, int, float)):
+        return None
+    rendered = str(value)
+    if (
+        not _SAFE_HARDWARE_PAYLOAD.fullmatch(rendered)
+        or any(character in rendered for character in "\\/:=@\r\n\t")
+        or _HOST_STYLE_PAYLOAD.search(rendered)
+    ):
+        return None
+    return rendered
