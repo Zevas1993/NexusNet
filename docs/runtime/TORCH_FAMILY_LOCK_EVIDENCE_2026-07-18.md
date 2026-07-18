@@ -50,7 +50,10 @@ from the generated CPU lock. `pyvenv.cfg` reported
 - Self-test passed.
 - Load/infer with scale 2 and bias 1 returned `[3.0, 5.0, 7.0]`.
 
-The isolated CUDA development environment on this machine reported:
+The dedicated CUDA development venv on this machine reported
+`include-system-site-packages = true`; it proves the CUDA worker/device path,
+but it is not evidence that the production CUDA lock has been materialized in
+a dependency-isolated venv. Inside that development venv:
 
 - Torch `2.11.0+cu128`, CUDA runtime `12.8`.
 - NVIDIA GeForce RTX 5070 Ti, one CUDA device.

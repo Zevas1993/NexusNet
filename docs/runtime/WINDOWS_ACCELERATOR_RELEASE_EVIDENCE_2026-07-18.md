@@ -31,7 +31,7 @@ one-way `device::` reference instead.
 | --- | --- | --- | --- |
 | Reference CPU | Verified on this machine | Real load, self-test, numeric inference, unload, governed fallback/rollback test | Model-family-specific certification beyond the deterministic proof model |
 | Torch CPU | Verified on this machine | Fresh CPython 3.11 private venv, no system site packages, 15 exact hashed wheels, Torch 2.11.0+cpu, health/self-test, `[3,5,7]` inference | Production model/workload calibration records |
-| NVIDIA CUDA | Verified on this machine for the worker proof | Isolated Torch 2.11.0+cu128 family handshake, RTX 5070 Ti execution, health/self-test, `[3,5,7]` inference | Production model/workload calibration records and release-model soak |
+| NVIDIA CUDA | Verified on this machine for the worker/device proof | Dedicated development venv using system-site packages, Torch 2.11.0+cu128 family handshake, RTX 5070 Ti execution, health/self-test, `[3,5,7]` inference | Materialize the production CUDA lock in a dependency-isolated venv, then add production model/workload calibration records and release-model soak |
 | Windows ML / DirectML | Unavailable and unverified | Build gate passes; provider discovery is truthful; CPU ONNX probe is available | Install/enumerate a supported GPU provider, then model correctness, failure, and rollback proof |
 | AMD ROCm Windows | Unavailable and unverified | Exact cp312 ROCm 7.2.1 Torch lock and official support tuples encoded | Representative supported Radeon/Ryzen hardware, driver/SDK install, health, correctness, OOM, rollback, and soak |
 | AMD Vulkan | Unavailable and unverified | Capability-driven native candidate and bounded connector tests | Representative AMD hardware and reviewed native binary certification |
