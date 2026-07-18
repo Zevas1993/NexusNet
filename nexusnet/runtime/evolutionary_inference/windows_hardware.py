@@ -224,6 +224,10 @@ def _cim_node(record: Any) -> _CimNode | None:
     canonical_identity = pnp_device_id.strip().upper()
     if not canonical_identity:
         return None
+    try:
+        identity_bytes = canonical_identity.encode("utf-8")
+    except UnicodeEncodeError:
+        return None
     vendor_match = _PCI_VENDOR.search(canonical_identity)
     device_match = _PCI_DEVICE.search(canonical_identity)
     memory = _positive_int(record.get("AdapterRAM"))
@@ -233,7 +237,7 @@ def _cim_node(record: Any) -> _CimNode | None:
     raw_match_name = record.get("Name") if isinstance(record.get("Name"), str) else ""
     return _CimNode(
         node=HardwareNode(
-            node_id="gpu:windows:" + hashlib.sha256(canonical_identity.encode()).hexdigest()[:16],
+            node_id="gpu:windows:" + hashlib.sha256(identity_bytes).hexdigest()[:16],
             kind="gpu",
             name=_sanitize_hardware_label(raw_match_name, fallback="windows-gpu"),
             backend="portable",

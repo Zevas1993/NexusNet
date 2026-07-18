@@ -152,6 +152,42 @@ def test_hardware_discoverer_keeps_baseline_when_windows_numeric_payloads_are_pa
     assert oversized_numeric_literal not in graph.model_dump_json()
 
 
+def test_hardware_discoverer_keeps_baseline_when_cim_pnp_identity_has_unpaired_surrogate():
+    cim_json = (
+        '[{"Name":"NVIDIA GeForce RTX 5090",'
+        '"PNPDeviceID":"PCI\\\\VEN_10DE&DEV_2C05\\ud800"}]'
+    )
+    assert cim_json.isascii()
+
+    def runner(command: list[str], timeout: float):
+        if command[0] == "powershell.exe":
+            return SimpleNamespace(returncode=0, stdout=cim_json)
+        raise FileNotFoundError(command[0])
+
+    graph = HardwareCapabilityDiscoverer(
+        command_runner=runner,
+        system_name="Windows",
+        machine="AMD64",
+        processor_name="Test CPU",
+        logical_cpu_count=16,
+        total_memory_bytes=64 * 1024**3,
+        disk_usage_reader=lambda _: SimpleNamespace(total=2 * 1024**4),
+        storage_root="F:/",
+    ).discover()
+
+    assert [node.kind for node in graph.nodes] == ["cpu", "system-ram", "storage"]
+    assert all(node.kind != "gpu" for node in graph.nodes)
+    assert [(item.probe_id, item.available, item.reason_code) for item in graph.discovery_observations] == [
+        ("windows-cim-video-controller", False, "unparseable-output"),
+        ("nvidia-smi", False, "tool-not-found"),
+    ]
+    evidence = [*graph.adapters, *graph.discovery_observations]
+    assert all(item.verification_state in {"detected", "unavailable"} for item in evidence)
+    serialized = graph.model_dump_json()
+    assert "ud800" not in serialized.lower()
+    assert "DEV_2C05" not in serialized
+
+
 def test_hardware_discoverer_sanitizes_malformed_return_code_and_stdout_conversion():
     class MalformedReturnCode:
         def __int__(self):
