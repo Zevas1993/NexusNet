@@ -90,7 +90,7 @@ def test_nvidia_smi_augments_matching_cim_nvidia_node_without_duplication():
             "PNPDeviceID": "PCI\\\\VEN_10DE&DEV_2C05",
             "AdapterRAM": "34359738368",
             "DriverVersion": "576.02",
-            "VideoProcessor": "Ada"
+            "VideoProcessor": "NVIDIA Ada"
         }
     ]"""
 
@@ -115,7 +115,7 @@ def test_nvidia_smi_augments_matching_cim_nvidia_node_without_duplication():
     assert nvidia.node_id == "gpu:windows:" + sha256(b"PCI\\VEN_10DE&DEV_2C05").hexdigest()[:16]
     assert nvidia.vendor_id == "10de"
     assert nvidia.device_id == "2c05"
-    assert nvidia.architecture == "Ada"
+    assert nvidia.architecture == "NVIDIA Ada"
     assert nvidia.backend == "cuda"
     assert nvidia.accelerator_apis == ["cuda"]
     assert nvidia.memory_bytes == 32607 * 1024**2
@@ -159,6 +159,61 @@ def test_windows_discovery_redacts_unsafe_cim_and_nvidia_payloads_from_serialize
     assert nvidia_node.driver_version is None
 
 
+def test_windows_discovery_redacts_bare_user_and_host_names_from_cim_and_nvidia_fields():
+    bare_user = "Chris"
+    bare_host = "DESKTOP-7K3M"
+    cim_json = json.dumps(
+        [
+            {
+                "Name": bare_user,
+                "PNPDeviceID": "PCI\\VEN_8086&DEV_9A49",
+                "VideoProcessor": bare_host,
+                "DriverVersion": "31.0.101.5333",
+            }
+        ]
+    )
+
+    def runner(command: list[str], timeout: float):
+        if command[0] == "powershell.exe":
+            return SimpleNamespace(returncode=0, stdout=cim_json)
+        return SimpleNamespace(returncode=0, stdout=f"{bare_host}, 16303, {bare_user}")
+
+    discovery = discover_windows_accelerators(runner)
+
+    serialized = "\n".join(node.model_dump_json() for node in discovery.nodes)
+    assert bare_user not in serialized
+    assert bare_host not in serialized
+    cim_node, nvidia_node = discovery.nodes
+    assert cim_node.name == "windows-gpu"
+    assert cim_node.architecture is None
+    assert cim_node.driver_version == "31.0.101.5333"
+    assert nvidia_node.name == "nvidia-gpu"
+    assert nvidia_node.driver_version is None
+
+
+def test_windows_discovery_rejects_overlong_numeric_driver_versions():
+    overlong_version = "1." + "0" * 64
+    cim_json = json.dumps(
+        [
+            {
+                "Name": "NVIDIA GeForce RTX 5070 Ti",
+                "PNPDeviceID": "PCI\\VEN_10DE&DEV_2C05",
+                "DriverVersion": overlong_version,
+            }
+        ]
+    )
+
+    def runner(command: list[str], timeout: float):
+        if command[0] == "powershell.exe":
+            return SimpleNamespace(returncode=0, stdout=cim_json)
+        raise FileNotFoundError()
+
+    discovery = discover_windows_accelerators(runner)
+
+    assert discovery.nodes[0].driver_version is None
+    assert overlong_version not in discovery.nodes[0].model_dump_json()
+
+
 def test_cim_pnp_identity_is_canonicalized_before_deduplication_and_hashing():
     cim_json = json.dumps(
         [
@@ -182,14 +237,14 @@ def test_cim_pnp_identity_is_canonicalized_before_deduplication_and_hashing():
 def test_same_name_nvidia_rows_augment_cim_devices_in_source_order():
     controllers = [
         {"Name": "Intel Graphics", "PNPDeviceID": "PCI\\VEN_8086&DEV_0001"},
-        {"Name": "NVIDIA GeForce RTX", "PNPDeviceID": "PCI\\VEN_10DE&DEV_0001", "VideoProcessor": "first"},
+        {"Name": "NVIDIA GeForce RTX", "PNPDeviceID": "PCI\\VEN_10DE&DEV_0001", "VideoProcessor": "NVIDIA Ada One"},
     ]
     controllers.extend(
         {"Name": f"Intel Graphics {index}", "PNPDeviceID": f"PCI\\VEN_8086&DEV_{index:04X}"}
         for index in range(2, 8)
     )
     controllers.append(
-        {"Name": "NVIDIA GeForce RTX", "PNPDeviceID": "PCI\\VEN_10DE&DEV_0002", "VideoProcessor": "second"}
+        {"Name": "NVIDIA GeForce RTX", "PNPDeviceID": "PCI\\VEN_10DE&DEV_0002", "VideoProcessor": "NVIDIA Ada Two"}
     )
 
     def runner(command: list[str], timeout: float):
@@ -205,7 +260,34 @@ def test_same_name_nvidia_rows_augment_cim_devices_in_source_order():
     nvidia = [node for node in discovery.nodes if node.vendor_id == "10de"]
     assert [node.memory_bytes for node in nvidia] == [100 * 1024**2, 200 * 1024**2]
     assert [node.driver_version for node in nvidia] == ["600.01", "600.02"]
-    assert [node.architecture for node in nvidia] == ["first", "second"]
+    assert [node.architecture for node in nvidia] == ["NVIDIA Ada One", "NVIDIA Ada Two"]
+
+
+def test_nvidia_matching_uses_exact_original_ordinal_before_fallback():
+    cim_json = json.dumps(
+        [
+            {"Name": "NVIDIA GeForce RTX A", "PNPDeviceID": "PCI\\VEN_10DE&DEV_000A"},
+            {"Name": "NVIDIA GeForce RTX B", "PNPDeviceID": "PCI\\VEN_10DE&DEV_000B"},
+        ]
+    )
+
+    def runner(command: list[str], timeout: float):
+        if command[0] == "powershell.exe":
+            return SimpleNamespace(returncode=0, stdout=cim_json)
+        return SimpleNamespace(
+            returncode=0,
+            stdout="NVIDIA GeForce RTX B, 200, 600.02\nNVIDIA GeForce RTX C, 300, 600.03",
+        )
+
+    discovery = discover_windows_accelerators(runner)
+
+    first, second, fallback = discovery.nodes
+    assert first.backend == "portable"
+    assert first.name == "NVIDIA GeForce RTX A"
+    assert second.backend == "cuda"
+    assert second.memory_bytes == 200 * 1024**2
+    assert fallback.node_id == "gpu:windows:nvidia-smi:1"
+    assert fallback.memory_bytes == 300 * 1024**2
 
 
 @pytest.mark.parametrize(

@@ -21,6 +21,29 @@ _PCI_VENDOR = re.compile(r"VEN_([0-9A-F]{4})", re.IGNORECASE)
 _PCI_DEVICE = re.compile(r"DEV_([0-9A-F]{4})", re.IGNORECASE)
 _SAFE_HARDWARE_PAYLOAD = re.compile(r"[A-Za-z0-9][A-Za-z0-9 .()_+\-]{0,119}\Z")
 _HOST_STYLE_PAYLOAD = re.compile(r"\b(?=[a-z0-9-]*[a-z])[a-z0-9-]+(?:\.[a-z0-9-]+)+\b", re.IGNORECASE)
+_DRIVER_VERSION = re.compile(r"\d+(?:\.\d+){1,5}\Z")
+_HARDWARE_VOCABULARY = frozenset(
+    {
+        "adapter",
+        "amd",
+        "arc",
+        "controller",
+        "display",
+        "geforce",
+        "gpu",
+        "graphics",
+        "intel",
+        "iris",
+        "nvidia",
+        "quadro",
+        "radeon",
+        "rtx",
+        "tesla",
+        "uhd",
+        "video",
+        "xe",
+    }
+)
 _CIM_SCRIPT = (
     "$ErrorActionPreference='Stop'; "
     "@(Get-CimInstance -ClassName Win32_VideoController | "
@@ -36,9 +59,24 @@ class WindowsAcceleratorDiscovery:
     observations: tuple[HardwareProbeObservation, ...]
 
 
+@dataclass(frozen=True)
+class _CimNode:
+    node: HardwareNode
+    raw_match_name: str
+
+
+@dataclass(frozen=True)
+class _NvidiaRow:
+    raw_match_name: str
+    name: str
+    memory_bytes: int | None
+    driver_version: str | None
+
+
 def discover_windows_accelerators(command_runner: CommandRunner) -> WindowsAcceleratorDiscovery:
     cim_stdout, cim_reason = _run_bounded(command_runner, _cim_command())
-    nodes, cim_reason = _cim_nodes(cim_stdout) if cim_stdout is not None else ([], cim_reason)
+    cim_nodes, cim_reason = _cim_nodes(cim_stdout) if cim_stdout is not None else ([], cim_reason)
+    nodes = [item.node for item in cim_nodes]
     nvidia_stdout, nvidia_reason = _run_bounded(command_runner, _nvidia_smi_command())
     augmented_nodes = nodes
     nvidia_available = False
@@ -46,7 +84,7 @@ def discover_windows_accelerators(command_runner: CommandRunner) -> WindowsAccel
         nvidia_rows = _nvidia_rows(nvidia_stdout)
         nvidia_available = bool(nvidia_rows)
         nvidia_reason = "cuda-driver-detected" if nvidia_available else "unparseable-output"
-        augmented_nodes, unmatched_rows = _augment_nvidia_nodes(nodes, nvidia_rows)
+        augmented_nodes, unmatched_rows = _augment_nvidia_nodes(cim_nodes, nvidia_rows)
         augmented_nodes.extend(_nvidia_fallback_nodes(unmatched_rows))
     cim_available = bool(nodes)
     cim_observation_reason = "windows-cim-detected" if cim_available else cim_reason
@@ -126,7 +164,7 @@ def _run_bounded(command_runner: CommandRunner, command: list[str]) -> tuple[str
     return rendered, "available"
 
 
-def _cim_nodes(stdout: str) -> tuple[list[HardwareNode], str]:
+def _cim_nodes(stdout: str) -> tuple[list[_CimNode], str]:
     try:
         payload = json.loads(stdout)
     except (TypeError, json.JSONDecodeError):
@@ -139,17 +177,17 @@ def _cim_nodes(stdout: str) -> tuple[list[HardwareNode], str]:
         records = payload
     else:
         return [], "unparseable-output"
-    nodes: list[HardwareNode] = []
+    nodes: list[_CimNode] = []
     seen_ids: set[str] = set()
     for record in records:
         node = _cim_node(record)
-        if node is not None and node.node_id not in seen_ids:
-            seen_ids.add(node.node_id)
+        if node is not None and node.node.node_id not in seen_ids:
+            seen_ids.add(node.node.node_id)
             nodes.append(node)
     return (nodes, "windows-cim-detected") if nodes else ([], "unparseable-output")
 
 
-def _cim_node(record: Any) -> HardwareNode | None:
+def _cim_node(record: Any) -> _CimNode | None:
     if not isinstance(record, dict):
         return None
     pnp_device_id = record.get("PNPDeviceID")
@@ -164,68 +202,75 @@ def _cim_node(record: Any) -> HardwareNode | None:
     reason_codes = ["windows-cim-detected", "runtime-unverified"]
     if memory is not None:
         reason_codes.append("memory-os-reported")
-    return HardwareNode(
-        node_id="gpu:windows:" + hashlib.sha256(canonical_identity.encode()).hexdigest()[:16],
-        kind="gpu",
-        name=_sanitize_label(record.get("Name"), fallback="windows-gpu"),
-        backend="portable",
-        memory_bytes=memory,
-        vendor_id=vendor_match.group(1).lower() if vendor_match else None,
-        device_id=device_match.group(1).lower() if device_match else None,
-        architecture=_sanitize_optional(record.get("VideoProcessor")),
-        driver_version=_sanitize_optional(record.get("DriverVersion")),
-        dedicated_memory_bytes=memory,
-        accelerator_apis=[],
-        verification_state="detected",
-        probe_source="windows-cim",
-        reason_codes=reason_codes,
+    raw_match_name = record.get("Name") if isinstance(record.get("Name"), str) else ""
+    return _CimNode(
+        node=HardwareNode(
+            node_id="gpu:windows:" + hashlib.sha256(canonical_identity.encode()).hexdigest()[:16],
+            kind="gpu",
+            name=_sanitize_hardware_label(raw_match_name, fallback="windows-gpu"),
+            backend="portable",
+            memory_bytes=memory,
+            vendor_id=vendor_match.group(1).lower() if vendor_match else None,
+            device_id=device_match.group(1).lower() if device_match else None,
+            architecture=_sanitize_hardware_optional(record.get("VideoProcessor")),
+            driver_version=_sanitize_driver_version(record.get("DriverVersion")),
+            dedicated_memory_bytes=memory,
+            accelerator_apis=[],
+            verification_state="detected",
+            probe_source="windows-cim",
+            reason_codes=reason_codes,
+        ),
+        raw_match_name=raw_match_name,
     )
 
 
-def _nvidia_rows(stdout: str) -> list[tuple[str, int | None, str | None]]:
-    rows: list[tuple[str, int | None, str | None]] = []
+def _nvidia_rows(stdout: str) -> list[_NvidiaRow]:
+    rows: list[_NvidiaRow] = []
     for line in stdout.splitlines():
         fields = [field.strip() for field in line.split(",")]
         if len(fields) < 3 or not fields[0]:
             continue
-        rows.append((
-            _sanitize_label(fields[0], fallback="nvidia-gpu"),
-            _mib_bytes(fields[1]),
-            _sanitize_optional(fields[2]),
-        ))
+        rows.append(
+            _NvidiaRow(
+                raw_match_name=fields[0],
+                name=_sanitize_hardware_label(fields[0], fallback="nvidia-gpu"),
+                memory_bytes=_mib_bytes(fields[1]),
+                driver_version=_sanitize_driver_version(fields[2]),
+            )
+        )
     return rows
 
 
 def _augment_nvidia_nodes(
-    nodes: list[HardwareNode], rows: list[tuple[str, int | None, str | None]]
-) -> tuple[list[HardwareNode], list[tuple[int, tuple[str, int | None, str | None]]]]:
-    augmented = list(nodes)
-    nvidia_indexes = [index for index, node in enumerate(nodes) if node.vendor_id == "10de"]
+    nodes: list[_CimNode], rows: list[_NvidiaRow]
+) -> tuple[list[HardwareNode], list[tuple[int, _NvidiaRow]]]:
+    augmented = [item.node for item in nodes]
+    nvidia_indexes = [index for index, item in enumerate(nodes) if item.node.vendor_id == "10de"]
     unmatched = list(nvidia_indexes)
-    unmatched_rows: list[tuple[int, tuple[str, int | None, str | None]]] = []
-    for ordinal, (name, memory, driver_version) in enumerate(rows):
-        normalized_name = _normalized_name(name)
+    unmatched_rows: list[tuple[int, _NvidiaRow]] = []
+    for ordinal, row in enumerate(rows):
+        normalized_name = _normalized_name(row.raw_match_name)
         match = next(
             (
                 index
                 for index in unmatched
-                if _normalized_name(nodes[index].name) == normalized_name
+                if _normalized_name(nodes[index].raw_match_name) == normalized_name
             ),
             None,
         )
-        if match is None and unmatched:
-            match = unmatched[0]
+        if match is None and ordinal < len(nvidia_indexes) and nvidia_indexes[ordinal] in unmatched:
+            match = nvidia_indexes[ordinal]
         if match is None:
-            unmatched_rows.append((ordinal, (name, memory, driver_version)))
+            unmatched_rows.append((ordinal, row))
             continue
         unmatched.remove(match)
-        node = nodes[match]
+        node = nodes[match].node
         augmented[match] = node.model_copy(
             update={
                 "backend": "cuda",
-                "memory_bytes": memory,
-                "dedicated_memory_bytes": memory,
-                "driver_version": driver_version,
+                "memory_bytes": row.memory_bytes,
+                "dedicated_memory_bytes": row.memory_bytes,
+                "driver_version": row.driver_version,
                 "accelerator_apis": ["cuda"],
                 "probe_source": "windows-cim+nvidia-smi",
                 "reason_codes": [
@@ -239,24 +284,24 @@ def _augment_nvidia_nodes(
 
 
 def _nvidia_fallback_nodes(
-    rows: list[tuple[int, tuple[str, int | None, str | None]]]
+    rows: list[tuple[int, _NvidiaRow]]
 ) -> list[HardwareNode]:
     return [
         HardwareNode(
             node_id=f"gpu:windows:nvidia-smi:{index}",
             kind="gpu",
-            name=name,
+            name=row.name,
             backend="cuda",
-            memory_bytes=memory,
+            memory_bytes=row.memory_bytes,
             vendor_id="10de",
-            driver_version=driver_version,
-            dedicated_memory_bytes=memory,
+            driver_version=row.driver_version,
+            dedicated_memory_bytes=row.memory_bytes,
             accelerator_apis=["cuda"],
             verification_state="detected",
             probe_source="nvidia-smi",
             reason_codes=["cuda-driver-detected", "runtime-pack-unverified"],
         )
-        for index, (name, memory, driver_version) in rows
+        for index, row in rows
     ]
 
 
@@ -280,18 +325,25 @@ def _normalized_name(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", value.lower())
 
 
-def _sanitize_label(value: Any, *, fallback: str) -> str:
-    return _sanitize_optional(value) or fallback
+def _sanitize_hardware_label(value: Any, *, fallback: str) -> str:
+    return _sanitize_hardware_optional(value) or fallback
 
 
-def _sanitize_optional(value: Any) -> str | None:
-    if not isinstance(value, (str, int, float)):
+def _sanitize_hardware_optional(value: Any) -> str | None:
+    if not isinstance(value, str):
         return None
-    rendered = str(value)
+    rendered = value
     if (
         not _SAFE_HARDWARE_PAYLOAD.fullmatch(rendered)
         or any(character in rendered for character in "\\/:=@\r\n\t")
         or _HOST_STYLE_PAYLOAD.search(rendered)
     ):
         return None
-    return rendered
+    tokens = set(re.findall(r"[a-z0-9]+", rendered.lower()))
+    return rendered if tokens & _HARDWARE_VOCABULARY else None
+
+
+def _sanitize_driver_version(value: Any) -> str | None:
+    if not isinstance(value, str) or len(value) > 32 or not _DRIVER_VERSION.fullmatch(value):
+        return None
+    return value
