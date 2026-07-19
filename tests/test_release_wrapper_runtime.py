@@ -4935,7 +4935,7 @@ def test_release_readiness_blocks_go_without_accepted_peer_federation_import(tmp
         "/v1/chat/completions",
         json={
             "session_id": session_id,
-            "model": "nexusnet-offline",
+            "model": "mock/default",
             "messages": [{"role": "user", "content": "Readiness must require inbound peer federation."}],
         },
     )
@@ -5440,18 +5440,18 @@ def test_release_runtime_surfaces_in_wrapper_and_visualizer_control_panel(tmp_pa
     assert wrapper["release_runtime"]["surface_id"] == "release-wrapper-runtime"
     assert wrapper["release_runtime"]["federated_packet_count"] == 1
     assert wrapper["release_readiness"]["surface_id"] == "release-wrapper-readiness"
-    assert wrapper["release_readiness"]["go_no_go"] == "go"
+    assert wrapper["release_readiness"]["go_no_go"] == "no-go"
     assert wrapper["release_readiness"]["boot"]["readiness_ref"] == "/ops/wrapper/release-readiness"
     control_panel = visualizer["overlay_state"]["control_panel"]
     assert control_panel["release_wrapper_runtime"]["surface_id"] == "release-wrapper-runtime"
     assert control_panel["release_wrapper_readiness"]["surface_id"] == "release-wrapper-readiness"
-    assert control_panel["release_wrapper_readiness"]["go_no_go"] == "go"
+    assert control_panel["release_wrapper_readiness"]["go_no_go"] == "no-go"
     assert (
         control_panel["release_wrapper_readiness"]["whole_system_boot_contract"]["surface_id"]
         == "whole-system-release-boot-contract"
     )
-    assert control_panel["release_wrapper_readiness"]["whole_system_boot_contract"]["status"] == "passed"
-    assert control_panel["release_wrapper_readiness"]["whole_system_boot_contract"]["blocked_count"] == 0
+    assert control_panel["release_wrapper_readiness"]["whole_system_boot_contract"]["status"] == "blocked"
+    assert control_panel["release_wrapper_readiness"]["whole_system_boot_contract"]["blocked_count"] == 1
     readiness_checks = {
         check["check_id"]: check
         for check in control_panel["release_wrapper_readiness"]["readiness_checks"]
@@ -5466,7 +5466,11 @@ def test_release_runtime_surfaces_in_wrapper_and_visualizer_control_panel(tmp_pa
         for check_id, check in readiness_checks.items()
         if check["status"] != "pass" and check.get("go_no_go_blocking") is not False
     }
-    assert blocking_degraded_checks == set()
+    assert {
+        "federated-packet-inbox",
+        "peer-shadow-proposal",
+        "whole-system-release-boot-contract",
+    } <= blocking_degraded_checks
     assert nonblocking_degraded_checks >= {
         "release-health-heartbeat",
         "release-health-heartbeat-loop",
@@ -5607,8 +5611,8 @@ def test_visible_release_surfaces_use_harness_copy_without_renaming_legacy_route
         "Harness AO guard receipts",
         "Harness authority receipts",
         "Harness federated packets",
-        "Harness packet outbox",
-        "Harness packet inbox",
+        "Wrapper packet outbox",
+        "Wrapper packet inbox",
         "Harness growth captures",
     ]:
         assert expected in visualizer_js
@@ -5627,8 +5631,8 @@ def test_visible_release_surfaces_use_harness_copy_without_renaming_legacy_route
         "Wrapper AO guard receipts",
         "Wrapper authority receipts",
         "Wrapper federated packets",
-        "Wrapper packet outbox",
-        "Wrapper packet inbox",
+        "Harness packet outbox",
+        "Harness packet inbox",
         "Wrapper growth captures",
     ]:
         assert stale not in visualizer_js
@@ -5842,7 +5846,8 @@ def test_project_heartbeat_records_sanitized_replay_history_after_restart(tmp_pa
     assert replay["artifact_ref"] == "release-wrapper-runtime/project-heartbeats.jsonl"
     assert replay["raw_content_included"] is False
     assert replay["active_production_mutation_allowed"] is False
-    assert runtime["project_heartbeat"]["replay_ref"] == replay["artifact_ref"]
+    assert runtime["project_heartbeat"]["wrapper_replay_ref"] == replay["artifact_ref"]
+    assert runtime["project_heartbeat"]["replay_ref"] == "hive-substrate/project-heartbeats/_index.jsonl"
     assert readiness["evidence"]["project_heartbeat_replay"]["latest_heartbeat_id"] == heartbeat["heartbeat_id"]
     assert status_card["project_heartbeat_replay"]["latest_heartbeat_id"] == heartbeat["heartbeat_id"]
     assert control_panel["release_wrapper_runtime"]["project_heartbeat_replay"]["latest_heartbeat_id"] == heartbeat[
