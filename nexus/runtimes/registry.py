@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from hashlib import sha256
 import os
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,17 @@ from ..config import NexusPaths, env_flag
 from ..schemas import Message, RuntimeProfile
 from ..storage import NexusStore
 from .base import RuntimeAdapter, prompt_from_messages
+from nexusnet.runtime.accelerator_packs.route_selection import (
+    RouteEvidence,
+    RouteRequest,
+    RouteUnavailableError,
+    RuntimeModeStore,
+    VerifiedRouteSelector,
+    normalize_execution_mode,
+)
+from nexusnet.runtime.accelerator_packs.calibration import CalibrationLedger, CalibrationRecord
+from nexusnet.runtime.accelerator_packs.lifecycle import PackCircuitBreaker
+from nexusnet.runtime.accelerator_packs.contracts import WorkloadKind
 
 
 class MockRuntimeAdapter(RuntimeAdapter):
@@ -206,6 +218,14 @@ class RuntimeRegistry:
             "transformers": TransformersRuntimeAdapter(inference_cfg.get("transformers", {})),
             "llama.cpp": LlamaCppRuntimeAdapter(inference_cfg.get("llama_cpp", {})),
         }
+        self._accelerator_adapters: dict[str, RuntimeAdapter] = {}
+        self._accelerator_selector = VerifiedRouteSelector()
+        self._runtime_mode_store = RuntimeModeStore(paths.state_dir / "runtime-acceleration-mode.json")
+        self._accelerator_calibration = CalibrationLedger(paths.state_dir / "runtime-acceleration-calibration.json")
+        self._accelerator_circuits = PackCircuitBreaker(
+            paths.state_dir / "runtime-acceleration-circuits.json",
+            failure_threshold=3,
+        )
 
     def bootstrap(self) -> None:
         self.refresh_profiles()
@@ -233,6 +253,133 @@ class RuntimeRegistry:
             if profile.available:
                 return self.adapters[runtime_name]
         return self.adapters["mock"]
+
+    def register_accelerator_route(self, evidence: RouteEvidence, adapter: RuntimeAdapter) -> None:
+        if not evidence.verified or not evidence.healthy or not evidence.correctness_passed or evidence.quarantined:
+            raise ValueError("accelerator routes require verified, healthy correctness evidence")
+        if evidence.calibration_key is not None:
+            record = self._accelerator_calibration.verified(evidence.calibration_key)
+            if evidence.calibration_verified and record is None:
+                raise ValueError("accelerator calibration must exist in the exact-key ledger")
+            if record is not None:
+                evidence = evidence.model_copy(
+                    update={
+                        "calibration_verified": True,
+                        "calibration_outcome": "passed",
+                        "calibration_score": record.score,
+                        "evidence_refs": tuple(dict.fromkeys((*evidence.evidence_refs, *record.evidence_refs))),
+                    }
+                )
+        self._accelerator_adapters[evidence.route_id] = adapter
+        self._accelerator_selector.register(evidence)
+
+    def record_accelerator_calibration(self, record: CalibrationRecord) -> CalibrationRecord:
+        stored = self._accelerator_calibration.put(record)
+        self._accelerator_selector.reconcile_calibration(stored)
+        return stored
+
+    def record_accelerator_failure(self, route_id: str, *, reason_code: str) -> dict[str, Any]:
+        evidence = next((item for item in self._accelerator_selector.routes() if item.route_id == route_id), None)
+        if evidence is None or evidence.calibration_key is None:
+            raise ValueError("accelerator failure requires an exact calibration key")
+        state = self._accelerator_circuits.record_failure(evidence.calibration_key, reason_code=reason_code)
+        quarantined_routes: tuple[str, ...] = ()
+        if state.opened:
+            quarantined_routes = self._accelerator_selector.quarantine(
+                pack_id=evidence.pack_id,
+                pack_version=evidence.pack_version,
+            )
+        return {
+            "route_id": route_id,
+            "opened": state.opened,
+            "failure_count": state.failure_count,
+            "quarantined_routes": list(quarantined_routes),
+        }
+
+    def choose_execution_route(
+        self,
+        mode: str | None = None,
+        *,
+        model_hash: str | None = None,
+        workload_profile_hash: str | None = None,
+        workload: str | WorkloadKind = WorkloadKind.LLM_GENERATE,
+    ) -> RuntimeAdapter:
+        stored_mode = self._runtime_mode_store.status()["execution_mode"]
+        execution_mode = normalize_execution_mode(mode or stored_mode)
+        decision = self._accelerator_selector.select(
+            RouteRequest(
+                execution_mode=execution_mode,
+                workload=workload,
+                model_hash=model_hash,
+                workload_profile_hash=workload_profile_hash,
+            )
+        )
+        if not decision.available or decision.route_id is None:
+            raise RouteUnavailableError(",".join(decision.reason_codes))
+        return self._accelerator_adapters[decision.route_id]
+
+    def set_execution_mode(self, requested_mode: str) -> dict[str, Any]:
+        self._runtime_mode_store.set_mode(requested_mode)
+        return self.accelerator_status()
+
+    def accelerator_status(self) -> dict[str, Any]:
+        mode = self._runtime_mode_store.status()
+        decision = self._accelerator_selector.select(RouteRequest(execution_mode=mode["execution_mode"]))
+        routes = [
+            {
+                "route_id": evidence.route_id,
+                "pack_id": evidence.pack_id,
+                "pack_version": evidence.pack_version,
+                "device_ref": f"device::{sha256(evidence.device_node_id.encode('utf-8')).hexdigest()[:32]}",
+                "device_kind": evidence.device_kind,
+                "execution_modes": [item.value for item in evidence.execution_modes],
+                "verified": evidence.verified,
+                "healthy": evidence.healthy,
+                "correctness_passed": evidence.correctness_passed,
+                "quarantined": evidence.quarantined,
+                "calibration_verified": evidence.calibration_verified,
+                "calibration_outcome": evidence.calibration_outcome,
+                "calibration_score": evidence.calibration_score,
+            }
+            for evidence in self._accelerator_selector.routes()
+        ]
+        verified_route_count = sum(
+            1
+            for route in routes
+            if route["verified"] and route["healthy"] and route["correctness_passed"] and not route["quarantined"]
+        )
+        calibrated_route_count = sum(1 for route in routes if route["calibration_verified"])
+        quarantined_route_count = sum(1 for route in routes if route["quarantined"])
+        blockers: list[str] = []
+        if verified_route_count == 0:
+            blockers.append("no-verified-route")
+        if calibrated_route_count == 0:
+            blockers.append("calibration-required")
+        if quarantined_route_count:
+            blockers.append("route-quarantined")
+        certification = {
+            "route_count": len(routes),
+            "verified_route_count": verified_route_count,
+            "calibrated_route_count": calibrated_route_count,
+            "quarantined_route_count": quarantined_route_count,
+            "support_state": (
+                "verified-calibrated"
+                if verified_route_count and calibrated_route_count
+                else "verified-uncalibrated"
+                if verified_route_count
+                else "unavailable"
+            ),
+            "blocker_codes": blockers,
+        }
+        return {
+            "status_label": "VERIFIED" if decision.available else "DEGRADED",
+            "mode": mode,
+            "routes": routes,
+            "active_decision": decision.model_dump(mode="json"),
+            "calibration": self._accelerator_calibration.summary(),
+            "circuits": self._accelerator_circuits.summary(),
+            "certification": certification,
+        }
 
 
 def _verified_runtime_parameters(metadata: dict[str, Any] | None) -> dict[str, Any]:

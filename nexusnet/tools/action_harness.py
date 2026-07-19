@@ -3,9 +3,15 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import re
+import stat
+import tempfile
+import time
 from pathlib import Path
 from typing import Any
+
+from nexus.schemas import utcnow
 
 
 MUTATING_ACTIONS = {"click", "type", "write", "submit", "delete", "shell", "install"}
@@ -66,6 +72,9 @@ ALLOWED_SANDBOX_STATES = READY_SANDBOX_STATES | RELEASE_WRAPPER_SHADOW_SANDBOX_S
 SURFACE_ID = "tool-action-harness"
 AUTHORITY = "NexusBrain"
 TRACE_CONTRACT = "plan-only-replayable-no-direct-tool-execution"
+EXECUTION_TRACE_CONTRACT = "lease-gated-sandboxed-readonly-tool-execution"
+READ_ONLY_ACTIONS = {"read", "list", "hash"}
+MAX_READ_BYTES = 1_048_576
 REQUIRED_PLAN_KEYS = {
     "surface_id",
     "authority",
@@ -87,6 +96,116 @@ REQUIRED_PLAN_KEYS = {
     "record_digest",
 }
 HASHED_PLAN_FILENAME = re.compile(r"^[0-9a-f]{64}\.json$")
+EXECUTION_RECEIPT_KEYS = {
+    "surface_id", "authority", "execution_id", "action_id", "tool_ref", "action_type",
+    "target_digest", "sandbox_root_digest", "lease_id", "capability", "status", "executed",
+    "execution_allowed", "findings", "execution_authority_reason", "evidence_ref_count",
+    "evidence_digest", "result_digest", "result_metadata", "error_category",
+    "raw_content_included", "trace_contract", "duration_ms", "recorded_at", "receipt_digest",
+}
+AUTHORITY_REASON_CATEGORIES = {
+    "allowed", "authority_invalid_response", "authority_unavailable", "capability_mismatch",
+    "denied", "lease_expired", "lease_not_found", "lease_not_granted", "lease_required",
+    "mutation_not_available", "not_evaluated", "scope_mismatch",
+}
+AUTHORITY_DENIAL_REASONS = {
+    "authority_invalid_response", "authority_unavailable", "capability_mismatch", "denied",
+    "lease_expired", "lease_not_found", "lease_not_granted", "scope_mismatch",
+}
+SANDBOX_ERROR_CATEGORIES = {
+    "FileNotFoundError", "IsADirectoryError", "NotADirectoryError", "OSError",
+    "PermissionError", "UnicodeError", "ValueError",
+}
+EXECUTION_STATUS_FLAGS = {
+    "blocked-plan-only": (False, False),
+    "blocked-evidence": (False, False),
+    "blocked-authority": (False, False),
+    "blocked-sandbox": (False, True),
+    "executed-readonly": (True, True),
+}
+
+
+class SafeReadOnlyToolbox:
+    """Filesystem-only read/list/hash operations confined to one resolved root."""
+
+    def __init__(self, sandbox_root: Path | str) -> None:
+        self.root = Path(sandbox_root).resolve()
+        if not self.root.is_dir():
+            raise ValueError("sandbox_root must resolve to an existing directory")
+
+    def run(self, action_type: str, target: str) -> dict[str, Any]:
+        action = str(action_type).strip().lower()
+        if action not in READ_ONLY_ACTIONS:
+            raise ValueError("unsupported read-only tool action")
+        path = self._resolve_target(target)
+        if action == "read":
+            with self._open_regular_file(path) as handle:
+                if os.fstat(handle.fileno()).st_size > MAX_READ_BYTES:
+                    raise ValueError("read target exceeds the read-only size limit")
+                content = handle.read(MAX_READ_BYTES + 1)
+            if len(content) > MAX_READ_BYTES:
+                raise ValueError("read target exceeds the read-only size limit")
+            return {"text": content.decode("utf-8")}
+        if action == "list":
+            if not path.is_dir():
+                raise ValueError("list target must be a directory")
+            return {"entries": sorted(item.name for item in path.iterdir())}
+        digest = hashlib.sha256()
+        with self._open_regular_file(path) as handle:
+            for chunk in iter(lambda: handle.read(64 * 1024), b""):
+                digest.update(chunk)
+        return {"sha256": digest.hexdigest()}
+
+    def _resolve_target(self, target: str) -> Path:
+        candidate = Path(target)
+        if candidate.is_absolute():
+            raise PermissionError("absolute tool targets are not allowed")
+        resolved = (self.root / candidate).resolve()
+        try:
+            resolved.relative_to(self.root)
+        except ValueError as exc:
+            raise PermissionError("tool target escapes the sandbox root") from exc
+        return resolved
+
+    def _open_regular_file(self, path: Path) -> Any:
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(path, flags)
+        try:
+            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                raise ValueError("read-only tool target must be a regular file")
+            opened_path = self._opened_file_path(descriptor)
+            if opened_path is not None:
+                try:
+                    opened_path.relative_to(self.root)
+                except ValueError as exc:
+                    raise PermissionError("opened tool target escapes the sandbox root") from exc
+            return os.fdopen(descriptor, "rb")
+        except Exception:
+            os.close(descriptor)
+            raise
+
+    def _opened_file_path(self, descriptor: int) -> Path | None:
+        if os.name == "nt":
+            import ctypes
+            import msvcrt
+
+            handle = msvcrt.get_osfhandle(descriptor)
+            buffer = ctypes.create_unicode_buffer(32_768)
+            length = ctypes.windll.kernel32.GetFinalPathNameByHandleW(
+                ctypes.c_void_p(handle), buffer, len(buffer), 0
+            )
+            if length == 0 or length >= len(buffer):
+                raise OSError("unable to resolve opened Windows file handle")
+            value = buffer.value
+            if value.startswith("\\\\?\\UNC\\"):
+                value = "\\\\" + value[8:]
+            elif value.startswith("\\\\?\\"):
+                value = value[4:]
+            return Path(value).resolve()
+        proc_handle = Path("/proc/self/fd") / str(descriptor)
+        if proc_handle.exists():
+            return proc_handle.resolve()
+        return None
 
 
 class ToolActionHarness:
@@ -95,7 +214,11 @@ class ToolActionHarness:
         self.plans_dir = self.artifacts_dir / "tools" / "action-harness" if self.artifacts_dir else None
         if self.plans_dir is not None:
             self.plans_dir.mkdir(parents=True, exist_ok=True)
+        self.executions_dir = self.plans_dir / "executions" if self.plans_dir else None
+        if self.executions_dir is not None:
+            self.executions_dir.mkdir(parents=True, exist_ok=True)
         self._plans: list[dict[str, Any]] = []
+        self._executions: list[dict[str, Any]] = []
 
     def plan_action(
         self,
@@ -155,17 +278,297 @@ class ToolActionHarness:
         self._persist(plan)
         return copy.deepcopy(plan)
 
+    def execute_action(
+        self, *, action_id: str, tool_ref: str, action_type: str, target: str,
+        evidence_refs: list[str], sandbox_root: Path | str, execution_authority: Any | None = None,
+        lease_id: str | None = None, capability: str = "deterministic_tool_boundary",
+    ) -> dict[str, Any]:
+        """Execute a safe filesystem observation after a matching authority lease check."""
+        started = time.perf_counter()
+        action_id = self._validate_string("action_id", action_id)
+        tool_ref = self._validate_string("tool_ref", tool_ref)
+        action_type = self._validate_string("action_type", action_type)
+        target = self._validate_string("target", target)
+        evidence_refs = self._validate_string_list("evidence_refs", evidence_refs)
+        capability = self._validate_string("capability", capability)
+        root = Path(sandbox_root).resolve()
+        root_digest, target_digest = self._digest_text(str(root)), self._digest_text(target)
+        lease_id = lease_id.strip() if isinstance(lease_id, str) else ""
+        if self._is_mutating_action(action_id=action_id, tool_ref=tool_ref, action_type=action_type):
+            return self._finish_execution(action_id, tool_ref, action_type, target_digest, root_digest, lease_id, capability,
+                "blocked-plan-only", False, False, ["mutating_action_not_executable_plan_only"], "mutation_not_available",
+                evidence_refs, None, "", started)
+        if not evidence_refs:
+            return self._finish_execution(action_id, tool_ref, action_type, target_digest, root_digest, lease_id, capability,
+                "blocked-evidence", False, False, ["tool_action_requires_evidence_refs"], "not_evaluated", evidence_refs, None, "", started)
+        if execution_authority is None or not lease_id:
+            return self._finish_execution(action_id, tool_ref, action_type, target_digest, root_digest, lease_id, capability,
+                "blocked-authority", False, False, ["execution_authority_lease_required"], "lease_required", evidence_refs, None, "", started)
+        scope = {"tool_ref": tool_ref, "action_type": action_type, "target": target,
+                 "sandbox_root_digest": root_digest.removeprefix("sha256:")}
+        authority_failure = ""
+        try:
+            evaluation = execution_authority.evaluate(lease_id=lease_id, capability=capability, scope=scope)
+        except KeyError:
+            authority_failure = "lease_not_found"
+        except Exception:
+            authority_failure = "authority_unavailable"
+        else:
+            try:
+                if type(evaluation) is not dict or type(evaluation.get("decision")) is not dict:
+                    raise TypeError("authority evaluation must contain a plain decision object")
+                decision = evaluation["decision"]
+                if decision.get("execution_allowed") is True:
+                    if not self._authority_allow_decision_matches(
+                            decision, lease_id=lease_id, capability=capability, scope=scope):
+                        authority_failure = "authority_invalid_response"
+                elif decision.get("execution_allowed") is False:
+                    authority_failure = self._authority_reason_category(decision.get("reason"))
+                else:
+                    authority_failure = "authority_invalid_response"
+            except Exception:
+                authority_failure = "authority_invalid_response"
+        if authority_failure:
+            return self._finish_execution(action_id, tool_ref, action_type, target_digest, root_digest, lease_id, capability,
+                "blocked-authority", False, False, [f"execution_authority::{authority_failure}"], authority_failure,
+                evidence_refs, None, "", started)
+        try:
+            result = SafeReadOnlyToolbox(root).run(action_type, target)
+        except (OSError, PermissionError, UnicodeError, ValueError) as exc:
+            return self._finish_execution(action_id, tool_ref, action_type, target_digest, root_digest, lease_id, capability,
+                "blocked-sandbox", False, True, ["execution_error"], "allowed", evidence_refs, None,
+                self._sandbox_error_category(exc), started)
+        return self._finish_execution(action_id, tool_ref, action_type, target_digest, root_digest, lease_id, capability,
+            "executed-readonly", True, True, [], "allowed", evidence_refs, result, "", started)
+
     def summary(self) -> dict[str, Any]:
         plans = self._list_plans()
+        executions = self._list_executions()
         return {
             "surface_id": SURFACE_ID,
             "authority": AUTHORITY,
             "runtime_state": "degraded"
             if any(plan.get("status") == "blocked" for plan in plans)
-            else ("live-bound" if plans else "static-canon"),
+            or any(execution.get("status", "").startswith("blocked") for execution in executions)
+            else ("live-bound" if plans or executions else "static-canon"),
             "plan_count": len(plans),
             "latest_plan": copy.deepcopy(plans[0]) if plans else None,
+            "execution_count": len(executions),
+            "latest_execution": copy.deepcopy(executions[0]) if executions else None,
         }
+
+    def _finish_execution(self, action_id: str, tool_ref: str, action_type: str, target_digest: str,
+                          sandbox_root_digest: str, lease_id: str, capability: str, status: str, executed: bool,
+                          execution_allowed: bool, findings: list[str], authority_reason: str,
+                          evidence_refs: list[str], result: dict[str, Any] | None, error_category: str,
+                          started: float) -> dict[str, Any]:
+        execution_id = self._execution_id(action_id, lease_id, target_digest, sandbox_root_digest)
+        receipt = {"surface_id": SURFACE_ID, "authority": AUTHORITY, "execution_id": execution_id,
+            "action_id": action_id, "tool_ref": tool_ref, "action_type": action_type, "target_digest": target_digest,
+            "sandbox_root_digest": sandbox_root_digest, "lease_id": lease_id, "capability": capability, "status": status,
+            "executed": bool(executed), "execution_allowed": bool(execution_allowed), "findings": list(findings),
+            "execution_authority_reason": authority_reason, "evidence_ref_count": len(evidence_refs),
+            "evidence_digest": self._digest_payload(evidence_refs), "result_digest": self._digest_payload(result) if result is not None else "",
+            "result_metadata": self._result_metadata(result), "error_category": error_category, "raw_content_included": False,
+            "trace_contract": EXECUTION_TRACE_CONTRACT, "duration_ms": round((time.perf_counter() - started) * 1000, 3),
+            "recorded_at": utcnow().isoformat()}
+        receipt["receipt_digest"] = self._receipt_digest(receipt)
+        self._persist_execution(receipt)
+        response = copy.deepcopy(receipt)
+        if result is not None:
+            response["result"] = copy.deepcopy(result)
+        return response
+
+    def _persist_execution(self, receipt: dict[str, Any]) -> None:
+        if self.executions_dir is None:
+            self._executions.insert(0, copy.deepcopy(receipt))
+            return
+        path = self._execution_artifact_path(receipt["execution_id"])
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.executions_dir, delete=False) as handle:
+            temporary_path = Path(handle.name)
+            handle.write(json.dumps(receipt, allow_nan=False, indent=2, sort_keys=True))
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.replace(temporary_path, path)
+        finally:
+            temporary_path.unlink(missing_ok=True)
+        self._validate_execution_receipt(json.loads(path.read_text(encoding="utf-8")), path=path)
+        self._executions.insert(0, copy.deepcopy(receipt))
+
+    def _execution_artifact_path(self, execution_id: str) -> Path:
+        if self.executions_dir is None:
+            raise ValueError("executions_dir is required for persisted tool execution receipts")
+        path = self.executions_dir / f"{execution_id}.json"
+        if path.resolve().parent != self.executions_dir.resolve():
+            raise ValueError("tool execution receipt path escaped executions directory")
+        return path
+
+    def _list_executions(self) -> list[dict[str, Any]]:
+        executions: dict[str, dict[str, Any]] = {}
+        for receipt in self._executions:
+            try: executions.setdefault(self._validate_execution_receipt(receipt)["execution_id"], self._validate_execution_receipt(receipt))
+            except (TypeError, ValueError): pass
+        if self.executions_dir is not None:
+            for path in self.executions_dir.glob("*.json"):
+                try:
+                    receipt = self._validate_execution_receipt(json.loads(path.read_text(encoding="utf-8")), path=path)
+                    executions.setdefault(receipt["execution_id"], receipt)
+                except (OSError, TypeError, ValueError, json.JSONDecodeError): pass
+        return sorted((copy.deepcopy(item) for item in executions.values()), key=lambda item: (item["recorded_at"], item["execution_id"]), reverse=True)
+
+    def _validate_execution_receipt(self, payload: Any, *, path: Path | None = None) -> dict[str, Any]:
+        if not isinstance(payload, dict) or set(payload) != EXECUTION_RECEIPT_KEYS:
+            raise ValueError("tool execution receipt keys do not match the public schema")
+        if path is not None and not HASHED_PLAN_FILENAME.fullmatch(path.name):
+            raise ValueError("tool execution receipt filename must be a sha256 artifact name")
+        receipt = {"surface_id": self._validate_string("surface_id", payload["surface_id"]),
+            "authority": self._validate_string("authority", payload["authority"]),
+            "execution_id": self._validate_string("execution_id", payload["execution_id"]),
+            "action_id": self._validate_string("action_id", payload["action_id"]),
+            "tool_ref": self._validate_string("tool_ref", payload["tool_ref"]),
+            "action_type": self._validate_string("action_type", payload["action_type"]),
+            "target_digest": self._validate_digest("target_digest", payload["target_digest"]),
+            "sandbox_root_digest": self._validate_digest("sandbox_root_digest", payload["sandbox_root_digest"]),
+            "lease_id": self._validate_optional_string("lease_id", payload["lease_id"]),
+            "capability": self._validate_string("capability", payload["capability"]),
+            "status": self._validate_string("status", payload["status"]),
+            "executed": self._validate_bool("executed", payload["executed"]),
+            "execution_allowed": self._validate_bool("execution_allowed", payload["execution_allowed"]),
+            "findings": self._validate_string_list("findings", payload["findings"]),
+            "execution_authority_reason": self._validate_string("execution_authority_reason", payload["execution_authority_reason"]),
+            "evidence_ref_count": self._validate_nonnegative_int("evidence_ref_count", payload["evidence_ref_count"]),
+            "evidence_digest": self._validate_digest("evidence_digest", payload["evidence_digest"]),
+            "result_digest": self._validate_optional_digest("result_digest", payload["result_digest"]),
+            "result_metadata": self._validate_result_metadata(payload["result_metadata"]),
+            "error_category": self._validate_optional_string("error_category", payload["error_category"]),
+            "raw_content_included": self._validate_bool("raw_content_included", payload["raw_content_included"]),
+            "trace_contract": self._validate_string("trace_contract", payload["trace_contract"]),
+            "duration_ms": self._validate_duration(payload["duration_ms"]),
+            "recorded_at": self._validate_string("recorded_at", payload["recorded_at"]),
+            "receipt_digest": self._validate_digest("receipt_digest", payload["receipt_digest"])}
+        if receipt["surface_id"] != SURFACE_ID or receipt["authority"] != AUTHORITY or receipt["trace_contract"] != EXECUTION_TRACE_CONTRACT:
+            raise ValueError("tool execution receipt authority fields are invalid")
+        if receipt["raw_content_included"] is not False:
+            raise ValueError("tool execution receipt must not contain raw content")
+        if receipt["execution_authority_reason"] not in AUTHORITY_REASON_CATEGORIES:
+            raise ValueError("tool execution receipt authority reason is not allowlisted")
+        expected_flags = EXECUTION_STATUS_FLAGS.get(receipt["status"])
+        if expected_flags is None or (receipt["executed"], receipt["execution_allowed"]) != expected_flags:
+            raise ValueError("tool execution receipt status flags are inconsistent")
+        self._validate_execution_semantics(receipt)
+        if receipt["execution_id"] != self._execution_id(receipt["action_id"], receipt["lease_id"], receipt["target_digest"], receipt["sandbox_root_digest"]):
+            raise ValueError("tool execution receipt id does not match its safe inputs")
+        if receipt["receipt_digest"] != self._receipt_digest(receipt):
+            raise ValueError("tool execution receipt digest does not match its safe fields")
+        if path is not None and path.name != f"{receipt['execution_id']}.json":
+            raise ValueError("tool execution receipt filename does not match receipt id")
+        return receipt
+
+    def _execution_id(self, action_id: str, lease_id: str, target_digest: str, sandbox_root_digest: str) -> str:
+        return hashlib.sha256(json.dumps({"action_id": action_id, "lease_id": lease_id, "target_digest": target_digest,
+            "sandbox_root_digest": sandbox_root_digest}, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+    def _receipt_digest(self, receipt: dict[str, Any]) -> str:
+        return self._digest_payload({key: value for key, value in receipt.items() if key != "receipt_digest"})
+
+    def _authority_allow_decision_matches(self, decision: dict[str, Any], *, lease_id: str,
+                                          capability: str, scope: dict[str, Any]) -> bool:
+        encoded_scope = json.dumps(scope, sort_keys=True, separators=(",", ":"), default=str)
+        expected_scope_hash = hashlib.sha256(encoded_scope.encode("utf-8")).hexdigest()[:16]
+        binding_values = tuple(decision.get(key) for key in ("lease_id", "capability", "scope_hash", "reason"))
+        return (all(type(value) is str for value in binding_values)
+                and decision.get("lease_id") == lease_id
+                and decision.get("capability") == capability
+                and decision.get("scope_hash") == expected_scope_hash
+                and decision.get("reason") == "allowed")
+
+    def _authority_reason_category(self, reason: Any) -> str:
+        if type(reason) is not str:
+            return "authority_invalid_response"
+        normalized = reason.strip().lower() or "denied"
+        return normalized if normalized in AUTHORITY_DENIAL_REASONS else "denied"
+
+    def _sandbox_error_category(self, error: Exception) -> str:
+        for error_type, category in (
+            (PermissionError, "PermissionError"),
+            (FileNotFoundError, "FileNotFoundError"),
+            (IsADirectoryError, "IsADirectoryError"),
+            (NotADirectoryError, "NotADirectoryError"),
+            (UnicodeError, "UnicodeError"),
+            (ValueError, "ValueError"),
+            (OSError, "OSError"),
+        ):
+            if isinstance(error, error_type):
+                return category
+        return "OSError"
+
+    def _validate_execution_semantics(self, receipt: dict[str, Any]) -> None:
+        status = receipt["status"]
+        reason = receipt["execution_authority_reason"]
+        findings = receipt["findings"]
+        error_category = receipt["error_category"]
+        no_result = receipt["result_digest"] == "" and receipt["result_metadata"] == {
+            "kind": "none", "item_count": 0,
+        }
+
+        if status == "executed-readonly":
+            expected_kind = {"read": "text", "list": "entries", "hash": "sha256"}.get(receipt["action_type"])
+            metadata = receipt["result_metadata"]
+            valid_metadata = metadata.get("kind") == expected_kind
+            if expected_kind in {"text", "sha256"}:
+                valid_metadata = valid_metadata and metadata.get("item_count") == 1
+            if expected_kind == "text":
+                valid_metadata = valid_metadata and set(metadata) == {"kind", "item_count", "char_count"}
+            elif expected_kind in {"entries", "sha256"}:
+                valid_metadata = valid_metadata and set(metadata) == {"kind", "item_count"}
+            if (reason != "allowed" or findings or error_category or not receipt["result_digest"]
+                    or not valid_metadata):
+                raise ValueError("executed tool receipt semantics are inconsistent")
+            return
+
+        if not no_result:
+            raise ValueError("blocked tool receipt must not claim a result")
+        if status == "blocked-plan-only":
+            valid = (reason == "mutation_not_available"
+                     and findings == ["mutating_action_not_executable_plan_only"]
+                     and not error_category
+                     and self._is_mutating_action(action_id=receipt["action_id"], tool_ref=receipt["tool_ref"],
+                                                  action_type=receipt["action_type"]))
+        elif status == "blocked-evidence":
+            valid = reason == "not_evaluated" and findings == ["tool_action_requires_evidence_refs"] and not error_category
+        elif status == "blocked-authority":
+            expected_findings = (["execution_authority_lease_required"] if reason == "lease_required"
+                                 else [f"execution_authority::{reason}"] if reason in AUTHORITY_DENIAL_REASONS else [])
+            valid = bool(expected_findings) and findings == expected_findings and not error_category
+        elif status == "blocked-sandbox":
+            valid = (reason == "allowed" and findings == ["execution_error"]
+                     and error_category in SANDBOX_ERROR_CATEGORIES)
+        else:
+            valid = False
+        if not valid:
+            raise ValueError("blocked tool receipt semantics are inconsistent")
+
+    def _result_metadata(self, result: dict[str, Any] | None) -> dict[str, Any]:
+        if result is None: return {"kind": "none", "item_count": 0}
+        if "text" in result: return {"kind": "text", "item_count": 1, "char_count": len(str(result["text"]))}
+        if "entries" in result: return {"kind": "entries", "item_count": len(list(result["entries"]))}
+        if "sha256" in result: return {"kind": "sha256", "item_count": 1}
+        return {"kind": "unknown", "item_count": len(result)}
+
+    def _validate_result_metadata(self, value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict): raise ValueError("result_metadata must be an object")
+        metadata = {"kind": self._validate_string("result_metadata.kind", value.get("kind")),
+            "item_count": self._validate_nonnegative_int("result_metadata.item_count", value.get("item_count"))}
+        if "char_count" in value: metadata["char_count"] = self._validate_nonnegative_int("result_metadata.char_count", value["char_count"])
+        if set(value) != set(metadata): raise ValueError("result_metadata contains unsupported fields")
+        return metadata
+
+    def _digest_text(self, value: str) -> str:
+        return f"sha256:{hashlib.sha256(value.encode('utf-8')).hexdigest()}"
+
+    def _digest_payload(self, value: Any) -> str:
+        return self._digest_text(json.dumps(value, allow_nan=False, separators=(",", ":"), sort_keys=True))
 
     def _persist(self, plan: dict[str, Any]) -> None:
         if self.plans_dir is None:
@@ -437,3 +840,22 @@ class ToolActionHarness:
         if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
             raise ValueError("sequence must be a positive integer")
         return value
+
+    def _validate_nonnegative_int(self, name: str, value: Any) -> int:
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"{name} must be a non-negative integer")
+        return value
+
+    def _validate_duration(self, value: Any) -> float:
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+            raise ValueError("duration_ms must be a non-negative number")
+        return float(value)
+
+    def _validate_digest(self, name: str, value: Any) -> str:
+        digest = self._validate_string(name, value)
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+            raise ValueError(f"{name} must be a sha256 digest")
+        return digest
+
+    def _validate_optional_digest(self, name: str, value: Any) -> str:
+        return "" if value == "" else self._validate_digest(name, value)

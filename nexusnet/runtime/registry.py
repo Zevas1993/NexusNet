@@ -102,15 +102,18 @@ class BrainRuntimeRegistry:
             "token_budget_profile": profiler_summary["token_budget_profile"],
             "candidates": profiler_summary["candidates"],
             "dream_seed": dream_seed,
+            "runtime_acceleration": self.runtime_registry.accelerator_status(),
         }
 
     def core_execution_plan(self, *, model_hint: str | None = None, requested_runtime: str | None = None) -> dict:
         decision = self.selector.select(model_hint)
-        return self.system_profiler.execution_plan(
+        plan = self.system_profiler.execution_plan(
             model_hint=model_hint,
             requested_runtime=requested_runtime,
             selection_decision=decision.model_dump(mode="json"),
         )
+        plan["runtime_acceleration"] = self.runtime_registry.accelerator_status()
+        return plan
 
     def benchmark(self, model_hint: str | None = None) -> dict:
         model = self.model_registry.resolve_model(model_hint)

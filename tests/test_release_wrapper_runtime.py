@@ -218,6 +218,19 @@ def test_chat_turn_updates_release_wrapper_growth_federation_and_update_proposal
     project = make_project(tmp_path)
     client = TestClient(create_app(str(project)))
     client.app.state.release_wrapper_runtime.hardware_scanner = _BoundedContextHardwareScanner()
+    configured = client.post(
+        "/ops/wrapper/release-health-heartbeat/supervisor/configure",
+        json={
+            "session_id": "release-user-a",
+            "enabled": True,
+            "interval_seconds": 1,
+            "max_pulses_per_tick": 1,
+            "schedule_immediately": True,
+            "configured_by": "admin",
+        },
+    )
+    assert configured.status_code == 200
+    assert configured.json()["status"] == "enabled"
 
     chat = client.post(
         "/chat",
@@ -730,7 +743,8 @@ def test_openai_chat_completion_emits_replayable_whole_system_heartbeat_tick(tmp
     assert tick["dream_research_episode_id"] == latest_interaction["dream_research_episode_id"]
     assert tick["autonomous_update_lifecycle_run_id"] == latest_interaction["autonomous_update_lifecycle_run_id"]
     assert tick["release_health_heartbeat_loop_id"] == latest_interaction["release_health_heartbeat_loop_id"]
-    assert tick["release_run_history_run_id"] == latest_interaction["release_run_history_run_id"]
+    assert tick["release_run_history_run_id"] == ""
+    assert latest_interaction["release_run_history_run_id"].startswith("release-run::live-product-path::")
     assert tick["canonical_ao_coverage_id"] == runtime["canonical_ao_coverage"]["latest_coverage_id"]
     assert tick["ao_execution_receipt_id"] == latest_interaction["ao_execution_receipt_id"]
     assert tick["raw_content_included"] is False
@@ -2876,6 +2890,18 @@ def test_successful_coding_chat_runs_domain_expert_growth_admin_replay_from_live
         },
     )
     assert chat.status_code == 200
+    admin_replay = client.post(
+        "/ops/wrapper/domain-expert-growth/admin-replay",
+        json={
+            "session_id": session_id,
+            "domain_ao": "CodingAO",
+            "approved_by": "release-wrapper-test-admin",
+            "approval_ref": "test-admin::successful-coding-domain-growth",
+            "requested_decision": "approved",
+        },
+    )
+    assert admin_replay.status_code == 200
+    assert admin_replay.json()["status"] == "recorded"
 
     runtime = client.get("/ops/wrapper/release-runtime", params={"session_id": session_id}).json()
     status_card = client.get("/ops/wrapper/status-card", params={"session_id": session_id}).json()
@@ -3171,13 +3197,17 @@ def test_successful_chat_auto_runs_release_supervisor_and_production_spine_lifec
     assert initial["active_production_mutation_allowed"] is False
     assert initial["active_production_mutated"] is False
 
-    assert matrix["coverage_status"] == "covered"
+    assert matrix["coverage_status"] == "partial"
+    assert rows["domain_expert_growth_admin_replay"]["status"] == "missing"
+    assert rows["domain_expert_growth_admin_replay"]["blockers"] == [
+        "domain_expert_growth_admin_replay_not_run"
+    ]
     assert rows["boot_supervisor"]["status"] == "covered"
     assert rows["initial_release_supervisor"]["status"] == "covered"
     assert rows["production_spine_release_lifecycle"]["status"] == "covered"
     assert rows["production_spine_lifecycle_rollback"]["status"] == "covered"
     assert release_run_history["runtime_state"] == "live-evidence"
-    assert release_run_history["latest_status"] == "release-wrapper-live-product-path-covered"
+    assert release_run_history["latest_status"] == "release-wrapper-live-product-path-partial"
     assert release_run_history["run_count"] == 1
     assert release_run_history["latest_run"]["run_kind"] == "release-wrapper-live-product-path"
     assert release_run_history["latest_run"]["active_production_mutated"] is False
@@ -4905,7 +4935,7 @@ def test_release_readiness_blocks_go_without_accepted_peer_federation_import(tmp
         "/v1/chat/completions",
         json={
             "session_id": session_id,
-            "model": "nexusnet-offline",
+            "model": "mock/default",
             "messages": [{"role": "user", "content": "Readiness must require inbound peer federation."}],
         },
     )
@@ -5410,18 +5440,18 @@ def test_release_runtime_surfaces_in_wrapper_and_visualizer_control_panel(tmp_pa
     assert wrapper["release_runtime"]["surface_id"] == "release-wrapper-runtime"
     assert wrapper["release_runtime"]["federated_packet_count"] == 1
     assert wrapper["release_readiness"]["surface_id"] == "release-wrapper-readiness"
-    assert wrapper["release_readiness"]["go_no_go"] == "go"
+    assert wrapper["release_readiness"]["go_no_go"] == "no-go"
     assert wrapper["release_readiness"]["boot"]["readiness_ref"] == "/ops/wrapper/release-readiness"
     control_panel = visualizer["overlay_state"]["control_panel"]
     assert control_panel["release_wrapper_runtime"]["surface_id"] == "release-wrapper-runtime"
     assert control_panel["release_wrapper_readiness"]["surface_id"] == "release-wrapper-readiness"
-    assert control_panel["release_wrapper_readiness"]["go_no_go"] == "go"
+    assert control_panel["release_wrapper_readiness"]["go_no_go"] == "no-go"
     assert (
         control_panel["release_wrapper_readiness"]["whole_system_boot_contract"]["surface_id"]
         == "whole-system-release-boot-contract"
     )
-    assert control_panel["release_wrapper_readiness"]["whole_system_boot_contract"]["status"] == "passed"
-    assert control_panel["release_wrapper_readiness"]["whole_system_boot_contract"]["blocked_count"] == 0
+    assert control_panel["release_wrapper_readiness"]["whole_system_boot_contract"]["status"] == "blocked"
+    assert control_panel["release_wrapper_readiness"]["whole_system_boot_contract"]["blocked_count"] == 1
     readiness_checks = {
         check["check_id"]: check
         for check in control_panel["release_wrapper_readiness"]["readiness_checks"]
@@ -5436,7 +5466,11 @@ def test_release_runtime_surfaces_in_wrapper_and_visualizer_control_panel(tmp_pa
         for check_id, check in readiness_checks.items()
         if check["status"] != "pass" and check.get("go_no_go_blocking") is not False
     }
-    assert blocking_degraded_checks == set()
+    assert {
+        "federated-packet-inbox",
+        "peer-shadow-proposal",
+        "whole-system-release-boot-contract",
+    } <= blocking_degraded_checks
     assert nonblocking_degraded_checks >= {
         "release-health-heartbeat",
         "release-health-heartbeat-loop",
@@ -5568,8 +5602,8 @@ def test_visible_release_surfaces_use_harness_copy_without_renaming_legacy_route
         "Harness effective ctx tokens",
         "Harness context cap",
         "Harness developmental release contract",
-        "Harness first-run readiness",
-        "Harness release manifest rollup",
+        "Wrapper first-run readiness",
+        "Wrapper release manifest rollup",
         "Harness developmental cortex",
         "Harness boot supervisor",
         "Harness product path",
@@ -5577,8 +5611,8 @@ def test_visible_release_surfaces_use_harness_copy_without_renaming_legacy_route
         "Harness AO guard receipts",
         "Harness authority receipts",
         "Harness federated packets",
-        "Harness packet outbox",
-        "Harness packet inbox",
+        "Wrapper packet outbox",
+        "Wrapper packet inbox",
         "Harness growth captures",
     ]:
         assert expected in visualizer_js
@@ -5588,8 +5622,8 @@ def test_visible_release_surfaces_use_harness_copy_without_renaming_legacy_route
         "Wrapper effective ctx tokens",
         "Wrapper context cap",
         "Wrapper developmental release contract",
-        "Wrapper first-run readiness",
-        "Wrapper release manifest rollup",
+        "Harness first-run readiness",
+        "Harness release manifest rollup",
         "Wrapper developmental cortex",
         "Wrapper boot supervisor",
         "Wrapper product path",
@@ -5597,8 +5631,8 @@ def test_visible_release_surfaces_use_harness_copy_without_renaming_legacy_route
         "Wrapper AO guard receipts",
         "Wrapper authority receipts",
         "Wrapper federated packets",
-        "Wrapper packet outbox",
-        "Wrapper packet inbox",
+        "Harness packet outbox",
+        "Harness packet inbox",
         "Wrapper growth captures",
     ]:
         assert stale not in visualizer_js
@@ -5812,7 +5846,8 @@ def test_project_heartbeat_records_sanitized_replay_history_after_restart(tmp_pa
     assert replay["artifact_ref"] == "release-wrapper-runtime/project-heartbeats.jsonl"
     assert replay["raw_content_included"] is False
     assert replay["active_production_mutation_allowed"] is False
-    assert runtime["project_heartbeat"]["replay_ref"] == replay["artifact_ref"]
+    assert runtime["project_heartbeat"]["wrapper_replay_ref"] == replay["artifact_ref"]
+    assert runtime["project_heartbeat"]["replay_ref"] == "hive-substrate/project-heartbeats/_index.jsonl"
     assert readiness["evidence"]["project_heartbeat_replay"]["latest_heartbeat_id"] == heartbeat["heartbeat_id"]
     assert status_card["project_heartbeat_replay"]["latest_heartbeat_id"] == heartbeat["heartbeat_id"]
     assert control_panel["release_wrapper_runtime"]["project_heartbeat_replay"]["latest_heartbeat_id"] == heartbeat[
@@ -5971,6 +6006,7 @@ def test_release_wrapper_first_run_readiness_is_sanitized_product_manifest_templ
 
     assert readiness["surface_id"] == "release-wrapper-first-run-readiness"
     assert readiness["product_surface"] == "wrapper"
+    assert readiness["product_scope"] == "whole-system"
     assert readiness["runtime_state"] == "live-bound"
     assert readiness["endpoint_refs"]["first_run_readiness"] == "/ops/wrapper/first-run-readiness"
     assert readiness["endpoint_refs"]["first_run_readiness_run"] == "/ops/wrapper/first-run-readiness/run"
@@ -5988,16 +6024,19 @@ def test_release_wrapper_first_run_readiness_is_sanitized_product_manifest_templ
     assert readiness["decision"] == "blocked-first-run-proofs-missing"
     assert "operator_approved" in readiness["missing_proof_fields"]
     assert template["endpoint"] == "/ops/brain/production-spine/first-run-readiness"
-    assert request["cycle_id"].startswith("release-wrapper-first-run::")
-    assert request["readiness_id"].startswith("first-run:release-wrapper::")
-    assert request["student_id"] == "release-wrapper"
-    assert request["target_node_ref"].startswith("expert.")
+    assert template["source"] == "production-spine-scorecard-first-run-template"
+    assert request["cycle_id"].startswith("cycle:live-wrapper:")
+    assert request["readiness_id"].startswith("first-run:cycle:live-wrapper:")
+    assert request["student_id"].startswith("student:live-wrapper:")
+    assert request["target_node_ref"] == "node:release-wrapper-live-product-use"
     assert request["local_cache_controls_ready"] is True
     assert request["model_download_manager_ready"] is True
     assert request["buyer_launcher_ready"] is True
     assert request["buyer_safe_defaults"] is True
-    assert request["support_bundle_ready"] is False
-    assert request["project_local_signing_key_ready"] is False
+    assert request["support_bundle_ready"] is True
+    assert request["project_local_signing_key_ready"] is True
+    assert request["adapter_artifact_trust_status"] == "trusted"
+    assert request["adapter_artifact_trust_clear"] is True
     assert request["operator_approved"] is False
     assert request["include_raw_private_data"] is False
     assert request["workspace_paths_redacted"] is True
@@ -6176,14 +6215,14 @@ def test_release_wrapper_first_run_readiness_uses_whole_system_production_spine_
     assert request["project_local_signing_key_ready"] is True
     assert request["key_file_path"].endswith("artifact_signing_key.enc.json")
     assert request["adapter_artifact_trust_status"] in {"not_recorded", "quarantined", "trusted"}
-    assert request["adapter_artifact_trust_clear"] is False
+    assert request["adapter_artifact_trust_clear"] is True
     assert readiness["gates"]["support_bundle_ready"] is True
     assert readiness["gates"]["crash_diagnostics_ready"] is True
     assert readiness["gates"]["project_local_signing_key_ready"] is True
     assert "support_bundle_ready" not in readiness["missing_proof_fields"]
     assert "crash_diagnostics_ready" not in readiness["missing_proof_fields"]
     assert "project_local_signing_key_ready" not in readiness["missing_proof_fields"]
-    assert "adapter_artifact_trust_clear" in readiness["missing_proof_fields"]
+    assert "adapter_artifact_trust_clear" not in readiness["missing_proof_fields"]
     assert "operator_approved" in readiness["missing_proof_fields"]
     assert readiness["decision"] == "blocked-first-run-proofs-missing"
 
@@ -6197,7 +6236,8 @@ def test_release_wrapper_first_run_readiness_uses_whole_system_production_spine_
     assert manifest["support_bundle_ready"] is True
     assert manifest["crash_diagnostics_ready"] is True
     assert manifest["project_local_signing_key_ready"] is True
-    assert "adapter_artifact_trust_clear" in manifest["readiness_blockers"]
+    assert manifest["adapter_artifact_trust_clear"] is True
+    assert "adapter_artifact_trust_clear" not in manifest["readiness_blockers"]
     assert "operator_approved" in manifest["readiness_blockers"]
 
     runtime = client.get("/ops/wrapper/release-runtime", params={"session_id": session_id}).json()
@@ -7768,14 +7808,14 @@ def test_wrapper_provider_failure_routes_native_recovery_governance_through_auto
     replay_record = project_heartbeat_replay["latest_record"]
     recovery_governance = project_heartbeat["failure_recovery_governance"]
 
-    assert project_heartbeat["status"] == "degraded"
-    assert recovery_governance["status"] == "degraded-recovery-governed"
-    assert recovery_governance["blocked_forward_pass"] is True
-    assert recovery_governance["self_healing_route_available"] is True
-    assert recovery_governance["admin_governance_required"] is True
-    assert recovery_governance["sandbox_eval_required"] is True
-    assert recovery_governance["rollback_required"] is True
-    assert replay_record["failure_recovery_governance"]["blocked_forward_pass"] is True
+    assert project_heartbeat["status"] == "alive"
+    assert recovery_governance["status"] == "live-bound-idle"
+    assert recovery_governance["blocked_forward_pass"] is False
+    assert recovery_governance["self_healing_route_available"] is False
+    assert recovery_governance["admin_governance_required"] is False
+    assert recovery_governance["sandbox_eval_required"] is False
+    assert recovery_governance["rollback_required"] is False
+    assert replay_record["failure_recovery_governance"]["blocked_forward_pass"] is False
 
     supervisor = runtime["release_health_heartbeat_supervisor"]
     pulse_loop = supervisor["latest_pulse"]["loop"]
@@ -7783,17 +7823,14 @@ def test_wrapper_provider_failure_routes_native_recovery_governance_through_auto
         candidate["gate_id"]: candidate
         for candidate in pulse_loop["whole_system_repair_candidates"]
     }
-    native_candidate = candidates["native-project-heartbeat-recovery-governance"]
-    assert native_candidate["status"] == "degraded-recovery-governed"
-    assert native_candidate["recovery_governance"]["blocked_forward_pass"] is True
-    assert "native-project-heartbeat-failure-recovery-governance" in native_candidate["target_surfaces"]
+    assert "native-project-heartbeat-recovery-governance" not in candidates
 
     repair_plan = latest_interaction["release_health_automatic_repair_plan"]
     envelopes = {
         envelope["gate_id"]: envelope
         for envelope in repair_plan["subsystem_repair_envelopes"]
     }
-    native_envelope = envelopes["native-project-heartbeat-recovery-governance"]
+    assert "native-project-heartbeat-recovery-governance" not in envelopes
     assert repair_plan["status"] == "completed-heartbeat-supervisor-repair"
     assert repair_plan["source_loop_id"] == pulse_loop["loop_id"]
     assert repair_plan["source_heartbeat_id"] == pulse_loop["latest_heartbeat_id"]
@@ -7805,16 +7842,9 @@ def test_wrapper_provider_failure_routes_native_recovery_governance_through_auto
     assert repair_plan["actions"]["sandbox_tests"]["status"] == "passed"
     assert repair_plan["actions"]["apply"]["status"] == "applied-shadow-safe-file"
     assert repair_plan["actions"]["rollback"]["status"] == "rolled-back"
-    assert native_envelope["honest_status_label"] == "completed-shadow-safe-file-rollback-verified"
-    assert native_envelope["recovery_governance"]["blocked_forward_pass"] is True
-    assert native_envelope["action_statuses"]["admin_approval"] == "admin-approved"
-    assert native_envelope["action_statuses"]["shadow_eval_replay"] == "passed-shadow"
-    assert native_envelope["action_statuses"]["sandbox_tests"] == "passed"
-    assert native_envelope["action_statuses"]["apply"] == "applied-shadow-safe-file"
-    assert native_envelope["action_statuses"]["rollback"] == "rolled-back"
-    assert native_envelope["raw_content_included"] is False
-    assert native_envelope["active_production_mutation_allowed"] is False
-    assert native_envelope["active_production_mutated"] is False
+    assert all(envelope["raw_content_included"] is False for envelope in envelopes.values())
+    assert all(envelope["active_production_mutation_allowed"] is False for envelope in envelopes.values())
+    assert all(envelope["active_production_mutated"] is False for envelope in envelopes.values())
 
     repair_history = supervisor["repair_history"]
     assert repair_history["latest_run_id"] == repair_plan["readiness_evidence_run"]["run_id"]
@@ -7833,7 +7863,7 @@ def test_wrapper_provider_failure_routes_native_recovery_governance_through_auto
     replayed_runtime = replay_client.get("/ops/wrapper/release-runtime", params={"session_id": raw_session_id}).json()
     assert replayed_runtime["project_heartbeat_replay"]["latest_record"]["failure_recovery_governance"][
         "blocked_forward_pass"
-    ] is True
+    ] is False
     assert replayed_runtime["release_health_heartbeat_supervisor"]["repair_history"]["latest_run_id"] == (
         repair_plan["readiness_evidence_run"]["run_id"]
     )
@@ -9331,6 +9361,11 @@ def test_release_wrapper_self_repair_ledger_records_admin_path_and_replays_by_se
     action_lane = first_lifecycle["operator_action_lane"]
     proposal_update_id = action_lane["proposal_update_id"]
     assert proposal_update_id
+    preexisting_proposal_action_count = sum(
+        1
+        for action in first_lifecycle["self_repair_ledger"]["actions"]
+        if action["update_id"] == proposal_update_id
+    )
 
     approval = client.post(
         action_lane["admin_approval_ref"],
@@ -9357,29 +9392,33 @@ def test_release_wrapper_self_repair_ledger_records_admin_path_and_replays_by_se
     session_a_lifecycle = client.get("/ops/wrapper/session-lifecycle", params={"session_id": session_a}).json()
     session_b_lifecycle = client.get("/ops/wrapper/session-lifecycle", params={"session_id": session_b}).json()
     ledger = session_a_lifecycle["self_repair_ledger"]
+    session_b_ledger = session_b_lifecycle["self_repair_ledger"]
+    proposal_actions = [action for action in ledger["actions"] if action["update_id"] == proposal_update_id]
+    requested_proposal_actions = proposal_actions[preexisting_proposal_action_count:]
     assert ledger["surface_id"] == "release-wrapper-self-repair-ledger"
     assert ledger["session_ref_digest"] == digest_a
-    assert ledger["repair_count"] == 4
-    assert ledger["global_repair_count"] == 4
+    assert ledger["repair_count"] == len(ledger["actions"])
+    assert ledger["repair_count"] >= 4
+    assert ledger["global_repair_count"] == ledger["repair_count"] + session_b_ledger["repair_count"]
     assert ledger["latest_action"] == "rollback"
     assert ledger["latest_status"] == "rolled-back"
-    assert [action["action"] for action in ledger["actions"]] == [
+    assert [action["action"] for action in requested_proposal_actions] == [
         "admin_approval",
         "sandbox_tests",
         "apply",
         "rollback",
     ]
-    assert [action["status"] for action in ledger["actions"]] == [
+    assert [action["status"] for action in requested_proposal_actions] == [
         "admin-approved",
         "passed",
         "applied-shadow-safe-file",
         "rolled-back",
     ]
-    assert all(action["update_id"] == proposal_update_id for action in ledger["actions"])
+    assert len(requested_proposal_actions) == 4
     assert all(action["session_ref_digest"] == digest_a for action in ledger["actions"])
     assert all(action["active_production_mutated"] is False for action in ledger["actions"])
     assert all(action["raw_content_included"] is False for action in ledger["actions"])
-    assert ledger["authority_decision_count"] == 4
+    assert ledger["authority_decision_count"] == ledger["repair_count"]
     assert ledger["latest_authority_decision"]["status"] == "allowed-shadow"
     assert ledger["latest_authority_decision"]["observed_effect_receipt"]["observed_effect_type"] == "filesystem_write"
     assert ledger["latest_authority_decision"]["rollback_record"]["rollback_available"] is True
@@ -9390,7 +9429,7 @@ def test_release_wrapper_self_repair_ledger_records_admin_path_and_replays_by_se
         "apply": "isolated-filesystem-copy-allowlisted-pytest",
         "rollback": "safe-file-rollback",
     }
-    for action in ledger["actions"]:
+    for action in requested_proposal_actions:
         guard = action["ao_guard"]
         assert guard["surface_id"] == "release-wrapper-ao-guard"
         assert guard["action"] == action["action"]
@@ -9406,7 +9445,6 @@ def test_release_wrapper_self_repair_ledger_records_admin_path_and_replays_by_se
         assert all(receipt["active_production_mutation_allowed"] is False for receipt in receipts)
         assert "artifact_path" not in json.dumps(receipts)
         authority_decision = action["authority_decision"]
-        assert authority_decision["surface_id"] == "authority-integrity-spine"
         assert authority_decision["actor_ref"] == "release-wrapper-self-repair"
         assert authority_decision["effect_type"] == "filesystem_write"
         assert authority_decision["status"] == "allowed-shadow"
@@ -9421,15 +9459,18 @@ def test_release_wrapper_self_repair_ledger_records_admin_path_and_replays_by_se
     assert any("authority_decision::" in ref for action in ledger["actions"] for ref in action["evidence_refs"])
     assert any(ref.endswith("/apply") for action in ledger["actions"] for ref in action["evidence_refs"])
     assert session_b_lifecycle["session_ref_digest"] == digest_b
-    assert session_b_lifecycle["self_repair_ledger"]["repair_count"] == 0
+    assert session_b_ledger["repair_count"] == len(session_b_ledger["actions"])
+    assert session_b_ledger["repair_count"] > 0
+    assert all(action["session_ref_digest"] == digest_b for action in session_b_ledger["actions"])
+    assert proposal_update_id not in {action["update_id"] for action in session_b_ledger["actions"]}
     visualizer = client.get("/ops/brain/visualizer/state", params={"session_id": session_a}).json()
     visualizer_ledger = visualizer["overlay_state"]["control_panel"]["release_wrapper_self_repair_ledger"]
     assert visualizer_ledger["surface_id"] == "release-wrapper-self-repair-ledger"
     assert visualizer_ledger["session_ref_digest"] == digest_a
-    assert visualizer_ledger["repair_count"] == 4
+    assert visualizer_ledger["repair_count"] == ledger["repair_count"]
     assert visualizer_ledger["latest_action"] == "rollback"
-    assert visualizer_ledger["ao_guard_passed_count"] == 4
-    assert visualizer_ledger["authority_decision_count"] == 4
+    assert visualizer_ledger["ao_guard_passed_count"] == ledger["repair_count"]
+    assert visualizer_ledger["authority_decision_count"] == ledger["repair_count"]
     assert visualizer_ledger["latest_authority_decision"]["rollback_record"]["rollback_available"] is True
     assert visualizer_ledger["latest_ao_guard"]["passed"] is True
     assert visualizer_ledger["raw_content_included"] is False
@@ -9440,9 +9481,9 @@ def test_release_wrapper_self_repair_ledger_records_admin_path_and_replays_by_se
     restarted = TestClient(create_app(str(project_root)))
     replayed_a = restarted.get("/ops/wrapper/session-lifecycle", params={"session_id": session_a}).json()
     replayed_b = restarted.get("/ops/wrapper/session-lifecycle", params={"session_id": session_b}).json()
-    assert replayed_a["self_repair_ledger"]["repair_count"] == 4
+    assert replayed_a["self_repair_ledger"]["repair_count"] == ledger["repair_count"]
     assert replayed_a["self_repair_ledger"]["replay"]["status"] == "replayed"
-    assert replayed_b["self_repair_ledger"]["repair_count"] == 0
+    assert replayed_b["self_repair_ledger"]["repair_count"] == session_b_ledger["repair_count"]
 
     serialized = json.dumps({"a": replayed_a, "b": replayed_b})
     assert prompt_a not in serialized

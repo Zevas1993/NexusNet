@@ -17,6 +17,7 @@ from .schemas import (
     HardwareLink,
     HardwareNode,
 )
+from .windows_hardware import discover_windows_accelerators
 
 
 CommandRunner = Callable[[list[str], float], Any]
@@ -74,9 +75,20 @@ class HardwareCapabilityDiscoverer:
             HardwareLink(source_node_id="ram:0", target_node_id="storage:0", kind="storage-transfer"),
         ]
         adapters: list[AcceleratorAdapterObservation] = []
-        for backend, probe in (("cuda", self._probe_cuda), ("rocm", self._probe_rocm), ("metal", self._probe_metal)):
+        discovery_observations = []
+        if self._system_name.casefold() == "windows":
+            windows = discover_windows_accelerators(self._command_runner)
+            accelerator_results = [(windows.nodes, windows.adapters)]
+            discovery_observations.extend(windows.observations)
+            legacy_probes = (self._probe_rocm, self._probe_metal)
+        else:
+            accelerator_results = []
+            legacy_probes = (self._probe_cuda, self._probe_rocm, self._probe_metal)
+        for probe in legacy_probes:
             discovered, observation = probe()
-            adapters.append(observation)
+            accelerator_results.append((discovered, (observation,)))
+        for discovered, observations in accelerator_results:
+            adapters.extend(observations)
             for node in discovered:
                 nodes.append(node)
                 links.append(
@@ -92,6 +104,7 @@ class HardwareCapabilityDiscoverer:
             nodes=nodes,
             links=links,
             adapters=adapters,
+            discovery_observations=discovery_observations,
         )
 
     def _host_fingerprint(self) -> str:

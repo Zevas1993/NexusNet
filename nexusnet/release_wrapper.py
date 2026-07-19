@@ -861,14 +861,21 @@ class ReleaseWrapperRuntime:
         self._interactions = self._interactions[:50]
         if isinstance(interaction.get("domain_teacher_eval_handoff"), dict):
             handoff = interaction["domain_teacher_eval_handoff"]
-            domain_replay = self.approve_domain_expert_growth_admin_replay(
-                session_id=session_id,
-                domain_ao=str(handoff.get("domain_ao") or ""),
-                handoff_id=str(handoff.get("handoff_id") or ""),
-                approved_by="admin",
-                approval_ref="operator-review::release-wrapper-domain-expert-growth-auto-replay",
-                requested_decision="approved",
-            )
+            handoff["admin_replay_status"] = "pending-admin-approval"
+            domain_replay = {
+                "surface_id": "release-wrapper-domain-expert-growth-admin-replay",
+                "status": "pending-admin-approval",
+                "session_ref_digest": interaction.get("session_ref_digest"),
+                "domain_ao": handoff.get("domain_ao"),
+                "teacher_subject": handoff.get("teacher_subject"),
+                "handoff_id": handoff.get("handoff_id"),
+                "approval_required": True,
+                "approval_endpoint": "/ops/approvals",
+                "execution_endpoint": "/ops/wrapper/domain-expert-growth/admin-replay",
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "mutation_boundary": "live-domain-handoff-proposal-only-until-explicit-admin-replay",
+            }
             interaction["domain_expert_growth_admin_replay"] = domain_replay
             interaction["domain_expert_growth_admin_replay_status"] = domain_replay.get("status")
         self._native_hive_heartbeats.insert(0, native_hive_heartbeat_record)
@@ -897,6 +904,7 @@ class ReleaseWrapperRuntime:
             session_id=session_id,
             loop=automatic_repair_loop,
             trigger="wrapper-interaction-auto",
+            auto_execute=supervisor_tick.get("pulse_emitted") is True,
         )
         if automatic_repair_plan.get("status") != "not-required":
             interaction["release_health_automatic_repair_plan"] = automatic_repair_plan
@@ -905,7 +913,7 @@ class ReleaseWrapperRuntime:
             packet=federated_packet,
             provider_id=provider_id,
         )
-        if live_federated_import.get("status") != "skipped-no-federated-packet":
+        if not str(live_federated_import.get("status") or "").startswith("skipped-"):
             interaction["federated_packet_import_id"] = live_federated_import.get("import_id")
             interaction["federated_packet_import_status"] = live_federated_import.get("status")
             interaction["federated_packet_import_source_packet_ref"] = live_federated_import.get(
@@ -923,32 +931,6 @@ class ReleaseWrapperRuntime:
             interaction["federated_packet_import_governed_update_status"] = live_federated_import.get(
                 "governed_update_status"
             )
-        live_release_supervisor = self._record_live_release_supervisor_product_lifecycle(
-            session_id=session_id,
-            interaction=interaction,
-        )
-        if live_release_supervisor.get("status") != "skipped-existing-release-supervisor-evidence":
-            interaction["production_spine_release_lifecycle_run_id"] = live_release_supervisor.get(
-                "production_spine_release_lifecycle_run_id"
-            )
-            interaction["production_spine_release_lifecycle_rollback_id"] = live_release_supervisor.get(
-                "production_spine_release_lifecycle_rollback_id"
-            )
-            interaction["boot_supervisor_manifest_id"] = live_release_supervisor.get("boot_supervisor_manifest_id")
-            interaction["initial_release_supervisor_manifest_id"] = live_release_supervisor.get(
-                "initial_release_supervisor_manifest_id"
-            )
-            interaction["release_supervisor_product_lifecycle_status"] = live_release_supervisor.get("status")
-        live_release_run = self._record_live_release_run_history_and_refresh_canon_contract(
-            session_id=session_id,
-            interaction=interaction,
-            forward_pass_receipt=forward_pass_receipt,
-            cache_entry=cache_entry,
-        )
-        if live_release_run.get("status") != "skipped-no-forward-pass-receipt":
-            interaction["release_run_history_run_id"] = live_release_run.get("run_id")
-            interaction["release_run_history_status"] = live_release_run.get("latest_status")
-            interaction["final_canon_contract_receipt_id"] = live_release_run.get("canon_contract_receipt_id")
         latest_native_runtime_growth_receipt = native_runtime_growth_receipt
         try:
             latest_global_growth = (
@@ -1043,6 +1025,32 @@ class ReleaseWrapperRuntime:
             self._whole_system_heartbeat_ticks = self._whole_system_heartbeat_ticks[:100]
             self._whole_system_heartbeat_live_tick_count += 1
             self._persist_whole_system_heartbeat_tick(post_repair_tick)
+        live_release_supervisor = self._record_live_release_supervisor_product_lifecycle(
+            session_id=session_id,
+            interaction=interaction,
+        )
+        if live_release_supervisor.get("status") != "skipped-existing-release-supervisor-evidence":
+            interaction["production_spine_release_lifecycle_run_id"] = live_release_supervisor.get(
+                "production_spine_release_lifecycle_run_id"
+            )
+            interaction["production_spine_release_lifecycle_rollback_id"] = live_release_supervisor.get(
+                "production_spine_release_lifecycle_rollback_id"
+            )
+            interaction["boot_supervisor_manifest_id"] = live_release_supervisor.get("boot_supervisor_manifest_id")
+            interaction["initial_release_supervisor_manifest_id"] = live_release_supervisor.get(
+                "initial_release_supervisor_manifest_id"
+            )
+            interaction["release_supervisor_product_lifecycle_status"] = live_release_supervisor.get("status")
+        live_release_run = self._record_live_release_run_history_and_refresh_canon_contract(
+            session_id=session_id,
+            interaction=interaction,
+            forward_pass_receipt=forward_pass_receipt,
+            cache_entry=cache_entry,
+        )
+        if live_release_run.get("status") != "skipped-no-forward-pass-receipt":
+            interaction["release_run_history_run_id"] = live_release_run.get("run_id")
+            interaction["release_run_history_status"] = live_release_run.get("latest_status")
+            interaction["final_canon_contract_receipt_id"] = live_release_run.get("canon_contract_receipt_id")
         self._persist_native_hive_heartbeat_record(native_hive_heartbeat_record)
         self._persist_interaction_event(
             session_ref_digest=interaction["session_ref_digest"],
@@ -1071,6 +1079,16 @@ class ReleaseWrapperRuntime:
             return {
                 "surface_id": "release-wrapper-live-federated-import-readiness",
                 "status": "skipped-no-federated-packet",
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        provider_readiness_status = self._provider_readiness_status(provider_id)
+        if provider_readiness_status != "usable":
+            return {
+                "surface_id": "release-wrapper-live-federated-import-readiness",
+                "status": "skipped-provider-not-usable",
+                "provider_readiness_status": provider_readiness_status,
                 "raw_content_included": False,
                 "active_production_mutation_allowed": False,
                 "active_production_mutated": False,
@@ -1142,6 +1160,19 @@ class ReleaseWrapperRuntime:
         interaction: dict[str, Any],
     ) -> dict[str, Any]:
         session_ref_digest = _session_ref_digest(session_id)
+        if self.production_spine is None:
+            return {
+                "surface_id": "release-wrapper-live-release-supervisor-product-lifecycle",
+                "status": "degraded-production-spine-unavailable",
+                "production_spine_release_lifecycle_run_id": None,
+                "production_spine_release_lifecycle_rollback_id": None,
+                "boot_supervisor_manifest_id": None,
+                "initial_release_supervisor_manifest_id": None,
+                "blocker": "production_spine_unavailable",
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
         existing_lifecycle = self.production_spine_release_lifecycle(session_id=session_id)
         existing_run = (
             existing_lifecycle.get("latest_run")
@@ -1708,14 +1739,15 @@ class ReleaseWrapperRuntime:
                     requested_actions=[
                         {
                             "action_id": "release-wrapper-degraded-recovery-probe",
-                            "action_type": "write",
+                            "action_type": "inspect",
                             "target_ref": f"model::{_safe_ref(source_model)}",
                             "metadata": {
                                 "governed_recovery_probe": True,
+                                "read_only": True,
                                 "active_production_mutation_allowed": False,
-                                "requires_admin_approval": True,
-                                "requires_sandbox_eval": True,
-                                "requires_rollback": True,
+                                "requires_admin_approval": False,
+                                "requires_sandbox_eval": False,
+                                "requires_rollback": False,
                             },
                         }
                     ],
@@ -2031,6 +2063,7 @@ class ReleaseWrapperRuntime:
             session_id=session_id,
             loop=automatic_release_health,
             trigger="wrapper-interaction-auto",
+            auto_execute=supervisor_tick.get("pulse_emitted") is True,
         )
         if automatic_repair_plan.get("status") != "not-required":
             interaction["release_health_automatic_repair_plan"] = automatic_repair_plan
@@ -3455,7 +3488,15 @@ class ReleaseWrapperRuntime:
             for run in self._release_readiness_evidence_runs
             if not session_ref_digest or str(run.get("session_ref_digest") or "") == session_ref_digest
         ]
-        latest = runs[-1] if runs else None
+        latest = next(
+            (
+                run
+                for run in reversed(runs)
+                if str(run.get("status") or "")
+                != "planned-admin-approval-required-heartbeat-supervisor-repair"
+            ),
+            runs[-1] if runs else None,
+        )
         latest_heartbeat_repair = next(
             (
                 run
@@ -5600,6 +5641,7 @@ class ReleaseWrapperRuntime:
         session_id: str,
         loop: dict[str, Any],
         trigger: str,
+        auto_execute: bool,
     ) -> dict[str, Any]:
         repair_queue = loop.get("repair_queue") if isinstance(loop.get("repair_queue"), dict) else {}
         update_id = str(repair_queue.get("latest_update_id") or "")
@@ -5678,6 +5720,49 @@ class ReleaseWrapperRuntime:
         ):
             self.eval_registry.register(repair_plan["eval_suite_request"])
 
+        planned_envelopes = (
+            repair_plan.get("subsystem_repair_envelopes")
+            if isinstance(repair_plan.get("subsystem_repair_envelopes"), list)
+            else []
+        )
+        if not auto_execute:
+            pending_status = "planned-admin-approval-required-heartbeat-supervisor-repair"
+            readiness_run = self.record_release_readiness_evidence_run(
+                session_id=session_id,
+                update_id=update_id,
+                command=str(repair_plan.get("command") or command),
+                actions={},
+                status=pending_status,
+                subsystem_repair_envelopes=planned_envelopes,
+            )
+            return {
+                "surface_id": "release-health-automatic-repair-envelope-plan",
+                "status": pending_status,
+                "run_id": readiness_run.get("run_id"),
+                "update_id": update_id,
+                "safe_update_id": _safe_ref(update_id),
+                "source_loop_id": loop_id,
+                "source_heartbeat_id": latest_heartbeat_id,
+                "admin_approval_ref": repair_plan.get("approval_ref"),
+                "actions": {},
+                "readiness_evidence_run": readiness_run,
+                "lifecycle_run_id": None,
+                "lifecycle_status": "pending-admin-approval",
+                "subsystem_repair_envelopes": planned_envelopes,
+                "subsystem_repair_envelope_count": len(planned_envelopes),
+                "subsystem_repair_envelope_refs": [
+                    str(envelope.get("envelope_id") or "")
+                    for envelope in planned_envelopes
+                    if isinstance(envelope, dict)
+                ],
+                "run_release_health_heartbeat_supervisor_repair_ref": (
+                    "/ops/wrapper/release-health-heartbeat/supervisor/repair-run"
+                ),
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+
         lifecycle_run = self._record_autonomous_update_governance_lifecycle(
             session_id=session_id,
             update_id=update_id,
@@ -5694,11 +5779,6 @@ class ReleaseWrapperRuntime:
             else {"status": "not-linked", "update_id": update_id}
         )
         actions["shadow_eval_replay"] = linked_eval_replay
-        planned_envelopes = (
-            repair_plan.get("subsystem_repair_envelopes")
-            if isinstance(repair_plan.get("subsystem_repair_envelopes"), list)
-            else []
-        )
         envelopes = build_completed_release_health_heartbeat_subsystem_repair_envelopes(
             planned_envelopes,
             actions=actions,
@@ -6272,7 +6352,7 @@ class ReleaseWrapperRuntime:
                         packet=federated_packet,
                         provider_id=provider_id,
                     )
-                    if live_federated_import.get("status") != "skipped-no-federated-packet":
+                    if not str(live_federated_import.get("status") or "").startswith("skipped-"):
                         probe_interaction["federated_packet_import_id"] = live_federated_import.get("import_id")
                         probe_interaction["federated_packet_import_status"] = live_federated_import.get("status")
                         probe_interaction["federated_packet_import_source_packet_ref"] = (
