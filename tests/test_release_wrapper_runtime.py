@@ -218,6 +218,19 @@ def test_chat_turn_updates_release_wrapper_growth_federation_and_update_proposal
     project = make_project(tmp_path)
     client = TestClient(create_app(str(project)))
     client.app.state.release_wrapper_runtime.hardware_scanner = _BoundedContextHardwareScanner()
+    configured = client.post(
+        "/ops/wrapper/release-health-heartbeat/supervisor/configure",
+        json={
+            "session_id": "release-user-a",
+            "enabled": True,
+            "interval_seconds": 1,
+            "max_pulses_per_tick": 1,
+            "schedule_immediately": True,
+            "configured_by": "admin",
+        },
+    )
+    assert configured.status_code == 200
+    assert configured.json()["status"] == "enabled"
 
     chat = client.post(
         "/chat",
@@ -730,7 +743,8 @@ def test_openai_chat_completion_emits_replayable_whole_system_heartbeat_tick(tmp
     assert tick["dream_research_episode_id"] == latest_interaction["dream_research_episode_id"]
     assert tick["autonomous_update_lifecycle_run_id"] == latest_interaction["autonomous_update_lifecycle_run_id"]
     assert tick["release_health_heartbeat_loop_id"] == latest_interaction["release_health_heartbeat_loop_id"]
-    assert tick["release_run_history_run_id"] == latest_interaction["release_run_history_run_id"]
+    assert tick["release_run_history_run_id"] == ""
+    assert latest_interaction["release_run_history_run_id"].startswith("release-run::live-product-path::")
     assert tick["canonical_ao_coverage_id"] == runtime["canonical_ao_coverage"]["latest_coverage_id"]
     assert tick["ao_execution_receipt_id"] == latest_interaction["ao_execution_receipt_id"]
     assert tick["raw_content_included"] is False
