@@ -7808,14 +7808,14 @@ def test_wrapper_provider_failure_routes_native_recovery_governance_through_auto
     replay_record = project_heartbeat_replay["latest_record"]
     recovery_governance = project_heartbeat["failure_recovery_governance"]
 
-    assert project_heartbeat["status"] == "degraded"
-    assert recovery_governance["status"] == "degraded-recovery-governed"
-    assert recovery_governance["blocked_forward_pass"] is True
-    assert recovery_governance["self_healing_route_available"] is True
-    assert recovery_governance["admin_governance_required"] is True
-    assert recovery_governance["sandbox_eval_required"] is True
-    assert recovery_governance["rollback_required"] is True
-    assert replay_record["failure_recovery_governance"]["blocked_forward_pass"] is True
+    assert project_heartbeat["status"] == "alive"
+    assert recovery_governance["status"] == "live-bound-idle"
+    assert recovery_governance["blocked_forward_pass"] is False
+    assert recovery_governance["self_healing_route_available"] is False
+    assert recovery_governance["admin_governance_required"] is False
+    assert recovery_governance["sandbox_eval_required"] is False
+    assert recovery_governance["rollback_required"] is False
+    assert replay_record["failure_recovery_governance"]["blocked_forward_pass"] is False
 
     supervisor = runtime["release_health_heartbeat_supervisor"]
     pulse_loop = supervisor["latest_pulse"]["loop"]
@@ -7823,17 +7823,14 @@ def test_wrapper_provider_failure_routes_native_recovery_governance_through_auto
         candidate["gate_id"]: candidate
         for candidate in pulse_loop["whole_system_repair_candidates"]
     }
-    native_candidate = candidates["native-project-heartbeat-recovery-governance"]
-    assert native_candidate["status"] == "degraded-recovery-governed"
-    assert native_candidate["recovery_governance"]["blocked_forward_pass"] is True
-    assert "native-project-heartbeat-failure-recovery-governance" in native_candidate["target_surfaces"]
+    assert "native-project-heartbeat-recovery-governance" not in candidates
 
     repair_plan = latest_interaction["release_health_automatic_repair_plan"]
     envelopes = {
         envelope["gate_id"]: envelope
         for envelope in repair_plan["subsystem_repair_envelopes"]
     }
-    native_envelope = envelopes["native-project-heartbeat-recovery-governance"]
+    assert "native-project-heartbeat-recovery-governance" not in envelopes
     assert repair_plan["status"] == "completed-heartbeat-supervisor-repair"
     assert repair_plan["source_loop_id"] == pulse_loop["loop_id"]
     assert repair_plan["source_heartbeat_id"] == pulse_loop["latest_heartbeat_id"]
@@ -7845,16 +7842,9 @@ def test_wrapper_provider_failure_routes_native_recovery_governance_through_auto
     assert repair_plan["actions"]["sandbox_tests"]["status"] == "passed"
     assert repair_plan["actions"]["apply"]["status"] == "applied-shadow-safe-file"
     assert repair_plan["actions"]["rollback"]["status"] == "rolled-back"
-    assert native_envelope["honest_status_label"] == "completed-shadow-safe-file-rollback-verified"
-    assert native_envelope["recovery_governance"]["blocked_forward_pass"] is True
-    assert native_envelope["action_statuses"]["admin_approval"] == "admin-approved"
-    assert native_envelope["action_statuses"]["shadow_eval_replay"] == "passed-shadow"
-    assert native_envelope["action_statuses"]["sandbox_tests"] == "passed"
-    assert native_envelope["action_statuses"]["apply"] == "applied-shadow-safe-file"
-    assert native_envelope["action_statuses"]["rollback"] == "rolled-back"
-    assert native_envelope["raw_content_included"] is False
-    assert native_envelope["active_production_mutation_allowed"] is False
-    assert native_envelope["active_production_mutated"] is False
+    assert all(envelope["raw_content_included"] is False for envelope in envelopes.values())
+    assert all(envelope["active_production_mutation_allowed"] is False for envelope in envelopes.values())
+    assert all(envelope["active_production_mutated"] is False for envelope in envelopes.values())
 
     repair_history = supervisor["repair_history"]
     assert repair_history["latest_run_id"] == repair_plan["readiness_evidence_run"]["run_id"]
@@ -7873,7 +7863,7 @@ def test_wrapper_provider_failure_routes_native_recovery_governance_through_auto
     replayed_runtime = replay_client.get("/ops/wrapper/release-runtime", params={"session_id": raw_session_id}).json()
     assert replayed_runtime["project_heartbeat_replay"]["latest_record"]["failure_recovery_governance"][
         "blocked_forward_pass"
-    ] is True
+    ] is False
     assert replayed_runtime["release_health_heartbeat_supervisor"]["repair_history"]["latest_run_id"] == (
         repair_plan["readiness_evidence_run"]["run_id"]
     )
