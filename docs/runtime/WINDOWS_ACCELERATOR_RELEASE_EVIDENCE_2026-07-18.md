@@ -18,8 +18,13 @@ not silently fall back.
 - NVIDIA GeForce RTX 5070 Ti, driver 32.0.15.9636.
 - CUDA worker observation: Torch 2.11.0+cu128, CUDA runtime 12.8, one device,
   17,094,475,776 bytes reported device memory.
-- ONNX Runtime 1.27.0 providers: AzureExecutionProvider and
-  CPUExecutionProvider. No DirectML or Windows ML GPU provider was observed.
+- The core/system ONNX Runtime 1.27.0 environment exposes
+  AzureExecutionProvider and CPUExecutionProvider. No Windows ML dynamic GPU
+  provider was observed there.
+- A separate no-system-site-packages evidence venv exposes ONNX Runtime
+  DirectML 1.24.4 with DmlExecutionProvider and CPUExecutionProvider. A
+  CPU-fallback-disabled profile attributed the deterministic proof kernels
+  only to DmlExecutionProvider.
 - No AMD GPU or Intel GPU was detected. The Intel CPU is not XPU proof.
 
 Raw PNP identities are intentionally excluded. Runtime status projects a
@@ -31,8 +36,9 @@ one-way `device::` reference instead.
 | --- | --- | --- | --- |
 | Reference CPU | Verified on this machine | Real load, self-test, numeric inference, unload, governed fallback/rollback test | Model-family-specific certification beyond the deterministic proof model |
 | Torch CPU | Verified on this machine | Fresh CPython 3.11 private venv, no system site packages, 15 exact hashed wheels, Torch 2.11.0+cpu, health/self-test, `[3,5,7]` inference | Production model/workload calibration records |
-| NVIDIA CUDA | Verified on this machine for the worker/device proof | Dedicated development venv using system-site packages, Torch 2.11.0+cu128 family handshake, RTX 5070 Ti execution, health/self-test, `[3,5,7]` inference | Materialize the production CUDA lock in a dependency-isolated venv, then add production model/workload calibration records and release-model soak |
-| Windows ML / DirectML | Unavailable and unverified | Build gate passes; provider discovery is truthful; CPU ONNX probe is available | Install/enumerate a supported GPU provider, then model correctness, failure, and rollback proof |
+| NVIDIA CUDA | Verified on this machine for the worker/device proof | Exact 15-wheel CUDA lock in a no-system-site-packages CPython 3.11 venv; Torch 2.11.0+cu128, CUDA 12.8, RTX 5070 Ti; describe, health, self-test, load, `[3,5,7]` inference, and unload passed | Production-model/workload calibration records plus cancellation, timeout, OOM, crash, reboot, and sustained-load soak |
+| Windows ML dynamic providers | Unavailable and unverified | Windows build gate passes and missing-runtime/provider discovery remains truthful | Install and enumerate the supported Windows ML runtime/provider packages, then model correctness and recovery proof |
+| DirectML | Verified on this NVIDIA machine for the deterministic provider/worker proof; product route unactivated | Private ONNX Runtime DirectML 1.24.4 venv, explicit DmlExecutionProvider, CPU EP fallback disabled, profiler attributed kernels only to DirectML, and NexusNet health/self-test/load/`[3,5,7]` inference/unload passed | Add a reviewed exact environment lock and catalog acquisition path, then certify release models and representative AMD/Intel hardware separately |
 | AMD ROCm Windows | Unavailable, unverified, and install-not-ready | Exact cp312 ROCm 7.2.1 Torch wheel lock and official support tuples are encoded, but the required ROCm SDK prerequisite packages are not yet fully locked | Complete the private SDK prerequisite lock, then use representative supported Radeon/Ryzen hardware for driver/SDK install, health, correctness, OOM, rollback, and soak |
 | AMD Vulkan | Unavailable and unverified | Capability-driven native candidate and bounded connector tests | Representative AMD hardware and reviewed native binary certification |
 | Intel Torch XPU | Unavailable and unverified | Exact official XPU lock and family-rejection tests | Representative Intel GPU, driver install, real XPU health/correctness/OOM/rollback/soak |
@@ -43,6 +49,8 @@ one-way `device::` reference instead.
 
 - CPU lock requirements SHA-256:
   `67e38f978ce337d493dfc634e04cf13d2ae953e49e5c740b54753911ee81f025`.
+- CUDA lock requirements SHA-256:
+  `31786cbd665c82ff38cc52ae4c1daa3fb8d028c59aa9a7435062154bde0eb46f`.
 - The environment builder recorded `include-system-site-packages = false`.
 - Torch families are mutually exclusive: CPU, CUDA, XPU, and Windows ROCm.
 - Every locked wheel has a reviewed HTTPS host, exact byte size, and SHA-256.
@@ -51,6 +59,9 @@ one-way `device::` reference instead.
 - Lifecycle receipts expose manifest/SBOM digests, publisher, license, counts,
   actions, and sanitized reason codes without URLs, install paths, prompts,
   model paths, PNP identities, secrets, or worker stderr.
+- The DirectML evidence venv used exact top-level package versions, but it is
+  not represented as a release lock: transitive wheel hashes still require
+  review before the product catalog may acquire or activate that route.
 
 ## Governed selection and recovery evidence
 
@@ -73,13 +84,15 @@ one-way `device::` reference instead.
 
 1. Record production-model calibration on CPU and RTX 5070 Ti across prompt
    sizes, batch sizes, memory pressure, cancellation, timeout, and OOM profiles.
-2. Run repeated worker-crash, process-tree cleanup, repair, update, rollback,
-   and reboot persistence soak on a packaged Windows install.
+2. Extend the passing packaged install/repair/update/rollback/uninstall proof
+   with repeated worker-crash, process-tree cleanup, reboot persistence, and
+   sustained-load soak.
 3. Certify AMD ROCm/Vulkan on each claimed support-family tuple using a
    representative device and exact driver/runtime receipts.
 4. Certify Intel XPU/SYCL/OpenVINO on representative Intel GPUs.
-5. Certify Windows ML/DirectML only after the provider is actually enumerated
-   and the release model passes correctness and recovery gates.
+5. Keep Windows ML unavailable until its dynamic runtime/provider is actually
+   enumerated. Convert the passing DirectML proof into a hashed release lock,
+   then run release-model correctness and recovery gates.
 6. Keep hybrid disabled until measured cross-device offload outperforms the
    best single route without correctness or stability regression.
 
@@ -132,6 +145,24 @@ converted to passes or attributed to the accelerator implementation.
   and telemetry-aware visualizer behavior. Both Node capture scripts also
   passed syntax and help-entrypoint checks, and `compileall` passed for the
   touched Python surfaces.
+- Commit `f058f4b` added the consent-gated lifecycle CLI. Its 60-test focused
+  matrix passed, including a real clean-venv reference install/uninstall. The
+  production CUDA pack then installed its exact 2.576 GiB wheel set in 89.9
+  seconds; `pip check` and every deterministic worker operation passed.
+- The first clean packaged-core probe exposed an eager import of optional
+  Torch. Commit `101b741` made all 41 evolutionary-inference public exports
+  lazy without changing their names. The clean core then planned packs without
+  Torch, and the HIGH-risk regression matrix passed 79 tests.
+- A second fresh packaged-root soak passed install, deliberate quarantine,
+  fresh repair, compatible update, rollback, and both uninstalls. No pack or
+  environment files remained. The global pip-list hash was identical before
+  and after (`BE3F32DE23CD88B74A0A1716BF99B5F52972076D2728B3B2ECFF0D0904F0E368`),
+  and process, user, and machine PATH values were unchanged.
+- The private DirectML probe passed deterministic ONNX correctness and exposed
+  one silent-fallback risk. The worker now disables CPU EP fallback for an
+  explicit DmlExecutionProvider session; the provider/vendor/import/privacy
+  matrix passed 51 tests. Windows ROCm Torch candidates are now suppressed by
+  default until SDK-prerequisite readiness is explicitly verified.
 
 A final full traversal remains required after the production-isolated pack
 installation, packaged lifecycle soak, and DirectML/private-provider work in

@@ -18,6 +18,10 @@ class _SessionOptions:
     def __init__(self):
         self.enable_mem_pattern = True
         self.execution_mode = None
+        self.config_entries = {}
+
+    def add_session_config_entry(self, name, value):
+        self.config_entries[name] = value
 
 
 class _Session:
@@ -171,6 +175,7 @@ def test_onnx_worker_loads_and_executes_model_with_selected_provider(monkeypatch
     assert inferred["outputs"] == [[3.0, 5.0]]
     assert kernel.session.options.enable_mem_pattern is False
     assert kernel.session.options.execution_mode == "sequential"
+    assert kernel.session.options.config_entries == {"session.disable_cpu_ep_fallback": "1"}
 
 
 def test_onnx_worker_self_test_requires_real_provider_execution(monkeypatch, tmp_path: Path) -> None:

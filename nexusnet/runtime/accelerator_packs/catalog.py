@@ -155,6 +155,7 @@ class BuiltInPackCatalog:
         *,
         windows_ml: WindowsMlDiscovery | None = None,
         python_abi: str | None = None,
+        windows_rocm_sdk_ready: bool = False,
     ) -> tuple[PackCandidate, ...]:
         cpu = next((node for node in graph.nodes if node.kind == "cpu"), None)
         candidates: list[PackCandidate] = []
@@ -221,6 +222,7 @@ class BuiltInPackCatalog:
             effective_python_abi = python_abi or f"cp{sys.version_info.major}{sys.version_info.minor}"
             if (
                 effective_python_abi == "cp312"
+                and windows_rocm_sdk_ready
                 and node.vendor_id
                 and node.vendor_id.casefold().removeprefix("0x") == "1002"
                 and node.architecture in {"gfx1201", "gfx1200", "gfx1100", "gfx1101", "gfx1150", "gfx1151"}
@@ -235,7 +237,11 @@ class BuiltInPackCatalog:
                             vendor_id="1002",
                         ),
                         device_node_id=node.node_id,
-                        reason_codes=("windows-rocm-tuple-matched", "runtime-pack-unverified"),
+                        reason_codes=(
+                            "windows-rocm-tuple-matched",
+                            "windows-rocm-sdk-prerequisites-verified",
+                            "runtime-pack-unverified",
+                        ),
                     )
                 )
         candidates.extend(VendorPackCatalog().candidates(graph))

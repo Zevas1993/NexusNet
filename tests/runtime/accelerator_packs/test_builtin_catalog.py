@@ -124,7 +124,7 @@ def test_builtin_catalog_projects_isolated_torch_cpu_cuda_and_xpu_families():
     assert all("training" not in candidate.manifest.capabilities for candidate in by_id.values())
 
 
-def test_windows_rocm_torch_candidate_requires_cp312_and_supported_architecture():
+def test_windows_rocm_torch_candidate_requires_cp312_supported_architecture_and_sdk_readiness():
     graph = _graph(cuda=False).model_copy(
         update={
             "nodes": [
@@ -145,6 +145,13 @@ def test_windows_rocm_torch_candidate_requires_cp312_and_supported_architecture(
 
     cp311 = BuiltInPackCatalog().candidates(graph, python_abi="cp311")
     cp312 = BuiltInPackCatalog().candidates(graph, python_abi="cp312")
+    cp312_sdk_ready = BuiltInPackCatalog().candidates(
+        graph,
+        python_abi="cp312",
+        windows_rocm_sdk_ready=True,
+    )
 
     assert "org.nexusnet.torch.rocm-windows" not in {item.manifest.pack_id for item in cp311}
-    assert "org.nexusnet.torch.rocm-windows" in {item.manifest.pack_id for item in cp312}
+    assert "org.nexusnet.torch.rocm-windows" not in {item.manifest.pack_id for item in cp312}
+    rocm = next(item for item in cp312_sdk_ready if item.manifest.pack_id == "org.nexusnet.torch.rocm-windows")
+    assert "windows-rocm-sdk-prerequisites-verified" in rocm.reason_codes

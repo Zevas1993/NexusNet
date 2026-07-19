@@ -104,6 +104,7 @@ class OnnxKernel:
         if provider == "DmlExecutionProvider":
             options.enable_mem_pattern = False
             options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+            options.add_session_config_entry("session.disable_cpu_ep_fallback", "1")
         path = self._model_path(model_ref)
         session = ort.InferenceSession(str(path), sess_options=options, providers=[provider])
         if provider not in session.get_providers():

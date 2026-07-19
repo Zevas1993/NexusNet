@@ -30,11 +30,11 @@
 - Consumes: the committed repository at `37604dce` plus the release-closure documentation commit.
 - Produces: one literal pytest exit code, counts, duration, and failing node IDs if any.
 
-- [ ] Confirm no stale pytest process exists and identify unrelated CPU-heavy processes without terminating them.
-- [ ] Wait for the active video-watcher inference process to finish so it does not distort the baseline.
-- [ ] Run `python -m pytest -ra --junitxml=.release-evidence/pytest-full.xml` with a three-hour command timeout and capture the complete terminal result.
-- [ ] If the suite fails, rerun each failing node ID directly. For a code defect, apply systematic debugging and TDD; for an environment gate, record exact evidence and keep the gate explicit.
-- [ ] Run `python -m compileall -q core nexus nexusnet recursive_dreamer tests` and `git diff --check`.
+- [x] Confirm no stale pytest process exists and identify unrelated CPU-heavy processes without terminating them.
+- [x] Wait for the active video-watcher inference process to finish so it does not distort the baseline.
+- [x] Run `python -m pytest -ra --junitxml=.release-evidence/pytest-full.xml` with a three-hour command timeout and capture the complete terminal result.
+- [x] If the suite fails, rerun each failing node ID directly. For a code defect, apply systematic debugging and TDD; for an environment gate, record exact evidence and keep the gate explicit.
+- [x] Run `python -m compileall -q core nexus nexusnet recursive_dreamer tests` and `git diff --check`.
 
 ### Task 2: Reconcile plan and release evidence
 
@@ -46,11 +46,11 @@
 - Consumes: the seven implementation commits, eleven repair commits, Task 1 results, and current GitNexus state.
 - Produces: checked implementation tasks and a chronological post-repair verification section with no stale failure claims.
 
-- [ ] Mark only demonstrably completed implementation-plan steps as checked; leave external hardware certification gates unchecked and named.
-- [ ] Add the post-Task-7 repair commits and fresh verification output to the release report.
-- [ ] Preserve the distinction among `verified`, `unavailable`, and `unverified` routes.
-- [ ] Run Markdown placeholder/conflict-marker scans and `git diff --check`.
-- [ ] Stage only the two evidence documents, run staged GitNexus detection, and commit `docs(runtime): reconcile accelerator release evidence`.
+- [x] Mark only demonstrably completed implementation-plan steps as checked; leave external hardware certification gates unchecked and named.
+- [x] Add the post-Task-7 repair commits and fresh verification output to the release report.
+- [x] Preserve the distinction among `verified`, `unavailable`, and `unverified` routes.
+- [x] Run Markdown placeholder/conflict-marker scans and `git diff --check`.
+- [x] Stage only the two evidence documents, run staged GitNexus detection, and commit `docs(runtime): reconcile accelerator release evidence` (`c9d4c61`).
 
 ### Task 3: Materialize and certify the production NVIDIA pack
 
@@ -64,15 +64,15 @@
 - Consumes: `BuiltInPackCatalog`, `PrivateEnvironmentBuilder`, `WorkerEnvironmentLock`, `PackInstaller`, `RuntimePackRegistry`, and `WorkerAdapterFactory`.
 - Produces: `plan`, `status`, `install`, `repair`, `rollback`, and `uninstall` CLI operations with sanitized JSON results plus a private CUDA worker environment.
 
-- [ ] Add failing CLI tests proving explicit consent, exact pack/version selection, private-root confinement, sanitized errors, lifecycle operations, and no silent fallback.
-- [ ] Run the new CLI tests and observe the missing-command failures.
-- [ ] Run GitNexus impact on `_parser`, `main`, and any existing lifecycle symbol that must change; report HIGH/CRITICAL before editing.
-- [ ] Implement the minimal CLI composition layer around existing catalog/installer/lifecycle interfaces; keep vendor imports in workers.
-- [ ] Run the focused CLI/bootstrap/installer/lifecycle tests.
-- [ ] Materialize `torch-cuda-2.11.0-cu128-cp311-win-amd64` beneath `.release-evidence/cuda-pack/` using `PrivateEnvironmentBuilder`; verify `include-system-site-packages = false`.
-- [ ] Run worker `describe`, `health`, `self_test`, deterministic load/infer/unload, forced CPU/GPU mode, and calibration-key probes; capture sanitized JSON and hashes.
-- [ ] Update the release report with the exact isolated-environment result and any remaining production-model limitation.
-- [ ] Stage source, tests, and report only; run focused tests, cached diff check, GitNexus detection, and commit `feat(runtime): expose governed pack lifecycle CLI`.
+- [x] Add failing CLI tests proving explicit consent, exact pack/version selection, private-root confinement, sanitized errors, lifecycle operations, and no silent fallback.
+- [x] Run the new CLI tests and observe the missing-command failures.
+- [x] Run GitNexus impact on `_parser`, `main`, and any existing lifecycle symbol that must change; report HIGH/CRITICAL before editing.
+- [x] Implement the minimal CLI composition layer around existing catalog/installer/lifecycle interfaces; keep vendor imports in workers.
+- [x] Run the focused CLI/bootstrap/installer/lifecycle tests.
+- [x] Materialize `torch-cuda-2.11.0-cu128-cp311-win-amd64` beneath `.release-evidence/cuda-pack/` using `PrivateEnvironmentBuilder`; verify `include-system-site-packages = false`.
+- [x] Run worker `describe`, `health`, `self_test`, deterministic load/infer/unload, forced CPU/GPU mode, and calibration-key probes; capture sanitized JSON and hashes.
+- [x] Update the release report with the exact isolated-environment result and any remaining production-model limitation.
+- [x] Stage source, tests, and report only; run focused tests, cached diff check, GitNexus detection, and commit the governed lifecycle CLI (`f058f4b`).
 
 ### Task 4: Exercise the packaged Windows lifecycle
 
@@ -85,12 +85,12 @@
 - Consumes: `install/windows/bootstrap.ps1` and the lifecycle CLI from Task 3.
 - Produces: disposable packaged-install evidence for plan, status, install, reload, repair, rollback, uninstall, and path isolation.
 
-- [ ] Add a failing bootstrap guard only if live execution exposes a missing packaged-install contract.
-- [ ] Run `install/windows/bootstrap.ps1 -NexusNetHome <disposable-root> -DeveloperEditable` with the current Python 3.11 interpreter.
-- [ ] Prove the private core `pyvenv.cfg` disables system-site packages and global package/PATH snapshots are unchanged.
-- [ ] Exercise CPU reference install, status reload in a fresh process, deliberate quarantine/repair, compatible update/rollback fixture, and uninstall.
+- [x] Add a failing bootstrap guard only if live execution exposes a missing packaged-install contract.
+- [x] Run `install/windows/bootstrap.ps1 -NexusNetHome <disposable-root> -DeveloperEditable` with the current Python 3.11 interpreter.
+- [x] Prove the private core `pyvenv.cfg` disables system-site packages and global package/PATH snapshots are unchanged.
+- [x] Exercise CPU reference install, status reload in a fresh process, deliberate quarantine/repair, compatible update/rollback fixture, and uninstall.
 - [ ] Remove only the verified disposable root after recording digests and sanitized outcomes.
-- [ ] Update the release report and rerun bootstrap/lifecycle tests.
+- [x] Update the release report and rerun bootstrap/lifecycle tests.
 
 ### Task 5: Probe additional hardware lanes honestly
 
@@ -102,12 +102,12 @@
 - Consumes: `WindowsMlCatalog`, ONNX worker, vendor support matrices, live Windows hardware graph, and existing fixture matrices.
 - Produces: current-machine DirectML/Windows ML observations and explicit AMD/Intel certification blockers.
 
-- [ ] Re-run live hardware and Windows ML provider discovery in an isolated environment.
-- [ ] If the reviewed DirectML package can be installed without global mutation, install it privately and run provider enumeration plus ONNX correctness/health probes.
-- [ ] Run AMD/Intel mixed-device, unsupported-device, import-boundary, and privacy fixture matrices.
-- [ ] Confirm AMD/Intel remain unverified because no representative GPU is present; do not substitute NVIDIA DirectML proof for AMD/Intel certification.
-- [ ] Confirm `Both` remains unavailable without `hybrid-offload` calibration evidence.
-- [ ] Record exact states and remaining external hardware gates in the release report.
+- [x] Re-run live hardware and Windows ML provider discovery in an isolated environment.
+- [x] If the reviewed DirectML package can be installed without global mutation, install it privately and run provider enumeration plus ONNX correctness/health probes.
+- [x] Run AMD/Intel mixed-device, unsupported-device, import-boundary, and privacy fixture matrices.
+- [x] Confirm AMD/Intel remain unverified because no representative GPU is present; do not substitute NVIDIA DirectML proof for AMD/Intel certification.
+- [x] Confirm `Both` remains unavailable without `hybrid-offload` calibration evidence.
+- [x] Record exact states and remaining external hardware gates in the release report.
 
 ### Task 6: Finish repository housekeeping
 
