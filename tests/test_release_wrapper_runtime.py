@@ -3952,10 +3952,10 @@ def test_wrapper_chat_pending_repair_envelope_executes_through_admin_governed_re
     pending_plan = runtime_before["latest_interaction"]["release_health_automatic_repair_plan"]
     pending_history = runtime_before["release_health_heartbeat_supervisor"]["repair_history"]
 
-    assert pending_plan["status"] == "blocked-heartbeat-supervisor-repair-pending-admin-approval"
+    assert pending_plan["status"] == "planned-admin-approval-required-heartbeat-supervisor-repair"
     assert pending_plan["update_id"].startswith("update::release-wrapper-health-heartbeat-loop::")
     assert pending_plan["subsystem_repair_envelope_count"] >= 1
-    assert pending_history["latest_status"] == "blocked-heartbeat-supervisor-repair-pending-admin-approval"
+    assert pending_history["latest_status"] == "planned-admin-approval-required-heartbeat-supervisor-repair"
     assert pending_history["latest_run_id"] == pending_plan["run_id"]
 
     repair = client.post(
@@ -4160,7 +4160,7 @@ def test_release_wrapper_federated_packet_outbox_exports_sanitized_replayable_pa
     wrapper_html = (project_root / "ui" / "wrapper" / "index.html").read_text(encoding="utf-8")
     assert "federated packet outbox" in control_panel_js
     assert "Federated Packet Outbox" in wrapper_html
-    assert "Harness packet outbox" in visualizer_js
+    assert "Wrapper packet outbox" in visualizer_js
 
 
 def test_release_wrapper_delivers_real_wrapper_packet_to_admin_approved_peer_and_replays_receipt(tmp_path: Path):
@@ -4497,7 +4497,7 @@ def test_release_wrapper_imports_federated_packets_as_quarantined_shadow_learnin
     wrapper_html = (project_root / "ui" / "wrapper" / "index.html").read_text(encoding="utf-8")
     assert "federated packet inbox" in control_panel_js
     assert "Federated Packet Inbox" in wrapper_html
-    assert "Harness packet inbox" in visualizer_js
+    assert "Wrapper packet inbox" in visualizer_js
 
 
 def test_release_wrapper_imported_federated_packet_feeds_dream_research_proposal_shadow_only(tmp_path: Path):
@@ -7591,7 +7591,7 @@ def test_release_wrapper_surfaces_production_release_manifest_rollup_in_status_s
     assert "release manifest rollup" in control_panel_js
     assert "release-manifest-rollup" in control_panel_js
     assert "active mutation blocked" in control_panel_js
-    assert "Harness release manifest rollup" in visualizer_js
+    assert "Wrapper release manifest rollup" in visualizer_js
     assert "release-wrapper-release-manifest-rollup" in visualizer_js
     assert "active mutation blocked" in visualizer_js
 

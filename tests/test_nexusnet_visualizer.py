@@ -349,7 +349,9 @@ def test_visualizer_overlay_exposes_telemetry_filters_and_performance_profile(tm
     assert "core_to_capsule" in overlay["link_activity"]
     assert "dream" in overlay["loop_activity"]
     assert "teacher" in overlay["evidence_activity"]
-    assert overlay["physiology_activity"]["vram"]["bound"] is False
+    vram_activity = overlay["physiology_activity"]["vram"]
+    assert vram_activity["bound"] is (vram_activity["state"] not in {"", "unknown", "unreported"})
+    assert vram_activity["intensity"] == (0.65 if vram_activity["bound"] else 0.0)
     assert "expert_capsules" in overlay["filter_catalog"]
     assert "disagreement_compare_endpoint" in overlay["diff_catalog"]
     assert overlay["replay_catalog"]["endpoint"] == "/ops/brain/visualizer/replay"

@@ -61,9 +61,6 @@ pytest-cache-files-*/
 # Node (future UI bindings)
 node_modules/
 
-# Private research capture helpers
-tools/chatgpt_project_*_capture.mjs
-
 # Docker
 *.pid
 
