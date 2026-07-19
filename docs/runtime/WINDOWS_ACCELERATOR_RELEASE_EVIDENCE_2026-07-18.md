@@ -33,7 +33,7 @@ one-way `device::` reference instead.
 | Torch CPU | Verified on this machine | Fresh CPython 3.11 private venv, no system site packages, 15 exact hashed wheels, Torch 2.11.0+cpu, health/self-test, `[3,5,7]` inference | Production model/workload calibration records |
 | NVIDIA CUDA | Verified on this machine for the worker/device proof | Dedicated development venv using system-site packages, Torch 2.11.0+cu128 family handshake, RTX 5070 Ti execution, health/self-test, `[3,5,7]` inference | Materialize the production CUDA lock in a dependency-isolated venv, then add production model/workload calibration records and release-model soak |
 | Windows ML / DirectML | Unavailable and unverified | Build gate passes; provider discovery is truthful; CPU ONNX probe is available | Install/enumerate a supported GPU provider, then model correctness, failure, and rollback proof |
-| AMD ROCm Windows | Unavailable and unverified | Exact cp312 ROCm 7.2.1 Torch lock and official support tuples encoded | Representative supported Radeon/Ryzen hardware, driver/SDK install, health, correctness, OOM, rollback, and soak |
+| AMD ROCm Windows | Unavailable, unverified, and install-not-ready | Exact cp312 ROCm 7.2.1 Torch wheel lock and official support tuples are encoded, but the required ROCm SDK prerequisite packages are not yet fully locked | Complete the private SDK prerequisite lock, then use representative supported Radeon/Ryzen hardware for driver/SDK install, health, correctness, OOM, rollback, and soak |
 | AMD Vulkan | Unavailable and unverified | Capability-driven native candidate and bounded connector tests | Representative AMD hardware and reviewed native binary certification |
 | Intel Torch XPU | Unavailable and unverified | Exact official XPU lock and family-rejection tests | Representative Intel GPU, driver install, real XPU health/correctness/OOM/rollback/soak |
 | Intel SYCL/OpenVINO | Unavailable and unverified | Capability-driven native candidates and connector tests | Representative Intel GPU and reviewed binary/provider certification |
@@ -83,7 +83,7 @@ one-way `device::` reference instead.
 6. Keep hybrid disabled until measured cross-device offload outperforms the
    best single route without correctness or stability regression.
 
-## Verification status at Task 7 commit gate
+## Historical verification status at Task 7 commit gate
 
 - Accelerator-pack plus runtime-mode/certification API matrix: 253 passed after
   the final direct-uninstall rollback regression was added.
@@ -105,3 +105,35 @@ The baseline failures concern pre-existing visualizer label assertions,
 heartbeat/repair ordering and state expectations, a deliberately missing
 production-spine path, and release boot-smoke state. They are not silently
 converted to passes or attributed to the accelerator implementation.
+
+## Post-repair and release-closure verification — 2026-07-19
+
+- The independent repair series through `87596fd4` resolved the historical
+  provider-wrapper, release-wrapper, heartbeat, repair-ordering, production
+  spine, and boot-smoke failures recorded above.
+- A full system-interpreter traversal completed with 2,129 passed, 7 failed,
+  and 4 skipped. The seven failures were two missing Canon capture scripts,
+  four stale wrapper assertions, and two Windows long-path sandbox failures.
+- Closure commit `38ed01b` restored the two Canon capture scripts, corrected
+  the wrapper assertions, bounded pytest temporary-path labels for Windows,
+  and added a direct regression test for that path policy.
+- A second full traversal used the CUDA interpreter and a live Docker Desktop
+  daemon: 2,139 passed, 1 failed, and 1 skipped in 6,925.94 seconds. The sole
+  failure was a stale visualizer assertion that assumed VRAM telemetry could
+  never be bound; live RTX telemetry correctly contradicted it. The closure
+  commit makes that assertion capability-aware.
+- The sole skip in the CUDA traversal is an intentionally mutually exclusive
+  CPU-only test that verifies forced GPU fails before worker attachment when
+  CUDA is unavailable. It passed under the system interpreter. The union of
+  the CPU-only matrix (2 passed) and live-CUDA matrix (3 passed) exercises both
+  environment branches without an unexecuted case.
+- The post-fix focused closure matrix passed 10 tests, including both Canon
+  capture tools, bounded Windows paths, sandbox isolation, wrapper behavior,
+  and telemetry-aware visualizer behavior. Both Node capture scripts also
+  passed syntax and help-entrypoint checks, and `compileall` passed for the
+  touched Python surfaces.
+
+A final full traversal remains required after the production-isolated pack
+installation, packaged lifecycle soak, and DirectML/private-provider work in
+the release-closure train. Therefore this section does not yet claim the
+entire seven-item release closure is complete.
