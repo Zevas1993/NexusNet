@@ -520,6 +520,177 @@ def test_native_lm_runs_end_to_end_with_all_moe_layers_storage_backed(tmp_path: 
     torch.testing.assert_close(model(token_ids), expected, rtol=0, atol=0)
 
 
+def test_cpu_ram_architecture_plan_executes_through_tiered_runtime(tmp_path: Path) -> None:
+    from nexusnet.runtime.moe_residency import (
+        ArchitectureTierHardware,
+        GPUAccelerationPolicy,
+        MoEArchitectureDescriptor,
+        MoEArchitectureTierPlanner,
+    )
+
+    torch.manual_seed(41)
+    model = NexusNetLM(
+        vocab_size=16,
+        d_model=8,
+        n_heads=2,
+        n_kv_heads=1,
+        num_experts=2,
+        top_k=1,
+        d_hidden=12,
+        num_layers=1,
+    ).eval()
+    token_ids = torch.tensor([[1, 2, 3]])
+    expected = model(token_ids)
+    expert_bytes = max(
+        sum(parameter.numel() * parameter.element_size() for parameter in expert.parameters())
+        for expert in model.blocks[0].moe.experts
+    )
+    architecture_plan = MoEArchitectureTierPlanner().plan(
+        MoEArchitectureDescriptor(
+            model_ref="model:cpu-tiered-fixture",
+            model_digest=compute_model_identity(model),
+            layer_count=1,
+            experts_per_layer=2,
+            experts_per_token=1,
+            dense_core_bytes=32 * 1024,
+            expert_bytes=expert_bytes,
+            kv_cache_bytes_per_token=32,
+            runtime_buffer_bytes=1024,
+            storage_bytes=128 * 1024,
+        ),
+        ArchitectureTierHardware(0, 1024**2, 2 * 1024**2, 1.0),
+        context_tokens=64,
+        gpu_policy=GPUAccelerationPolicy(mode="off"),
+    )
+    executable = architecture_plan.to_executable_plan()
+
+    attachment = attach_tiered_moe_runtime(
+        model,
+        tmp_path,
+        plan=executable,
+        model_ref="model:cpu-tiered-fixture",
+        release_resident=True,
+    )
+
+    assert executable.dense_residency_tier == "ram"
+    assert executable.gpu_acceleration_enabled is False
+    assert all(backend.expert_device is None for backend in attachment.backends)
+    torch.testing.assert_close(model(token_ids), expected, rtol=0, atol=0)
+    attachment.restore()
+
+
+@pytest.mark.skipif(torch.cuda.is_available(), reason="requires a runtime without CUDA execution")
+def test_forced_gpu_plan_fails_before_attachment_when_cuda_runtime_is_unavailable(tmp_path: Path) -> None:
+    from nexusnet.runtime.moe_residency import (
+        ArchitectureTierHardware,
+        GPUAccelerationPolicy,
+        MoEArchitectureDescriptor,
+        MoEArchitectureTierPlanner,
+    )
+
+    model = NexusNetLM(
+        vocab_size=16, d_model=8, n_heads=2, n_kv_heads=1,
+        num_experts=2, top_k=1, d_hidden=12, num_layers=1,
+    ).eval()
+    expert_bytes = max(
+        sum(parameter.numel() * parameter.element_size() for parameter in expert.parameters())
+        for expert in model.blocks[0].moe.experts
+    )
+    plan = MoEArchitectureTierPlanner().plan(
+        MoEArchitectureDescriptor(
+            model_ref="model:gpu-required-fixture",
+            model_digest=compute_model_identity(model),
+            layer_count=1,
+            experts_per_layer=2,
+            experts_per_token=1,
+            dense_core_bytes=32 * 1024,
+            expert_bytes=expert_bytes,
+            kv_cache_bytes_per_token=32,
+            runtime_buffer_bytes=1024,
+            storage_bytes=128 * 1024,
+        ),
+        ArchitectureTierHardware(
+            1024**2,
+            1024**2,
+            2 * 1024**2,
+            1.0,
+            gpu_runtime_available=True,
+            gpu_device_ref="cuda:0",
+        ),
+        context_tokens=64,
+        gpu_policy=GPUAccelerationPolicy(mode="on"),
+    ).to_executable_plan()
+
+    with pytest.raises(RuntimeError, match="CUDA execution is unavailable"):
+        attach_tiered_moe_runtime(
+            model,
+            tmp_path,
+            plan=plan,
+            model_ref="model:gpu-required-fixture",
+        )
+
+    assert all(layer._expert_execution_backend is None for layer in (block.moe for block in model.blocks))
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA execution is unavailable in this PyTorch build")
+def test_gpu_hot_experts_match_cpu_resident_output(tmp_path: Path) -> None:
+    from nexusnet.runtime.moe_residency import (
+        ArchitectureTierHardware,
+        GPUAccelerationPolicy,
+        MoEArchitectureDescriptor,
+        MoEArchitectureTierPlanner,
+    )
+
+    torch.manual_seed(43)
+    model = NexusNetLM(
+        vocab_size=16, d_model=8, n_heads=2, n_kv_heads=1,
+        num_experts=2, top_k=1, d_hidden=12, num_layers=1,
+    ).eval()
+    token_ids = torch.tensor([[1, 2, 3]])
+    expected = model(token_ids)
+    expert_bytes = max(
+        sum(parameter.numel() * parameter.element_size() for parameter in expert.parameters())
+        for expert in model.blocks[0].moe.experts
+    )
+    plan = MoEArchitectureTierPlanner().plan(
+        MoEArchitectureDescriptor(
+            model_ref="model:gpu-hot-fixture",
+            model_digest=compute_model_identity(model),
+            layer_count=1,
+            experts_per_layer=2,
+            experts_per_token=1,
+            dense_core_bytes=128 * 1024,
+            expert_bytes=expert_bytes,
+            kv_cache_bytes_per_token=32,
+            runtime_buffer_bytes=1024,
+            storage_bytes=128 * 1024,
+        ),
+        ArchitectureTierHardware(
+            64 * 1024,
+            1024**2,
+            2 * 1024**2,
+            1.0,
+            gpu_runtime_available=True,
+            gpu_device_ref="cuda:0",
+        ),
+        context_tokens=64,
+        gpu_policy=GPUAccelerationPolicy(mode="on"),
+    ).to_executable_plan()
+    attachment = attach_tiered_moe_runtime(
+        model,
+        tmp_path,
+        plan=plan,
+        model_ref="model:gpu-hot-fixture",
+        release_resident=True,
+    )
+
+    assert plan.dense_residency_tier == "ram"
+    assert plan.gpu_expert_slots > 0
+    assert all(backend.expert_device == torch.device("cuda:0") for backend in attachment.backends)
+    torch.testing.assert_close(model(token_ids), expected, rtol=1e-5, atol=1e-5)
+    attachment.restore()
+
+
 def test_model_attachment_rejects_blocked_residency_plan(tmp_path: Path) -> None:
     model = NexusNetLM(
         vocab_size=16,

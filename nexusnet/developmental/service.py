@@ -35,6 +35,8 @@ class DevelopmentalCortexService:
     def _subsurfaces(self) -> dict[str, Any]:
         return {
             "body_schema": self.kernel.body_schema.snapshot(),
+            "global_workspace": self.kernel.global_workspace.summary(),
+            "semantic_memory": self.kernel.semantic_memory.summary(),
             "reference_frames": self.kernel.reference_frames.summary(),
             "dreaming_simulator": self.kernel.simulator.summary(),
             "causal_lab": self.kernel.causal_lab.summary(),

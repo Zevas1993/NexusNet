@@ -155,8 +155,12 @@ def test_project_heartbeat_payload_builder_is_indexable_and_sanitized():
     assert heartbeat["surface_id"] == "nexusnet-project-heartbeat"
     assert heartbeat["trigger"] == "hive-forward-pass"
     assert heartbeat["status"] == "alive"
-    assert heartbeat["alive_lane_count"] == heartbeat["lane_count"] == 10
+    assert heartbeat["alive_lane_count"] == heartbeat["lane_count"] == 11
     assert heartbeat["degraded_lane_count"] == 0
+    assert heartbeat["source_brain_generate_status"] == "unknown"
+    assert heartbeat["source_runtime_degraded"] is False
+    assert lanes["model-serving-runtime"]["status"] == "alive"
+    assert lanes["model-serving-runtime"]["blockers"] == []
     assert "growth-engine" in lanes
     assert "federation-runtime" in lanes
     assert "dream-runtime" in lanes

@@ -158,6 +158,9 @@ class DevelopmentalCortexResult(BaseModel):
     task_ref: str
     status: Literal["shadow-ready", "blocked"] = "shadow-ready"
     body_schema_snapshot: dict[str, object]
+    global_workspace: dict[str, object]
+    semantic_memory: dict[str, object]
+    advanced_development: dict[str, object]
     reference_frame: dict[str, object]
     simulation: dict[str, object]
     causal_intervention: dict[str, object]

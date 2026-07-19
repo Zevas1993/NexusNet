@@ -20,6 +20,15 @@ from .schemas import (
 from .windows_hardware import discover_windows_accelerators
 
 
+HARDWARE_PROFILE_ASSIMILATION_TARGET_IDS = (
+    "nanochat-constrained-hardware-reference",
+)
+"""Source-backed target for device capability, precision, and memory-envelope work.
+
+See docs/assimilation/videos/2026-07-14/11-nanochat-constrained-hardware-reference-spec.md.
+"""
+
+
 CommandRunner = Callable[[list[str], float], Any]
 
 

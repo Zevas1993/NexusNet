@@ -452,12 +452,14 @@ def test_canon_surface_drilldown_maps_surface_gates_answers_and_realization_comm
         {
             "question_id": "runtime_path",
             "prompt": "Which runtime and quantization path is active?",
-            "href": "/ops/brain/canon/answers/runtime_path?session_id=surface-session",
+            "href": "/ops/brain/canon/answers/runtime_path",
             "answer_state": payload["surface"]["state"],
         }
     ]
     assert payload["realize_next"]["endpoint"] == "/ops/brain/canon/realize-next"
     assert payload["realize_next"]["body"]["surface_id"] == "runtime-lab"
+    assert payload["realize_next"]["body"]["session_id"] is None
+    assert "surface-session" not in str(payload)
     assert payload["realize_next"]["method"] == "POST"
 
     missing = client.get("/ops/brain/canon/surfaces/not-a-surface")

@@ -39,6 +39,7 @@ from nexusnet.assimilation import AssimilationControlPlane
 from nexusnet.autonomous_growth import AutonomousGrowthControlPlane
 from nexusnet.aos import build_default_ao_registry as build_brain_ao_registry
 from nexusnet.browser import BrowserContextMemory, BrowserProfilePolicy
+from nexusnet.computer_fabric import ComputerFabricService
 from nexusnet.canon import NexusNetCanonRegistry
 from nexusnet.core import AutonomousUpdateController, CoreEvidenceBridge, EBTScoringContract, NexusBrain, NexusNetCore, SelfReviewGate
 from nexusnet.core.self_improvement import SelfImprovementLineageRegistry
@@ -81,13 +82,14 @@ from nexusnet.promotions.trend_gating import PromotionTrendGate
 from nexusnet.product_sweep import ProductSweepGatekeeper
 from nexusnet.memory.graph_bridge import MemoryGraphBridge
 from nexusnet.operations import AssimilationTargetCatalog, AssimilationTargetRegistry, BrainOperationsService, CodegraphGate
+from nexusnet.operations.checkpoint_rewind import CheckpointRewindLedger
 from nexusnet.package_candidates import PackageCandidateService
 from nexusnet.parallel_runs import ParallelRunService
 from nexusnet.plan_review import PlanReviewService
 from nexusnet.protocols import ProtocolTrustRegistry
 from nexusnet.guardrails.persistent_instructions import PersistentGuardrailService
 from nexusnet.providers.acp import ACPProviderCatalog
-from nexusnet.research import ForwardRadarRegistry
+from nexusnet.research import ForwardRadarRegistry, ResearchMonitor
 from nexusnet.recipes import RecipeCatalogService, RecipeExecutionStore, RecipeHistoryService
 from nexusnet.runbooks.history import RunbookHistoryService
 from nexusnet.retrieval import RetrievalPlanner
@@ -266,6 +268,8 @@ class NexusServices:
     brain_skill_evolution: Any
     brain_skill_refinement: Any
     brain_assimilation_targets: Any
+    brain_computer_fabric: ComputerFabricService
+    brain_checkpoint_rewind_ledger: Any
     brain_codegraph_gate: Any
     brain_subagents: Any
     brain_agent_opportunities: Any
@@ -299,6 +303,7 @@ class NexusServices:
     brain_self_improvement_lineage: Any
     brain_verifier_search: Any
     brain_forward_radar: Any
+    brain_research_monitor: ResearchMonitor
     brain_hive_substrate: HiveNeuralSubstrate
     brain_developmental_cortex: Any
     brain_authority_spine: Any
@@ -716,6 +721,8 @@ def build_services(project_root: str | None = None) -> NexusServices:
     brain_skill_evolution = SkillEvolutionLab()
     brain_skill_refinement = SkillRefinementService()
     brain_assimilation_targets = AssimilationTargetRegistry(artifacts_dir=paths.artifacts_dir)
+    brain_computer_fabric = ComputerFabricService(artifacts_dir=paths.artifacts_dir)
+    brain_checkpoint_rewind_ledger = CheckpointRewindLedger(artifacts_dir=paths.artifacts_dir)
     brain_codegraph_gate = CodegraphGate(artifacts_dir=paths.artifacts_dir)
     brain_subagents = SubagentExecutionService(
         artifacts_dir=paths.artifacts_dir,
@@ -723,7 +730,10 @@ def build_services(project_root: str | None = None) -> NexusServices:
     )
     brain_agent_opportunities = AgentOpportunityDiscovery(artifacts_dir=paths.artifacts_dir)
     brain_agentic_pipelines = AgenticPipelineRuntime(artifacts_dir=paths.artifacts_dir)
-    brain_sandbox_agent_factory = SandboxAgentFactory(artifacts_dir=paths.artifacts_dir)
+    brain_sandbox_agent_factory = SandboxAgentFactory(
+        artifacts_dir=paths.artifacts_dir,
+        allowed_workspace_root=paths.project_root,
+    )
     brain_harness_providers = HarnessProviderRegistry.default()
     brain_harness_router = HarnessModelRouter.default()
     brain_harness_improvement_ledger = HarnessImprovementLedger(artifacts_dir=paths.artifacts_dir)
@@ -770,6 +780,10 @@ def build_services(project_root: str | None = None) -> NexusServices:
     brain_self_improvement_lineage = SelfImprovementLineageRegistry(artifacts_dir=paths.artifacts_dir)
     brain_verifier_search = VerifierSearchRegistry(artifacts_dir=paths.artifacts_dir)
     brain_forward_radar = ForwardRadarRegistry(artifacts_dir=paths.artifacts_dir)
+    brain_research_monitor = ResearchMonitor(
+        artifacts_dir=paths.artifacts_dir,
+        radar=brain_forward_radar,
+    )
     brain_hive_substrate = HiveNeuralSubstrate(artifacts_dir=paths.artifacts_dir)
     brain.hive_substrate = brain_hive_substrate
     brain_developmental_cortex = DevelopmentalCortexService(artifacts_dir=paths.artifacts_dir)
@@ -919,6 +933,7 @@ def build_services(project_root: str | None = None) -> NexusServices:
         tool_action_harness=brain_tool_action_harness,
         runtime_decision_ledger=brain_runtime_decision_ledger,
         assimilation_catalog=brain_assimilation_catalog,
+        context_graph=brain_context_graph,
     )
     brain_operations = BrainOperationsService(
         store=store,
@@ -1068,6 +1083,8 @@ def build_services(project_root: str | None = None) -> NexusServices:
         brain_skill_evolution=brain_skill_evolution,
         brain_skill_refinement=brain_skill_refinement,
         brain_assimilation_targets=brain_assimilation_targets,
+        brain_computer_fabric=brain_computer_fabric,
+        brain_checkpoint_rewind_ledger=brain_checkpoint_rewind_ledger,
         brain_codegraph_gate=brain_codegraph_gate,
         brain_subagents=brain_subagents,
         brain_agent_opportunities=brain_agent_opportunities,
@@ -1101,6 +1118,7 @@ def build_services(project_root: str | None = None) -> NexusServices:
         brain_self_improvement_lineage=brain_self_improvement_lineage,
         brain_verifier_search=brain_verifier_search,
         brain_forward_radar=brain_forward_radar,
+        brain_research_monitor=brain_research_monitor,
         brain_hive_substrate=brain_hive_substrate,
         brain_developmental_cortex=brain_developmental_cortex,
         brain_authority_spine=brain_authority_spine,

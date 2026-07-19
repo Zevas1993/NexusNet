@@ -523,6 +523,8 @@ def test_growth_engine_api_visualizer_blackbox_and_control_panel_surface(tmp_pat
     assert scorecard_payload["latest_training_output_artifacts"]["artifact_refs"] == ["genome:genome_api_001"]
     assert scorecard_payload["latest_eval_scorecard"]["status"] == "passed_for_shadow_only"
     assert scorecard_payload["latest_eval_scorecard"]["student_score"] == 0.852
+
+
     assert scorecard_payload["latest_eval_comparison_matrix"]["student_vs_parent_margin"] == 0.042
     assert scorecard_payload["latest_eval_comparison_matrix"]["student_vs_teacher_council_margin"] == -0.02
     assert scorecard_payload["latest_eval_case_results_summary"]["case_count"] == 12
@@ -629,3 +631,44 @@ def test_growth_engine_api_visualizer_blackbox_and_control_panel_surface(tmp_pat
     assert "hidden_eval_attestation_passed" in app_js
     assert "sealed_eval_not_teacher_visible" in app_js
     assert "actual_weight_mutation_allowed" in app_js
+
+
+def test_growth_engine_public_surfaces_hide_local_artifact_paths(tmp_path):
+    project_root = make_project(tmp_path)
+    client = TestClient(create_app(str(project_root)))
+
+    created = client.post(
+        "/ops/brain/growth-engine/cycles",
+        json={
+            "cycle_id": "cycle:cyc_public_paths_001",
+            "target_node_id": "node:expert_coder",
+            "target_node_type": "Expert",
+            "target_capabilities": ["multi_file_patch", "test_repair"],
+            "student_kind": "child_expert",
+            "birth_reason": "Public growth evidence must not expose local artifact paths.",
+            "teacher_pairing_refs": ["teacher:qwen3-coder-next", "teacher:devstral-2"],
+            "source_refs": ["source:licensed_synthetic_code_cases"],
+        },
+    )
+    assert created.status_code == 200
+
+    summary = client.get("/ops/brain/growth-engine")
+    assert summary.status_code == 200
+    replay = client.get("/ops/brain/growth-engine/cycles/cyc_public_paths_001")
+    assert replay.status_code == 200
+    visualizer = client.get("/ops/brain/visualizer/state")
+    assert visualizer.status_code == 200
+
+    serialized = json.dumps(
+        {
+            "created": created.json(),
+            "summary": summary.json(),
+            "replay": replay.json(),
+            "growth_scorecard": visualizer.json()["overlay_state"]["control_panel"]["growth_engine_scorecard"],
+        },
+        sort_keys=True,
+    )
+    assert str(project_root) not in serialized
+    assert "_cycle_dir" not in serialized
+    assert '"cycle_dir"' not in serialized
+    assert '"control_panel_replay"' not in serialized

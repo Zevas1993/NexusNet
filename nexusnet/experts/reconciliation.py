@@ -6,6 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from nexusnet.teachers.candidate_universe import (
+    TeacherCandidate,
     TeacherCandidateUniverse,
     build_default_teacher_candidate_universe,
 )
@@ -226,6 +227,133 @@ class Cluster9TeacherReconciliationRegistry:
             promotion_allowed=self._teacher_universe.promotion_allowed(candidate.candidate_id),
             promotion_blockers=self._teacher_universe.promotion_blockers(candidate.candidate_id),
         )
+
+    def register_teacher_candidate(
+        self,
+        candidate: TeacherCandidate | dict[str, Any],
+        *,
+        replace: bool = False,
+    ) -> TeacherCandidate:
+        return self._teacher_universe.register(candidate, replace=replace)
+
+    def teacher_candidates(self) -> list[TeacherCandidate]:
+        return self._teacher_universe.list_candidates()
+
+    def verify_birth_pairing(
+        self,
+        *,
+        node_id: str,
+        node_type: Cluster9NodeType,
+        domain: str,
+        risk_tier: str,
+        teacher_ids: list[str],
+        source_refs: list[str],
+        required_teacher_count: int = 2,
+    ) -> dict[str, Any]:
+        distinct_teacher_ids = _distinct_nonblank(teacher_ids)
+        required_teacher_count = max(2, int(required_teacher_count or 2))
+        passports = [self.teacher_capability_passport(teacher_id) for teacher_id in distinct_teacher_ids]
+        findings: list[str] = []
+        if len(distinct_teacher_ids) < required_teacher_count:
+            findings.append("teacher_pairing_below_minimum")
+        if not _distinct_nonblank(source_refs):
+            findings.append("birth_source_refs_missing")
+
+        all_roles: set[str] = set()
+        domain_mismatches: list[str] = []
+        risk_mismatches: list[str] = []
+        blocked_teachers: list[str] = []
+        for passport in passports:
+            all_roles.update(passport.teacher_roles)
+            if passport.candidate_status == "missing":
+                blocked_teachers.append(passport.teacher_id)
+                findings.append(f"teacher_candidate_missing::{passport.teacher_id}")
+                continue
+            if not passport.promotion_allowed:
+                blocked_teachers.append(passport.teacher_id)
+                findings.append(f"teacher_rights_or_eval_gate_blocked::{passport.teacher_id}")
+            if domain not in passport.domain_scope:
+                domain_mismatches.append(passport.teacher_id)
+            if risk_tier not in passport.risk_scope:
+                risk_mismatches.append(passport.teacher_id)
+        if domain_mismatches:
+            findings.append("teacher_domain_scope_mismatch")
+        if risk_mismatches:
+            findings.append("teacher_risk_scope_mismatch")
+
+        generator_roles = {"generator", "simulator", "retriever"}
+        reviewer_roles = {"critic", "verifier", "judge"}
+        generator_present = bool(all_roles & generator_roles)
+        reviewer_present = bool(all_roles & reviewer_roles)
+        if not generator_present:
+            findings.append("teacher_generator_role_missing")
+        if not reviewer_present:
+            findings.append("teacher_reviewer_role_missing")
+
+        high_risk = risk_tier in {"high", "critical"}
+        high_risk_passed = not high_risk or (
+            reviewer_present
+            and not risk_mismatches
+            and not blocked_teachers
+            and len(distinct_teacher_ids) >= required_teacher_count
+        )
+        if high_risk and not high_risk_passed:
+            findings.append("high_risk_domain_teacher_gate_failed")
+
+        findings = sorted(set(findings))
+        passed = not findings
+        domain_passport = ExpertDomainPassport(
+            node_id=node_id,
+            node_type=node_type,
+            domain=domain,
+            risk_tier=risk_tier,
+            expert_ref=None,
+            required_teacher_count=required_teacher_count,
+            teacher_ids=distinct_teacher_ids,
+            teacher_capabilities=passports,
+            source_refs=_distinct_nonblank(source_refs),
+            birth_gates=[
+                "source_refs",
+                "two_plus_teacher_pairing",
+                "teacher_rights_and_eval_gates",
+                "teacher_domain_and_risk_scope",
+                "high_risk_review_teacher",
+                "mother_brain_approval",
+            ],
+            production_mutation_allowed=False,
+        )
+        return {
+            "surface_id": "genesis-layer13-teacher-birth-verification",
+            "status": "teacher-birth-verified-shadow-only" if passed else "blocked-teacher-birth-verification",
+            "passed": passed,
+            "node_id": node_id,
+            "node_type": node_type,
+            "domain": domain,
+            "risk_tier": risk_tier,
+            "required_teacher_count": required_teacher_count,
+            "distinct_teacher_count": len(distinct_teacher_ids),
+            "teacher_ids": distinct_teacher_ids,
+            "teacher_capability_passports": [passport.model_dump(mode="json") for passport in passports],
+            "expert_domain_passport": domain_passport.model_dump(mode="json"),
+            "role_diversity_gate": {
+                "generator_present": generator_present,
+                "reviewer_present": reviewer_present,
+                "roles": sorted(all_roles),
+                "passed": generator_present and reviewer_present,
+            },
+            "high_risk_domain_gate": {
+                "required": high_risk,
+                "passed": high_risk_passed,
+                "reviewer_required": high_risk,
+            },
+            "domain_scope_mismatch_teacher_ids": domain_mismatches,
+            "risk_scope_mismatch_teacher_ids": risk_mismatches,
+            "blocked_teacher_ids": blocked_teachers,
+            "findings": findings,
+            "mother_brain_authority": "NexusBrain",
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+        }
 
     def expert_domain_passport(self, node_id: str) -> ExpertDomainPassport:
         node = self._required_node(node_id)

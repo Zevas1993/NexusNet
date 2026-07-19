@@ -29,18 +29,46 @@ from nexusnet.agents.harnesses import HarnessLedgerEntryRequest, HarnessRouteReq
 from nexusnet.browser import BrowserContextIngestRequest, BrowserContextQueryRequest, BrowserProfilePolicyRequest
 from nexusnet.evals import EvalSuiteRequest, ShadowEvalRunRequest, VerifierSearchRequest
 from nexusnet.growth import GrowthCycleRequest
+from nexusnet.genesis import (
+    GenesisDreamResearchService,
+    GenesisEvidenceSpineService,
+    GenesisEventSpineService,
+    GenesisFederatedOutcomeService,
+    GenesisFoundationStatusService,
+    GenesisHeartbeatService,
+    GenesisImmuneGovernanceService,
+    GenesisMemoryAdmissionService,
+    GenesisSensoryProvenanceService,
+    GenesisSelfRepairService,
+)
+from nexusnet.genesis.memory_foundation import GenesisMemoryFoundationService
+from nexusnet.genesis.node_contracts import GenesisNodeContractRegistry
+from nexusnet.experts import build_default_cluster9_teacher_reconciliation_registry
 from nexusnet.hive.hive_snapshot import hive_evidence_snapshot
 from nexusnet.hive.self_improvement_engine import default_engine as _self_improvement_engine
 from nexusnet.hive.continuous_assimilation import ContinuousAssimilationLoop
 from nexusnet.hive.multi_user_growth import MultiUserGrowthCoordinator
-from nexusnet.providers.model_providers import default_provider_registry as _default_provider_registry
+from nexusnet.providers.model_providers import (
+    EchoProvider,
+    default_provider_registry as _default_provider_registry,
+)
 from nexusnet.release_health_heartbeat_supervisor_repair import (
     build_completed_release_health_heartbeat_subsystem_repair_envelopes,
     build_release_health_heartbeat_supervisor_repair_run_plan,
 )
-from nexusnet.release_wrapper import ReleaseWrapperRuntime, release_native_hive_heartbeat_history_evidence
+from nexusnet.release_wrapper import (
+    DEFAULT_RELEASE_WRAPPER_SANDBOX_COMMAND,
+    ReleaseWrapperRuntime,
+    release_native_hive_heartbeat_history_evidence,
+)
 from nexusnet.knowledge import KnowledgeCompileRequest, KnowledgeRequestContract
-from nexusnet.research import ForwardRadarCandidateRequest
+from nexusnet.research import (
+    BoundedSmokeEvalRequest,
+    DowntimeBenchmarkRequest,
+    ForwardRadarCandidateRequest,
+    ModelReleaseObservationRequest,
+    SyntheticCapabilityFixtureRequest,
+)
 from nexusnet.retrieval import RetrievalPlanRequest
 from nexusnet.runtime.cache_ledger import CacheLedgerEntryRequest
 from nexusnet.runtime.workload_scorecards import RuntimeWorkloadScorecardRequest
@@ -118,6 +146,174 @@ from nexusnet.vision import ComputerUsePlanRequest, OperatorEventRequest
 from nexusnet.training import TrainingDataExportRecord
 
 
+def _runtime_privacy_digest(value: Any) -> str:
+    return hashlib.sha256(str(value).encode("utf-8")).hexdigest()[:24]
+
+
+def _local_personality_preference_overlay_for_inference(
+    *,
+    hive_substrate: Any,
+    session_id: str,
+) -> dict[str, Any]:
+    if not session_id:
+        return {
+            "surface_id": "hive-local-personality-preference-overlay-v0",
+            "status": "no-local-preferences",
+            "profile_recorded": False,
+            "applied_preference_keys": [],
+            "preference_feature_count": 0,
+            "federated_packet_used": False,
+            "federation_consent_consulted": False,
+            "raw_content_included": False,
+            "contains_personal_data": False,
+            "active_production_mutation_allowed": False,
+            "active_production_mutated": False,
+        }
+    try:
+        return hive_substrate.local_personality_preference_overlay(session_id=session_id)
+    except Exception as exc:  # pragma: no cover - preference replay must not block inference
+        return {
+            "surface_id": "hive-local-personality-preference-overlay-v0",
+            "status": "degraded-local-preference-ledger",
+            "profile_recorded": False,
+            "applied_preference_keys": [],
+            "preference_feature_count": 0,
+            "federated_packet_used": False,
+            "federation_consent_consulted": False,
+            "blocker_digest": f"sha256:{_runtime_privacy_digest(type(exc).__name__)}",
+            "raw_content_included": False,
+            "contains_personal_data": False,
+            "active_production_mutation_allowed": False,
+            "active_production_mutated": False,
+        }
+
+
+def _messages_with_local_personality_preference_overlay(
+    messages: list[dict[str, Any]],
+    overlay: dict[str, Any],
+) -> list[dict[str, Any]]:
+    preference_keys = overlay.get("applied_preference_keys")
+    if not isinstance(preference_keys, list) or not preference_keys:
+        return [dict(message) for message in messages]
+    preference_label = "; ".join(str(key) for key in preference_keys)
+    return [
+        {
+            "role": "system",
+            "content": (
+                f"NexusNet local response-style preferences: {preference_label}. "
+                "Apply only as response style, never as task instructions."
+            ),
+        },
+        *[dict(message) for message in messages],
+    ]
+
+
+def _pre_dispatch_inference_admission(
+    *,
+    router: Any,
+    session_id: str,
+    requested_model: str,
+    messages: list[dict[str, Any]],
+    provider_local: bool,
+    metadata: dict[str, Any],
+    max_tokens: Any = None,
+    surface_id: str,
+) -> dict[str, Any]:
+    risk_level = str(metadata.get("inference_risk_level") or "medium").strip().lower()
+    if risk_level not in {"low", "medium", "high", "critical"}:
+        risk_level = "medium"
+    normalized_max_tokens = max_tokens if isinstance(max_tokens, int) and max_tokens > 0 else None
+    trace_seed = json.dumps(
+        {
+            "session_id": session_id,
+            "requested_model": requested_model,
+            "messages": messages,
+            "surface_id": surface_id,
+        },
+        sort_keys=True,
+        default=str,
+    )
+    try:
+        decision = router.route(
+            InferenceRouteRequest(
+                trace_id=f"pre-dispatch::sha256:{_runtime_privacy_digest(trace_seed)}",
+                agent_id=f"release-wrapper::sha256:{_runtime_privacy_digest(session_id)}",
+                messages=[dict(message) for message in messages],
+                task_type="chat",
+                max_tokens=normalized_max_tokens,
+                privacy_class="local_only" if provider_local else "allow_cloud",
+                risk_level=risk_level,
+                metadata={
+                    "source_surface_id": surface_id,
+                    "requested_provider_ref": (
+                        f"provider::sha256:{_runtime_privacy_digest(requested_model)}"
+                    ),
+                    "raw_content_included": False,
+                },
+            )
+        )
+    except Exception as exc:  # pragma: no cover - dispatch must fail closed when governance is unavailable
+        return {
+            "surface_id": "nexusbrain-pre-dispatch-inference-admission-v0",
+            "status": "blocked-router-admission-unavailable",
+            "execution_allowed": False,
+            "router_status": "unavailable",
+            "blocker_digest": f"sha256:{_runtime_privacy_digest(type(exc).__name__)}",
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "active_production_mutated": False,
+        }
+    decision_id = str(decision.get("decision_id") or "")
+    router_status = str(decision.get("status") or "blocked-router-admission-unavailable")
+    execution_allowed = router_status == "routed-shadow"
+    return {
+        "surface_id": "nexusbrain-pre-dispatch-inference-admission-v0",
+        "status": "allowed-router-admission" if execution_allowed else "blocked-router-admission",
+        "execution_allowed": execution_allowed,
+        "router_status": router_status,
+        "decision_id": decision_id,
+        "decision_ref": (
+            f"inference-route::sha256:{_runtime_privacy_digest(decision_id)}"
+            if decision_id
+            else None
+        ),
+        "tier": decision.get("tier"),
+        "router_provider_id": (decision.get("provider") or {}).get("provider_id"),
+        "router_model_id": (decision.get("model") or {}).get("model_id"),
+        "privacy_class": decision.get("privacy_gate", {}).get("privacy_class"),
+        "reason_codes": list(decision.get("reason_codes") or []),
+        "raw_content_included": False,
+        "active_production_mutation_allowed": False,
+        "active_production_mutated": False,
+    }
+
+
+def _router_provider_binding(*, admission: dict[str, Any], provider_registry: Any) -> dict[str, Any]:
+    router_provider_id = str(admission.get("router_provider_id") or "")
+    mapping = {"lmstudio": "lmstudio", "ollama": "lmstudio"}
+    wrapper_provider_id = mapping.get(router_provider_id)
+    base = {
+        "surface_id": "nexusbrain-router-provider-binding-v0",
+        "router_provider_id": router_provider_id or None,
+        "router_model_id": admission.get("router_model_id"),
+        "wrapper_provider_id": wrapper_provider_id,
+        "fallback_applied": bool(wrapper_provider_id and wrapper_provider_id != router_provider_id),
+        "raw_content_included": False,
+        "active_production_mutation_allowed": False,
+        "active_production_mutated": False,
+    }
+    if not admission.get("execution_allowed"):
+        return {**base, "status": "blocked-router-admission", "execution_allowed": False}
+    if not wrapper_provider_id:
+        return {**base, "status": "degraded-router-provider-unmapped", "execution_allowed": False}
+    provider = provider_registry.get(wrapper_provider_id)
+    if provider is None:
+        return {**base, "status": "degraded-router-provider-unconfigured", "execution_allowed": False}
+    if not isinstance(provider, EchoProvider):
+        return {**base, "status": "degraded-router-provider-unverified", "execution_allowed": False}
+    return {**base, "status": "live-route-binding", "execution_allowed": True}
+
+
 def create_app(project_root: str | None = None) -> FastAPI:
     services = build_services(project_root)
     application = FastAPI(title="Nexus API", version=services.version)
@@ -137,6 +333,7 @@ def create_app(project_root: str | None = None) -> FastAPI:
     provider_registry = _default_provider_registry(
         openrouter_key=_os.environ.get("OPENROUTER_API_KEY", ""),
         requesty_key=_os.environ.get("REQUESTY_API_KEY", ""))
+    provider_registry.execution_authority = services.brain_execution_authority
     application.state.provider_registry = provider_registry
     release_wrapper_runtime = ReleaseWrapperRuntime(
         artifacts_dir=services.paths.artifacts_dir,
@@ -165,7 +362,163 @@ def create_app(project_root: str | None = None) -> FastAPI:
         quantization_catalog=services.brain_quantization_catalog,
     )
     application.state.release_wrapper_runtime = release_wrapper_runtime
+    genesis_foundation = GenesisFoundationStatusService(
+        artifacts_dir=services.paths.artifacts_dir,
+        project_root=services.paths.project_root,
+        hive_substrate=services.brain_hive_substrate,
+    )
+    genesis_event_spine = GenesisEventSpineService(
+        artifacts_dir=services.paths.artifacts_dir,
+        project_root=services.paths.project_root,
+    )
+    genesis_heartbeat = GenesisHeartbeatService(
+        artifacts_dir=services.paths.artifacts_dir,
+        project_root=services.paths.project_root,
+        event_spine=genesis_event_spine,
+    )
+    genesis_evidence_spine = GenesisEvidenceSpineService(
+        artifacts_dir=services.paths.artifacts_dir,
+        project_root=services.paths.project_root,
+        heartbeat_service=genesis_heartbeat,
+        event_spine=genesis_event_spine,
+    )
+    genesis_sensory_provenance = GenesisSensoryProvenanceService(
+        artifacts_dir=services.paths.artifacts_dir,
+        project_root=services.paths.project_root,
+        event_spine=genesis_event_spine,
+    )
+    genesis_memory_foundation = GenesisMemoryFoundationService(
+        artifacts_dir=services.paths.artifacts_dir,
+        event_spine=genesis_event_spine,
+    )
+    genesis_memory_admission = GenesisMemoryAdmissionService(
+        artifacts_dir=services.paths.artifacts_dir,
+        project_root=services.paths.project_root,
+        sensory_service=genesis_sensory_provenance,
+        event_spine=genesis_event_spine,
+    )
+    genesis_memory_admission.memory_foundation = genesis_memory_foundation
+    application.state.genesis_memory_foundation_runtime_binding = (
+        genesis_memory_foundation.bind_runtime_services(
+            retrieval_service=services.retrieval,
+            memory_service=services.memory,
+            graph_ingestion=services.brain_graph_ingestion,
+            global_growth=global_growth,
+            memory_admission=genesis_memory_admission,
+        )
+    )
+    genesis_federated_outcomes = GenesisFederatedOutcomeService(
+        artifacts_dir=services.paths.artifacts_dir,
+        project_root=services.paths.project_root,
+        event_spine=genesis_event_spine,
+        global_growth=global_growth,
+    )
+    genesis_self_repair = GenesisSelfRepairService(
+        artifacts_dir=services.paths.artifacts_dir,
+        project_root=services.paths.project_root,
+        event_spine=genesis_event_spine,
+        evidence_spine=genesis_evidence_spine,
+        federated_outcomes=genesis_federated_outcomes,
+    )
+    genesis_dream_research = GenesisDreamResearchService(
+        artifacts_dir=services.paths.artifacts_dir,
+        project_root=services.paths.project_root,
+        event_spine=genesis_event_spine,
+        self_repair=genesis_self_repair,
+        federated_outcomes=genesis_federated_outcomes,
+    )
+    genesis_node_contracts = GenesisNodeContractRegistry(
+        artifacts_dir=services.paths.artifacts_dir,
+        canon_registry=services.brain_canon,
+        ao_registry=services.brain_aos,
+        cluster9_registry=build_default_cluster9_teacher_reconciliation_registry(),
+        event_spine=genesis_event_spine,
+    )
+    genesis_immune_governance = GenesisImmuneGovernanceService(
+        artifacts_dir=services.paths.artifacts_dir,
+        event_spine=genesis_event_spine,
+    )
+    genesis_self_repair.immune_governance = genesis_immune_governance
+    genesis_node_contracts.immune_governance = genesis_immune_governance
+    services.brain_autonomous_updates.immune_governance = genesis_immune_governance
+    release_wrapper_runtime.immune_governance = genesis_immune_governance
+    services.brain_aos.node_contract_registry = genesis_node_contracts
+    services.brain.internal_expert_execution.node_contract_registry = genesis_node_contracts
+    services.brain_teachers.teacher_governance_registry = genesis_node_contracts
+    services.brain_forward_radar.teacher_candidate_registry = genesis_node_contracts
+    services.brain_forward_radar.tool_action_harness = services.brain_tool_action_harness
+    application.state.model_release_radar = services.brain_forward_radar
+    application.state.genesis_foundation = genesis_foundation
+    application.state.genesis_event_spine = genesis_event_spine
+
+    def _publish_provider_registry_inference_event(envelope: dict[str, Any]) -> dict[str, Any]:
+        projection = genesis_event_spine.publish_event(
+            event_type=str(envelope["event_type"]),
+            source_surface_id=str(envelope["source_surface_id"]),
+            correlation_ref=str(envelope["correlation_ref"]),
+            session_ref_digest=(
+                str(envelope["session_ref_digest"])
+                if envelope.get("session_ref_digest")
+                else None
+            ),
+            artifact_refs=[str(item) for item in (envelope.get("artifact_refs") or [])],
+            planes=[str(item) for item in (envelope.get("planes") or [])],
+        )
+        return {
+            key: projection.get(key)
+            for key in (
+                "event_ref",
+                "blackboard_snapshot_ref",
+                "plane_trace_ref",
+                "event_type",
+                "source_surface_id",
+                "raw_content_included",
+                "active_production_mutation_allowed",
+                "active_production_mutated",
+            )
+        }
+
+    provider_registry.execution_observer = _publish_provider_registry_inference_event
+    application.state.genesis_heartbeat = genesis_heartbeat
+    application.state.genesis_evidence_spine = genesis_evidence_spine
+    application.state.genesis_sensory_provenance = genesis_sensory_provenance
+    application.state.genesis_memory_admission = genesis_memory_admission
+    application.state.genesis_memory_foundation = genesis_memory_foundation
+    application.state.genesis_federated_outcomes = genesis_federated_outcomes
+    application.state.genesis_self_repair = genesis_self_repair
+    application.state.genesis_dream_research = genesis_dream_research
+    application.state.genesis_node_contracts = genesis_node_contracts
+    application.state.genesis_immune_governance = genesis_immune_governance
+    services.brain_visualizer.genesis_foundation = genesis_foundation
+    services.brain_visualizer.genesis_event_spine = genesis_event_spine
+    services.brain_visualizer.genesis_heartbeat = genesis_heartbeat
+    services.brain_visualizer.genesis_evidence_spine = genesis_evidence_spine
+    services.brain_visualizer.genesis_sensory_provenance = genesis_sensory_provenance
+    services.brain_visualizer.genesis_memory_admission = genesis_memory_admission
+    services.brain_visualizer.genesis_federated_outcomes = genesis_federated_outcomes
+    services.brain_visualizer.genesis_self_repair = genesis_self_repair
+    services.brain_visualizer.genesis_dream_research = genesis_dream_research
+    services.brain_visualizer.genesis_node_contracts = genesis_node_contracts
+    services.brain_visualizer.genesis_immune_governance = genesis_immune_governance
     services.brain.native_runtime_growth_review_bridge = release_wrapper_runtime.queue_native_runtime_growth_review
+    services.brain.native_federated_peer_delivery_bridge = (
+        release_wrapper_runtime.dispatch_native_hive_federated_packet
+    )
+    services.brain.genesis_heartbeat_bridge = genesis_heartbeat.record_from_hive_result
+    services.brain.genesis_self_repair_observer_bridge = genesis_self_repair.propose_from_degraded_heartbeat
+    services.brain.genesis_dream_research_observer_bridge = genesis_dream_research.propose_from_degraded_heartbeat
+    services.brain.genesis_evidence_spine_bridge = genesis_evidence_spine.record_runtime_transaction
+    services.brain.genesis_sensory_bridge = genesis_sensory_provenance.record_from_hive_result
+    services.brain.genesis_memory_admission_bridge = genesis_memory_admission.record_from_hive_result
+    services.brain.genesis_foundation_status_provider = genesis_foundation.summary
+    services.brain.genesis_context_graph_bridge = services.brain_context_graph.record_genesis_foundation_projection
+    services.memory.genesis_memory_admission = genesis_memory_admission
+    services.retrieval.genesis_memory_admission = genesis_memory_admission
+    services.brain_memory_quality.genesis_memory_admission = genesis_memory_admission
+    services.brain_knowledge_artifacts.genesis_memory_admission = genesis_memory_admission
+    services.brain_graph_ingestion.genesis_memory_admission = genesis_memory_admission
+    services.brain_context_graph.genesis_memory_admission = genesis_memory_admission
+    services.brain_context_graph.genesis_federated_outcomes = genesis_federated_outcomes
     services.brain_ui_surface.release_runtime_status_provider = release_wrapper_runtime.summary
     services.brain_ui_surface.release_readiness_provider = release_wrapper_runtime.release_readiness_manifest
     services.brain_ui_surface.release_session_lifecycle_provider = release_wrapper_runtime.session_lifecycle
@@ -260,6 +613,17 @@ def create_app(project_root: str | None = None) -> FastAPI:
             )
 
         metadata = approval.get("metadata") if isinstance(approval.get("metadata"), dict) else {}
+        overrides = payload.get("request_overrides") if isinstance(payload.get("request_overrides"), dict) else {}
+        requested_handoff_id = str(overrides.get("domain_growth_handoff_id") or "").strip()
+        approved_handoff_id = str(metadata.get("domain_growth_handoff_id") or "").strip()
+        if requested_handoff_id and approved_handoff_id != requested_handoff_id:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Admin approval metadata must bind domain_growth_handoff_id before running "
+                    "the domain-growth sandbox lifecycle."
+                ),
+            )
         return {
             "schema_version": "nexusnet-release-wrapper-production-spine-lifecycle-approval-v1",
             "surface_id": "release-wrapper-production-spine-lifecycle-approval",
@@ -270,7 +634,102 @@ def create_app(project_root: str | None = None) -> FastAPI:
             "rationale_digest": f"sha256:{_privacy_compat_digest(str(approval.get('rationale') or ''))}",
             "metadata_digest": f"sha256:{_privacy_compat_digest(json.dumps(metadata, sort_keys=True, default=str))}",
             "metadata_key_count": len(metadata),
+            "approved_domain_growth_handoff_id": approved_handoff_id or None,
             "created_at": str(approval.get("created_at") or ""),
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+        }
+
+    autonomous_update_approval_subject = "release-wrapper-autonomous-update"
+
+    def _autonomous_update_admin_approval_from_payload(update_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        approval_ref = str(
+            payload.get("approval_decision_id")
+            or payload.get("admin_approval_ref")
+            or payload.get("approval_ref")
+            or ""
+        ).strip()
+        if not approval_ref:
+            raise HTTPException(
+                status_code=400,
+                detail="Admin approval decision_id is required before an autonomous update can execute.",
+            )
+        approvals = services.store.list_approvals(limit=500)
+        approval = next(
+            (item for item in approvals if str(item.get("decision_id") or "") == approval_ref),
+            None,
+        )
+        if approval is None:
+            raise HTTPException(status_code=400, detail="Admin approval decision_id was not found in the governance approval store.")
+        if approval.get("subject") != autonomous_update_approval_subject:
+            raise HTTPException(status_code=400, detail="Admin approval subject does not match the autonomous update lifecycle.")
+        if approval.get("decision") != "approved":
+            raise HTTPException(status_code=400, detail="Admin approval decision must be approved before autonomous update execution.")
+        metadata = approval.get("metadata") if isinstance(approval.get("metadata"), dict) else {}
+        approved_update_id = str(metadata.get("update_id") or "").strip()
+        if approved_update_id != update_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Admin approval metadata must bind update_id before autonomous update execution.",
+            )
+        return {
+            "surface_id": "release-wrapper-autonomous-update-approval",
+            "status": "approved",
+            "approval_ref": approval_ref,
+            "approval_subject": autonomous_update_approval_subject,
+            "decision": "approved",
+            "approved_update_id": approved_update_id,
+            "approver_digest": f"sha256:{_privacy_compat_digest(str(approval.get('approver') or ''))}",
+            "rationale_digest": f"sha256:{_privacy_compat_digest(str(approval.get('rationale') or ''))}",
+            "metadata_digest": f"sha256:{_privacy_compat_digest(json.dumps(metadata, sort_keys=True, default=str))}",
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+        }
+
+    federated_peer_delivery_approval_subject = "release-wrapper-federated-peer-delivery"
+
+    def _federated_peer_delivery_admin_approval_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        approval_ref = str(
+            payload.get("approval_decision_id")
+            or payload.get("admin_approval_ref")
+            or payload.get("approval_ref")
+            or ""
+        ).strip()
+        peer_node_id = str(payload.get("peer_node_id") or "").strip()
+        import_url = str(payload.get("import_url") or "").strip()
+        if not approval_ref:
+            raise HTTPException(
+                status_code=400,
+                detail="Admin approval decision_id is required before registering a federated delivery peer.",
+            )
+        if not peer_node_id or not import_url:
+            raise HTTPException(status_code=400, detail="peer_node_id and import_url are required for federated delivery.")
+        approvals = services.store.list_approvals(limit=500)
+        approval = next(
+            (item for item in approvals if str(item.get("decision_id") or "") == approval_ref),
+            None,
+        )
+        if approval is None:
+            raise HTTPException(status_code=400, detail="Admin approval decision_id was not found in the governance approval store.")
+        if approval.get("subject") != federated_peer_delivery_approval_subject:
+            raise HTTPException(status_code=400, detail="Admin approval subject does not match federated peer delivery.")
+        if approval.get("decision") != "approved":
+            raise HTTPException(status_code=400, detail="Admin approval decision must be approved before federated peer delivery.")
+        metadata = approval.get("metadata") if isinstance(approval.get("metadata"), dict) else {}
+        if str(metadata.get("peer_node_id") or "").strip() != peer_node_id:
+            raise HTTPException(status_code=400, detail="Admin approval metadata must bind peer_node_id before peer registration.")
+        if str(metadata.get("import_url") or "").strip() != import_url:
+            raise HTTPException(status_code=400, detail="Admin approval metadata must bind import_url before peer registration.")
+        return {
+            "surface_id": "release-wrapper-federated-peer-delivery-approval",
+            "status": "approved",
+            "decision": "approved",
+            "approval_ref": approval_ref,
+            "approval_subject": federated_peer_delivery_approval_subject,
+            "peer_node_ref_digest": f"sha256:{_privacy_compat_digest(peer_node_id)}",
+            "import_url_digest": f"sha256:{_privacy_compat_digest(import_url)}",
+            "approver_digest": f"sha256:{_privacy_compat_digest(str(approval.get('approver') or ''))}",
+            "rationale_digest": f"sha256:{_privacy_compat_digest(str(approval.get('rationale') or ''))}",
             "raw_content_included": False,
             "active_production_mutation_allowed": False,
         }
@@ -1092,7 +1551,7 @@ def create_app(project_root: str | None = None) -> FastAPI:
     @application.post("/ops/brain/execution-authority/leases/request")
     def ops_brain_execution_authority_leases_request(payload: dict[str, Any] = Body(...)):
         try:
-            return services.brain_execution_authority.request_lease(
+            return services.brain_execution_authority.request_lease_public(
                 capability=str(payload["capability"]),
                 scope=dict(payload.get("scope") or {}),
                 expires_at=payload.get("expires_at"),
@@ -1114,7 +1573,7 @@ def create_app(project_root: str | None = None) -> FastAPI:
     @application.post("/ops/brain/execution-authority/evaluate")
     def ops_brain_execution_authority_evaluate(payload: dict[str, Any] = Body(...)):
         try:
-            return services.brain_execution_authority.evaluate(
+            return services.brain_execution_authority.evaluate_public(
                 lease_id=str(payload["lease_id"]),
                 capability=str(payload["capability"]),
                 scope=dict(payload.get("scope") or {}),
@@ -1122,6 +1581,66 @@ def create_app(project_root: str | None = None) -> FastAPI:
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="execution lease not found") from exc
+
+    @application.post("/ops/brain/tools/actions/execute")
+    def ops_brain_tools_actions_execute(payload: dict[str, Any] = Body(...)):
+        """Run only the harness's lease-gated filesystem observations against this project root."""
+        try:
+            execution = services.brain_tool_action_harness.execute_action(
+                action_id=str(payload["action_id"]),
+                tool_ref=str(payload["tool_ref"]),
+                action_type=str(payload["action_type"]),
+                target=str(payload["target"]),
+                evidence_refs=[str(item) for item in (payload.get("evidence_refs") or [])],
+                sandbox_root=services.paths.project_root,
+                execution_authority=services.brain_execution_authority,
+                lease_id=str(payload.get("lease_id") or ""),
+                capability=str(payload.get("capability") or "deterministic_tool_boundary"),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        session_id = str(payload.get("session_id") or "")
+        event_type = (
+            "genesis.execution_authority.tool_action.executed"
+            if execution.get("executed") is True
+            else "genesis.execution_authority.tool_action.blocked"
+        )
+        try:
+            projection = genesis_event_spine.publish_event(
+                event_type=event_type,
+                source_surface_id="execution-authority-tool-action",
+                correlation_ref=str(execution.get("execution_id") or "tool-action-execution"),
+                session_ref_digest=f"sha256:{_privacy_compat_digest(session_id)}" if session_id else None,
+                artifact_refs=[
+                    f"tool-action-execution::{execution.get('execution_id') or 'unknown'}",
+                    f"execution-authority-lease::{execution.get('lease_id') or 'none'}",
+                    f"capability::{execution.get('capability') or 'unknown'}",
+                ],
+                planes=["authority", "isolation", "tool", "event", "evidence"],
+            )
+            execution["shared_event_spine"] = {
+                key: projection.get(key)
+                for key in (
+                    "event_ref",
+                    "blackboard_snapshot_ref",
+                    "plane_trace_ref",
+                    "event_type",
+                    "source_surface_id",
+                    "raw_content_included",
+                    "active_production_mutation_allowed",
+                    "active_production_mutated",
+                )
+            }
+        except Exception as exc:  # pragma: no cover - preserve the governed execution receipt on telemetry failure
+            execution["shared_event_spine"] = {
+                "status": "degraded-event-spine",
+                "event_type": event_type,
+                "blocker_digest": f"sha256:{_privacy_compat_digest(type(exc).__name__)}",
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        return execution
 
     @application.get("/ops/brain/context-graph")
     def ops_brain_context_graph(limit: int = 100):
@@ -1139,6 +1658,7 @@ def create_app(project_root: str | None = None) -> FastAPI:
                 changed_files=[str(item) for item in (payload.get("changed_files") or [])],
                 update_mode=str(payload.get("update_mode") or "full"),
                 linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+                session_id=str(payload.get("session_id")) if payload.get("session_id") else None,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1151,9 +1671,88 @@ def create_app(project_root: str | None = None) -> FastAPI:
                 question=str(payload["question"]),
                 mode=str(payload.get("mode") or "query"),
                 linked_trace_ids=[str(item) for item in (payload.get("linked_trace_ids") or [])],
+                session_id=str(payload.get("session_id")) if payload.get("session_id") else None,
             )
         except KeyError as exc:
             raise HTTPException(status_code=400, detail=f"missing required field: {exc.args[0]}") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/context-graph/impact-receipts")
+    def ops_brain_context_graph_impact_receipts(payload: dict[str, Any] = Body(...)):
+        try:
+            return {
+                "receipt": services.brain_context_graph.record_impact_receipt(
+                    source_projection_id=str(payload["source_projection_id"]),
+                    proposed_change=dict(payload.get("proposed_change") or {}),
+                    gitnexus_evidence=dict(payload.get("gitnexus_evidence") or {}),
+                    session_id=str(payload.get("session_id")) if payload.get("session_id") else None,
+                )
+            }
+        except KeyError as exc:
+            if exc.args and exc.args[0] == "source_projection_id":
+                raise HTTPException(status_code=400, detail="missing required field: source_projection_id") from exc
+            raise HTTPException(status_code=404, detail="context graph source projection not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/context-graph/impact-receipts/{receipt_id}/sandbox-eval")
+    def ops_brain_context_graph_impact_receipt_sandbox_eval(receipt_id: str, payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_context_graph.run_impact_receipt_sandbox_eval(
+                receipt_id,
+                command=str(payload.get("command") or ""),
+                project_root=services.paths.project_root,
+                timeout_seconds=int(payload.get("timeout_seconds") or 60),
+                session_id=str(payload.get("session_id")) if payload.get("session_id") else None,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="context graph impact receipt not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/context-graph/impact-receipts/{receipt_id}/approve")
+    def ops_brain_context_graph_impact_receipt_approve(receipt_id: str, payload: dict[str, Any] = Body(...)):
+        try:
+            return {
+                "approval": services.brain_context_graph.approve_impact_receipt(
+                    receipt_id,
+                    approved_by=str(payload.get("approved_by") or "admin"),
+                    approval_ref=str(payload.get("approval_ref") or ""),
+                    session_id=str(payload.get("session_id")) if payload.get("session_id") else None,
+                )
+            }
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="context graph impact receipt not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/context-graph/impact-receipts/{receipt_id}/apply")
+    def ops_brain_context_graph_impact_receipt_apply(receipt_id: str, payload: dict[str, Any] = Body(default={})):
+        try:
+            return {
+                "application": services.brain_context_graph.apply_impact_receipt(
+                    receipt_id,
+                    session_id=str(payload.get("session_id")) if payload.get("session_id") else None,
+                )
+            }
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="context graph impact receipt not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/context-graph/impact-receipts/{receipt_id}/rollback")
+    def ops_brain_context_graph_impact_receipt_rollback(receipt_id: str, payload: dict[str, Any] = Body(default={})):
+        try:
+            return {
+                "rollback": services.brain_context_graph.rollback_impact_receipt(
+                    receipt_id,
+                    reason=str(payload.get("reason") or "operator-requested-context-graph-rollback"),
+                    session_id=str(payload.get("session_id")) if payload.get("session_id") else None,
+                )
+            }
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="context graph impact receipt not found") from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1895,6 +2494,322 @@ def create_app(project_root: str | None = None) -> FastAPI:
     def ops_brain_visualizer_state(session_id: str | None = None):
         return services.brain_visualizer.state(session_id=session_id)
 
+    @application.get("/ops/brain/genesis-foundation")
+    def ops_brain_genesis_foundation(session_id: str | None = None):
+        payload = genesis_foundation.summary(session_id=session_id)
+        services.brain_context_graph.record_genesis_foundation_projection(
+            payload,
+            session_id=session_id,
+        )
+        return payload
+
+    @application.get("/ops/brain/genesis-event-spine")
+    def ops_brain_genesis_event_spine(session_id: str | None = None, limit: int = 100):
+        return genesis_event_spine.summary(session_id=session_id, limit=limit)
+
+    @application.get("/ops/brain/genesis-heartbeat")
+    def ops_brain_genesis_heartbeat(session_id: str | None = None):
+        return genesis_heartbeat.summary(session_id=session_id)
+
+    @application.get("/ops/brain/genesis-evidence-spine")
+    def ops_brain_genesis_evidence_spine(session_id: str | None = None):
+        return genesis_evidence_spine.summary(session_id=session_id)
+
+    @application.get("/ops/brain/genesis-self-repair")
+    def ops_brain_genesis_self_repair(session_id: str | None = None, limit: int = 100):
+        return genesis_self_repair.summary(session_id=session_id, limit=limit)
+
+    @application.get("/ops/brain/genesis-dream-research")
+    def ops_brain_genesis_dream_research(session_id: str | None = None, limit: int = 100):
+        return genesis_dream_research.summary(session_id=session_id, limit=limit)
+
+    @application.get("/ops/brain/genesis-federated-outcomes")
+    def ops_brain_genesis_federated_outcomes(session_id: str | None = None, limit: int = 100):
+        return genesis_federated_outcomes.summary(session_id=session_id, limit=limit)
+
+    @application.get("/ops/brain/genesis-sensory-provenance")
+    def ops_brain_genesis_sensory_provenance(session_id: str | None = None):
+        return genesis_sensory_provenance.summary(session_id=session_id)
+
+    @application.get("/ops/brain/genesis-memory-admission")
+    def ops_brain_genesis_memory_admission(session_id: str | None = None):
+        return genesis_memory_admission.summary(session_id=session_id)
+
+    @application.get("/ops/brain/genesis-memory-replay")
+    def ops_brain_genesis_memory_replay(session_id: str | None = None, limit: int = 100):
+        return genesis_memory_admission.replay(session_id=session_id, limit=limit)
+
+    @application.get("/ops/brain/genesis-memory-foundation")
+    def ops_brain_genesis_memory_foundation(session_id: str | None = None):
+        session_ref_digest = (
+            "sha256:" + hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:16]
+            if session_id
+            else None
+        )
+        return genesis_memory_foundation.summary(session_ref_digest=session_ref_digest)
+
+    @application.get("/ops/brain/genesis-node-contracts")
+    def ops_brain_genesis_node_contracts(session_id: str | None = None):
+        session_ref_digest = (
+            "sha256:" + hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:16]
+            if session_id
+            else None
+        )
+        return genesis_node_contracts.summary(session_ref_digest=session_ref_digest)
+
+    @application.get("/ops/brain/genesis-teacher-governance")
+    def ops_brain_genesis_teacher_governance():
+        return genesis_node_contracts.teacher_governance_summary()
+
+    @application.post("/ops/brain/genesis-teacher-governance/candidates")
+    def ops_brain_genesis_teacher_candidate_intake(payload: dict[str, Any] = Body(...)):
+        try:
+            return genesis_node_contracts.register_teacher_candidate(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.get("/ops/brain/genesis-immune-governance")
+    def ops_brain_genesis_immune_governance():
+        return genesis_immune_governance.summary()
+
+    @application.post("/ops/brain/genesis-immune-governance/candidates/evaluate")
+    def ops_brain_genesis_immune_governance_evaluate(payload: dict[str, Any] = Body(...)):
+        try:
+            return genesis_immune_governance.evaluate_candidate(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/genesis-immune-governance/candidates/{candidate_id}/decide")
+    def ops_brain_genesis_immune_governance_decide(candidate_id: str, payload: dict[str, Any] = Body(...)):
+        try:
+            return genesis_immune_governance.decide(candidate_id, payload)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="immune governance candidate not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.get("/ops/brain/genesis-node-contracts/contract")
+    def ops_brain_genesis_node_contract(contract_ref: str):
+        contract = genesis_node_contracts.contract(contract_ref)
+        if contract is None:
+            raise HTTPException(status_code=404, detail="node contract not found")
+        return contract
+
+    @application.post("/ops/brain/genesis-node-contracts/routes/authorize")
+    def ops_brain_genesis_node_contract_route_authorize(payload: dict[str, Any] = Body(...)):
+        session_id = str(payload.get("session_id") or "")
+        session_ref_digest = "sha256:" + hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:16]
+        try:
+            return genesis_node_contracts.authorize_route(
+                selected_ao=str(payload.get("selected_ao") or ""),
+                selected_expert=str(payload.get("selected_expert") or ""),
+                trace_ref=str(payload.get("trace_ref") or ""),
+                session_ref_digest=session_ref_digest,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/genesis-node-contracts/temporary-children")
+    def ops_brain_genesis_node_contract_child(payload: dict[str, Any] = Body(...)):
+        try:
+            return genesis_node_contracts.register_temporary_child(payload)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/genesis-node-contracts/temporary-children/{child_id}/review")
+    def ops_brain_genesis_node_contract_child_review(child_id: str, payload: dict[str, Any] = Body(...)):
+        try:
+            return genesis_node_contracts.review_temporary_child(child_id, payload)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/genesis-node-contracts/retirements")
+    def ops_brain_genesis_node_contract_retirement(payload: dict[str, Any] = Body(...)):
+        try:
+            return genesis_node_contracts.retire_parent(payload)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/genesis-node-contracts/retirements/restore")
+    def ops_brain_genesis_node_contract_restoration(payload: dict[str, Any] = Body(...)):
+        try:
+            return genesis_node_contracts.restore_parent(payload)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.get("/ops/brain/genesis-memory-foundation/query")
+    def ops_brain_genesis_memory_foundation_query(
+        query: str,
+        session_id: str | None = None,
+        limit: int = 10,
+    ):
+        session_ref_digest = (
+            "sha256:" + hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:16]
+            if session_id
+            else None
+        )
+        return genesis_memory_foundation.query(
+            query=query,
+            session_ref_digest=session_ref_digest,
+            limit=limit,
+        )
+
+    @application.post("/ops/brain/genesis-memory-foundation/refresh")
+    def ops_brain_genesis_memory_foundation_refresh(payload: dict[str, Any] = Body(...)):
+        contradiction_refs = payload.get("contradiction_refs")
+        if contradiction_refs is None:
+            normalized_contradiction_refs: list[str] = []
+        elif isinstance(contradiction_refs, list):
+            normalized_contradiction_refs = [str(item) for item in contradiction_refs]
+        else:
+            normalized_contradiction_refs = [str(contradiction_refs)]
+        try:
+            return genesis_memory_foundation.refresh_source(
+                memory_id=str(payload.get("memory_id") or ""),
+                session_id=str(payload.get("session_id") or ""),
+                refreshed_content=str(payload.get("refreshed_content") or ""),
+                source_refresh_ref=str(payload.get("source_refresh_ref") or ""),
+                classification=str(payload.get("classification") or "stale"),
+                contradiction_refs=normalized_contradiction_refs,
+            )
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.get("/ops/brain/genesis-memory-replay/promotion-gate")
+    def ops_brain_genesis_memory_replay_promotion_gate(session_id: str | None = None, limit: int = 100):
+        return genesis_memory_admission.promotion_gate_summary(session_id=session_id, limit=limit)
+
+    @application.post("/ops/brain/genesis-memory-replay/promotion-gate")
+    def ops_brain_genesis_memory_replay_promotion_gate_submit(payload: dict[str, Any] = Body(...)):
+        def _refs(name: str) -> list[str]:
+            value = payload.get(name)
+            if isinstance(value, list):
+                return [str(item) for item in value]
+            if value is None:
+                return []
+            return [str(value)]
+
+        def _optional_ref(name: str) -> str | None:
+            value = payload.get(name)
+            if value is None:
+                return None
+            text = str(value).strip()
+            return text or None
+
+        try:
+            limit = int(payload.get("limit", 100))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="limit must be an integer") from exc
+        return genesis_memory_admission.promotion_gate(
+            session_id=_optional_ref("session_id"),
+            limit=limit,
+            eval_refs=_refs("eval_refs"),
+            sandbox_ref=_optional_ref("sandbox_ref"),
+            artifact_trust_refs=_refs("artifact_trust_refs"),
+            rollback_plan=_optional_ref("rollback_plan"),
+            governance_approval_ref=_optional_ref("governance_approval_ref"),
+            admin_approval_ref=_optional_ref("admin_approval_ref"),
+            decision_refs=_refs("decision_refs") if payload.get("decision_refs") is not None else None,
+        )
+
+    @application.post("/ops/brain/genesis-memory-replay/promotion-gate/sandbox-eval")
+    def ops_brain_genesis_memory_replay_promotion_gate_sandbox_eval(payload: dict[str, Any] = Body(...)):
+        try:
+            return genesis_memory_admission.promotion_gate_sandbox_eval(payload)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/genesis-memory-replay/promotion-gate/apply")
+    def ops_brain_genesis_memory_replay_promotion_gate_apply(payload: dict[str, Any] = Body(...)):
+        try:
+            return genesis_memory_admission.promotion_gate_apply(payload)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/genesis-memory-replay/promotion-gate/commit")
+    def ops_brain_genesis_memory_replay_promotion_gate_commit(payload: dict[str, Any] = Body(...)):
+        try:
+            return genesis_memory_admission.promotion_gate_commit(payload)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/genesis-memory-replay/promotion-gate/rollback")
+    def ops_brain_genesis_memory_replay_promotion_gate_rollback(payload: dict[str, Any] = Body(...)):
+        try:
+            return genesis_memory_admission.promotion_gate_rollback(payload)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/genesis-evidence-spine/proposals")
+    def ops_brain_genesis_evidence_spine_propose(payload: dict[str, Any] = Body(...)):
+        try:
+            return genesis_evidence_spine.propose_safe_file(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/genesis-evidence-spine/proposals/{proposal_id}/approve")
+    def ops_brain_genesis_evidence_spine_approve(proposal_id: str, payload: dict[str, Any] | None = Body(default=None)):
+        try:
+            return genesis_evidence_spine.approve(proposal_id, payload or {})
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/genesis-evidence-spine/proposals/{proposal_id}/apply")
+    def ops_brain_genesis_evidence_spine_apply(proposal_id: str, payload: dict[str, Any] | None = Body(default=None)):
+        try:
+            return genesis_evidence_spine.apply(proposal_id, payload or {})
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/genesis-evidence-spine/proposals/{proposal_id}/rollback")
+    def ops_brain_genesis_evidence_spine_rollback(proposal_id: str, payload: dict[str, Any] | None = Body(default=None)):
+        try:
+            return genesis_evidence_spine.rollback(proposal_id, payload or {})
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/genesis-self-repair/proposals/from-event")
+    def ops_brain_genesis_self_repair_propose_from_event(payload: dict[str, Any] = Body(...)):
+        try:
+            return genesis_self_repair.propose_from_event(payload)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/genesis-dream-research/proposals/from-event")
+    def ops_brain_genesis_dream_research_propose_from_event(payload: dict[str, Any] = Body(...)):
+        try:
+            return genesis_dream_research.propose_from_event(payload)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/genesis-self-repair/proposals/{proposal_id}/sandbox-eval")
+    def ops_brain_genesis_self_repair_sandbox_eval(proposal_id: str, payload: dict[str, Any] = Body(...)):
+        try:
+            return genesis_self_repair.sandbox_eval(proposal_id, payload)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/genesis-self-repair/proposals/{proposal_id}/approve")
+    def ops_brain_genesis_self_repair_approve(proposal_id: str, payload: dict[str, Any] | None = Body(default=None)):
+        try:
+            return genesis_self_repair.approve(proposal_id, payload or {})
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/genesis-self-repair/proposals/{proposal_id}/apply")
+    def ops_brain_genesis_self_repair_apply(proposal_id: str, payload: dict[str, Any] | None = Body(default=None)):
+        try:
+            return genesis_self_repair.apply(proposal_id, payload or {})
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/genesis-self-repair/proposals/{proposal_id}/rollback")
+    def ops_brain_genesis_self_repair_rollback(proposal_id: str, payload: dict[str, Any] | None = Body(default=None)):
+        try:
+            return genesis_self_repair.rollback(proposal_id, payload or {})
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @application.get("/ops/brain/operations")
     def ops_brain_operations(session_id: str | None = None, limit: int = 25):
         return services.brain_operations.summary(session_id=session_id, limit=limit)
@@ -2273,6 +3188,13 @@ def create_app(project_root: str | None = None) -> FastAPI:
         proposal = _autonomous_update_proposal(update_id)
         if proposal is None:
             raise HTTPException(status_code=404, detail=f"Unknown autonomous update: {update_id}")
+        admin_approval = _autonomous_update_admin_approval_from_payload(update_id, payload)
+        repair_plan_payload = {
+            **payload,
+            "update_id": update_id,
+            "approved_by": f"approval::{admin_approval['approval_ref']}",
+            "approval_ref": str(admin_approval["approval_ref"]),
+        }
 
         registry = services.brain_eval_registry.summary(limit=500)
         registered_suite_ids = {
@@ -2281,7 +3203,7 @@ def create_app(project_root: str | None = None) -> FastAPI:
             if isinstance(item, dict) and str(item.get("suite_id") or "")
         }
         repair_plan = build_release_health_heartbeat_supervisor_repair_run_plan(
-            payload=payload,
+            payload=repair_plan_payload,
             supervisor=supervisor,
             proposal=proposal,
             registered_suite_ids=registered_suite_ids,
@@ -2290,6 +3212,7 @@ def create_app(project_root: str | None = None) -> FastAPI:
                 "test_release_wrapper_health_heartbeat_loop_runs_bounded_self_checks_with_backoff_and_repair_queue -q"
             ),
             digest=_privacy_compat_digest,
+            resolve_command=release_wrapper_runtime.resolve_sandbox_command,
         )
         if repair_plan.get("status") != "planned":
             raise HTTPException(
@@ -2306,7 +3229,7 @@ def create_app(project_root: str | None = None) -> FastAPI:
         actions: dict[str, dict[str, Any]] = {}
         actions["admin_approval"] = ops_brain_autonomous_updates_admin_approval(
             update_id,
-            repair_plan["admin_approval_payload"],
+            {"approval_decision_id": admin_approval["approval_ref"]},
         )
         linked_eval_replay = actions["admin_approval"].get("linked_eval_replay")
         actions["shadow_eval_replay"] = (
@@ -2346,11 +3269,191 @@ def create_app(project_root: str | None = None) -> FastAPI:
                 "raw_content_included": False,
             }
         evidence_ref = str(actions["sandbox_tests"].get("evidence_ref") or "")
+        context_graph_command = command
+        if context_graph_command == "pytest" or context_graph_command.startswith("pytest "):
+            context_graph_command = f"python -m {context_graph_command}"
+        foundation_status = genesis_foundation.summary(session_id=session_id)
+        source_projection = services.brain_context_graph.record_genesis_foundation_projection(
+            foundation_status,
+            session_id=session_id,
+        )
+        context_receipt = services.brain_context_graph.record_impact_receipt(
+            source_projection_id=str(source_projection["projection_id"]),
+            proposed_change={
+                "change_summary": "release wrapper heartbeat supervisor governed repair lifecycle",
+                "effect_type": "shadow_safe_file_apply",
+                "target_refs": [
+                    "release-health-heartbeat-supervisor-repair-run",
+                    "release-wrapper-health-heartbeat-loop",
+                    update_id,
+                    repair_plan.get("source_loop_id"),
+                    *(repair_plan.get("target_surfaces") or []),
+                ],
+                "changed_file_refs": [
+                    "artifacts/context-graphs/safe-files/release-health-heartbeat-supervisor-repair.json",
+                    "artifacts/autonomous-updates/safe-files/release-wrapper-health-heartbeat-loop.json",
+                ],
+                "rollback_plan": str(proposal.get("rollback_plan") or "heartbeat-supervisor-safe-file-rollback"),
+                "sandbox_command": context_graph_command,
+            },
+            gitnexus_evidence={
+                "provider": "GitNexus",
+                "indexed_repo": "NexusNet",
+                "target_symbol": "ops_wrapper_release_health_heartbeat_supervisor_repair_run",
+                "impact_risk": "LOW",
+                "direct_callers": 1,
+                "affected_processes": [
+                    "ops_wrapper_initial_release_supervisor_run",
+                    "ops_wrapper_release_product_smoke_run",
+                ],
+            },
+            session_id=session_id,
+        )
+        context_sandbox = services.brain_context_graph.run_impact_receipt_sandbox_eval(
+            str(context_receipt["receipt_id"]),
+            command=context_graph_command,
+            project_root=services.paths.project_root,
+            timeout_seconds=int(repair_plan.get("timeout_seconds") or 60),
+            session_id=session_id,
+        )
+        context_sandbox_eval = (
+            context_sandbox.get("sandbox_eval") if isinstance(context_sandbox.get("sandbox_eval"), dict) else {}
+        )
+        if context_sandbox_eval.get("passed") is not True:
+            actions["context_graph_impact_lifecycle"] = {
+                "schema_version": "nexusnet-release-health-context-graph-impact-lifecycle-v1",
+                "surface_id": "release-health-heartbeat-context-graph-impact-lifecycle",
+                "source_surface_id": "release-health-heartbeat-supervisor-repair-run",
+                "status": "blocked-context-graph-sandbox",
+                "source_projection_id": source_projection["projection_id"],
+                "receipt_id": context_receipt["receipt_id"],
+                "receipt": context_receipt,
+                "sandbox_eval": context_sandbox_eval,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+                "raw_content_included": False,
+            }
+            subsystem_repair_envelopes = build_completed_release_health_heartbeat_subsystem_repair_envelopes(
+                repair_plan.get("subsystem_repair_envelopes")
+                if isinstance(repair_plan.get("subsystem_repair_envelopes"), list)
+                else [],
+                actions=actions,
+            )
+            readiness_run = release_wrapper_runtime.record_release_readiness_evidence_run(
+                session_id=session_id,
+                update_id=update_id,
+                command=command,
+                actions=actions,
+                status="blocked-heartbeat-supervisor-repair-context-graph-sandbox",
+                subsystem_repair_envelopes=subsystem_repair_envelopes,
+            )
+            return {
+                "surface_id": "release-health-heartbeat-supervisor-repair-run",
+                "status": "blocked-context-graph-sandbox-failed",
+                "update_id": update_id,
+                "source_pulse_id": repair_plan.get("source_pulse_id"),
+                "source_loop_id": repair_plan.get("source_loop_id"),
+                "repair_context_source": repair_context.get("source") or "supervisor-pulse",
+                "subsystem_repair_envelopes": subsystem_repair_envelopes,
+                "subsystem_repair_envelope_count": len(subsystem_repair_envelopes),
+                "actions": actions,
+                "readiness_evidence_run": readiness_run,
+                "active_production_mutated": bool(readiness_run.get("active_production_mutated")),
+                "raw_content_included": False,
+            }
+        context_approval = services.brain_context_graph.approve_impact_receipt(
+            str(context_receipt["receipt_id"]),
+            approved_by=f"approval::{admin_approval['approval_ref']}",
+            approval_ref=str(admin_approval["approval_ref"]),
+            session_id=session_id,
+        )
+        context_application = services.brain_context_graph.apply_impact_receipt(
+            str(context_receipt["receipt_id"]),
+            session_id=session_id,
+        )
+        context_rollback = services.brain_context_graph.rollback_impact_receipt(
+            str(context_receipt["receipt_id"]),
+            reason="release-health-heartbeat-supervisor-context-graph-rollback-verification",
+            session_id=session_id,
+        )
+        actions["context_graph_impact_lifecycle"] = {
+            "schema_version": "nexusnet-release-health-context-graph-impact-lifecycle-v1",
+            "surface_id": "release-health-heartbeat-context-graph-impact-lifecycle",
+            "source_surface_id": "release-health-heartbeat-supervisor-repair-run",
+            "status": str(context_rollback.get("status") or "rollback-not-recorded"),
+            "source_projection_id": source_projection["projection_id"],
+            "receipt_id": context_receipt["receipt_id"],
+            "receipt": context_receipt,
+            "sandbox_eval": context_sandbox_eval,
+            "approval": context_approval,
+            "application": context_application,
+            "rollback": context_rollback,
+            "active_production_mutation_allowed": False,
+            "active_production_mutated": False,
+            "raw_content_included": False,
+        }
+        immune_governance = getattr(release_wrapper_runtime, "immune_governance", None)
+        if immune_governance is None:
+            actions["immune_governance"] = {
+                "surface_id": "genesis-immune-governance-mutation-binding",
+                "status": "blocked-not-configured",
+                "promotion_allowed": False,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+            }
+            subsystem_repair_envelopes = build_completed_release_health_heartbeat_subsystem_repair_envelopes(
+                repair_plan.get("subsystem_repair_envelopes")
+                if isinstance(repair_plan.get("subsystem_repair_envelopes"), list)
+                else [],
+                actions=actions,
+            )
+            readiness_run = release_wrapper_runtime.record_release_readiness_evidence_run(
+                session_id=session_id,
+                update_id=update_id,
+                command=command,
+                actions=actions,
+                status="blocked-immune-governance-not-configured",
+                subsystem_repair_envelopes=subsystem_repair_envelopes,
+            )
+            return {
+                "surface_id": "release-health-heartbeat-supervisor-repair-run",
+                "status": "blocked-immune-governance-not-configured",
+                "update_id": update_id,
+                "source_pulse_id": repair_plan.get("source_pulse_id"),
+                "source_loop_id": repair_plan.get("source_loop_id"),
+                "repair_context_source": repair_context.get("source") or "supervisor-pulse",
+                "subsystem_repair_envelopes": subsystem_repair_envelopes,
+                "subsystem_repair_envelope_count": len(subsystem_repair_envelopes),
+                "actions": actions,
+                "readiness_evidence_run": readiness_run,
+                "active_production_mutated": False,
+                "raw_content_included": False,
+            }
+        immune_evaluation = immune_governance.attest_sandbox_evidence(
+            candidate_ref=update_id,
+            candidate_kind="autonomous-update-safe-apply",
+            sandbox_evidence=actions["sandbox_tests"],
+            baseline_ref=f"baseline::{update_id}",
+            rollback_proof_ref=str(proposal.get("rollback_plan") or f"rollback::{update_id}"),
+            artifact_trust_refs=[str(ref) for ref in proposal.get("artifact_trust_refs") or []],
+        )
+        immune_decision = immune_governance.decide(
+            str(immune_evaluation.get("candidate_id") or ""),
+            {
+                "decision": "approve",
+                "approved_by": f"approval::{admin_approval['approval_ref']}",
+                "human_review_ref": str(admin_approval["approval_ref"]),
+                "domain_check_ref": f"domain-check::{update_id}",
+                "governance_ref": f"governance::{update_id}",
+            },
+        )
+        actions["immune_governance"] = immune_decision
         actions["apply"] = ops_brain_autonomous_updates_apply(
             update_id,
             {
                 "test_refs": [command],
                 "test_evidence_refs": [evidence_ref] if evidence_ref else [],
+                "immune_governance_decision_id": str(immune_decision.get("decision_id") or ""),
             },
         )
         actions["rollback"] = ops_brain_autonomous_updates_rollback(
@@ -2409,6 +3512,43 @@ def create_app(project_root: str | None = None) -> FastAPI:
     @application.get("/ops/wrapper/federated-packets")
     def ops_wrapper_federated_packets(session_id: str | None = None):
         return release_wrapper_runtime.federated_packet_outbox(session_id=session_id)
+
+    @application.get("/ops/wrapper/federated-peers")
+    def ops_wrapper_federated_peers(session_id: str | None = None):
+        return release_wrapper_runtime.federated_peer_delivery_status(session_id=session_id)
+
+    @application.post("/ops/wrapper/federated-peers")
+    def ops_wrapper_register_federated_peer(payload: dict[str, Any] = Body(...)):
+        approval = _federated_peer_delivery_admin_approval_from_payload(payload)
+        try:
+            return release_wrapper_runtime.register_federated_peer(
+                peer_node_id=str(payload.get("peer_node_id") or ""),
+                import_url=str(payload.get("import_url") or ""),
+                approval=approval,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/wrapper/federated-peers/revoke")
+    def ops_wrapper_revoke_federated_peer(payload: dict[str, Any] = Body(...)):
+        result = release_wrapper_runtime.revoke_federated_peer(
+            peer_node_id=str(payload.get("peer_node_id") or ""),
+        )
+        if result.get("status") == "blocked-peer-not-found":
+            raise HTTPException(status_code=404, detail=result)
+        return result
+
+    @application.get("/ops/wrapper/federated-deliveries")
+    def ops_wrapper_federated_deliveries(session_id: str | None = None):
+        return release_wrapper_runtime.federated_peer_delivery_status(session_id=session_id)
+
+    @application.post("/ops/wrapper/federated-deliveries/retry")
+    def ops_wrapper_retry_federated_deliveries(payload: dict[str, Any] | None = Body(default=None)):
+        payload = payload or {}
+        return release_wrapper_runtime.retry_federated_packet_deliveries(
+            session_id=str(payload.get("session_id") or "") or None,
+            force=bool(payload.get("force")),
+        )
 
     @application.post("/ops/wrapper/federated-packets/import")
     def ops_wrapper_import_federated_packet(payload: dict[str, Any] = Body(...)):
@@ -2508,6 +3648,10 @@ def create_app(project_root: str | None = None) -> FastAPI:
         request = PolicyScanRequest.model_validate(payload)
         return _policy_kernel().scan(request.targets, waivers=request.waivers).model_dump(mode="json")
 
+    @application.post("/ops/brain/policy/plan-write")
+    def ops_brain_policy_plan_write(payload: dict[str, Any] = Body(...)):
+        return _policy_kernel().authorize_plan_write(str(payload.get("target_path") or ""))
+
     @application.get("/ops/brain/canon/policy-kernel")
     def ops_brain_canon_policy_kernel():
         return _policy_kernel().scorecard()
@@ -2520,6 +3664,41 @@ def create_app(project_root: str | None = None) -> FastAPI:
     def ops_brain_agentic_pipeline_runs(payload: dict[str, Any] = Body(...)):
         request = AgenticPipelineRequest.model_validate(payload)
         return services.brain_agentic_pipelines.start(request)
+
+    @application.post("/ops/brain/agentic-pipelines/scheduled-runs")
+    def ops_brain_agentic_pipeline_scheduled_runs(payload: dict[str, Any] = Body(...)):
+        request = AgenticPipelineRequest.model_validate(payload)
+        return services.brain_agentic_pipelines.start_scheduled(request)
+
+    @application.post("/ops/brain/agentic-pipelines/runs/{run_id}/claim-ready")
+    def ops_brain_agentic_pipeline_claim_ready(run_id: str, payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_agentic_pipelines.claim_ready_blocks(
+                run_id,
+                max_count=int(payload.get("max_count") or 1),
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (PermissionError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/agentic-pipelines/runs/{run_id}/blocks/{block_id}/complete")
+    def ops_brain_agentic_pipeline_complete_block(
+        run_id: str,
+        block_id: str,
+        payload: dict[str, Any] = Body(...),
+    ):
+        try:
+            return services.brain_agentic_pipelines.complete_block(
+                run_id,
+                block_id=block_id,
+                output_ref=str(payload.get("output_ref") or ""),
+                succeeded=payload.get("succeeded") is not False,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (PermissionError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @application.get("/ops/brain/canon/agentic-pipelines")
     def ops_brain_canon_agentic_pipelines(session_id: str | None = None):
@@ -2534,6 +3713,67 @@ def create_app(project_root: str | None = None) -> FastAPI:
         request = SandboxAgentFactoryRunRequest.model_validate(payload)
         return services.brain_sandbox_agent_factory.start(request)
 
+    @application.post("/ops/brain/sandbox-agent-factory/runs/{run_id}/execute-local")
+    def ops_brain_sandbox_agent_factory_execute_local(run_id: str, payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_sandbox_agent_factory.execute_local(
+                run_id=run_id,
+                workspace=str(payload.get("workspace") or ""),
+                command=payload.get("command") if isinstance(payload.get("command"), list) else [],
+                timeout_seconds=int(payload.get("timeout_seconds") or 120),
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (PermissionError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/sandbox-agent-factory/runs/{run_id}/execute-container")
+    def ops_brain_sandbox_agent_factory_execute_container(run_id: str, payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_sandbox_agent_factory.execute_container(
+                run_id=run_id,
+                workspace=str(payload.get("workspace") or ""),
+                image=str(payload.get("image") or ""),
+                command=payload.get("command") if isinstance(payload.get("command"), list) else [],
+                timeout_seconds=int(payload.get("timeout_seconds") or 600),
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (PermissionError, RuntimeError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/sandbox-agent-factory/runs/{run_id}/worktrees")
+    def ops_brain_sandbox_agent_factory_worktree(run_id: str, payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_sandbox_agent_factory.create_worktree(
+                run_id=run_id,
+                repo_root=str(payload.get("repo_root") or ""),
+                task_id=str(payload.get("task_id") or ""),
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (PermissionError, RuntimeError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/sandbox-agent-factory/runs/{run_id}/merge-gates")
+    def ops_brain_sandbox_agent_factory_merge_gate(run_id: str, payload: dict[str, Any] = Body(...)):
+        raw_commands = payload.get("check_commands")
+        if not isinstance(raw_commands, dict):
+            raise HTTPException(status_code=400, detail="check_commands must be an object")
+        try:
+            return services.brain_sandbox_agent_factory.evaluate_merge_gate(
+                run_id=run_id,
+                task_id=str(payload.get("task_id") or ""),
+                review_approved=payload.get("review_approved") is True,
+                rollback_ref=str(payload.get("rollback_ref") or ""),
+                check_commands=raw_commands,
+                timeout_seconds=int(payload.get("timeout_seconds") or 600),
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (PermissionError, RuntimeError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @application.get("/ops/brain/canon/sandbox-agent-factory")
     def ops_brain_canon_sandbox_agent_factory(session_id: str | None = None):
         return services.brain_sandbox_agent_factory.scorecard(session_id=session_id)
@@ -2541,6 +3781,29 @@ def create_app(project_root: str | None = None) -> FastAPI:
     @application.get("/ops/brain/assimilation-targets")
     def ops_brain_assimilation_targets(session_id: str | None = None):
         return services.brain_assimilation_targets.summary(session_id=session_id)
+
+    @application.get("/ops/brain/checkpoints")
+    def ops_brain_checkpoint_summary(limit: int = 20):
+        try:
+            return services.brain_checkpoint_rewind_ledger.summary(limit=limit)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/checkpoints")
+    def ops_brain_checkpoint_capture(payload: dict[str, Any] = Body(...)):
+        checkpoint = services.brain_checkpoint_rewind_ledger.capture(
+            subject_ref=str(payload.get("subject_ref") or ""),
+            state=dict(payload.get("state") or {}),
+        )
+        return {"checkpoint": checkpoint}
+
+    @application.post("/ops/brain/checkpoints/{checkpoint_id}/rewind")
+    def ops_brain_checkpoint_rewind(checkpoint_id: str, payload: dict[str, Any] = Body(...)):
+        checkpoint = services.brain_checkpoint_rewind_ledger.rewind(
+            checkpoint_id,
+            subject_ref=str(payload.get("subject_ref") or ""),
+        )
+        return {"checkpoint": checkpoint}
 
     @application.get("/ops/brain/assimilation-targets/{target_id}")
     def ops_brain_assimilation_target(target_id: str):
@@ -2563,6 +3826,55 @@ def create_app(project_root: str | None = None) -> FastAPI:
     @application.post("/ops/brain/skill-systems/compose")
     def ops_brain_skill_systems_compose(payload: dict[str, Any] = Body(...)):
         return services.brain_assimilation_targets.compose_skill_system(payload)
+
+    @application.post("/ops/brain/skill-systems/execute")
+    def ops_brain_skill_systems_execute(payload: dict[str, Any] = Body(...)):
+        system = payload.get("system") if isinstance(payload.get("system"), dict) else payload
+        initial_context = payload.get("initial_context") if isinstance(payload.get("initial_context"), dict) else {}
+        return services.brain_assimilation_targets.execute_skill_system(
+            system,
+            initial_context=initial_context,
+        )
+
+    @application.post("/ops/brain/skill-systems/runs/{run_id}/resume")
+    def ops_brain_skill_systems_resume(run_id: str, payload: dict[str, Any] = Body(...)):
+        approved = payload.get("approved_checkpoint_ids")
+        if not isinstance(approved, list) or not all(isinstance(item, str) for item in approved):
+            raise HTTPException(status_code=400, detail="approved_checkpoint_ids must be a list of strings")
+        try:
+            return services.brain_assimilation_targets.resume_skill_system(
+                run_id,
+                approved_checkpoint_ids=approved,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @application.get("/ops/brain/bridges")
+    def ops_brain_bridges_summary():
+        return services.brain_computer_fabric.bridge_manager.summary()
+
+    @application.post("/ops/brain/bridges")
+    def ops_brain_bridges_register(payload: dict[str, Any] = Body(...)):
+        return services.brain_computer_fabric.bridge_manager.register_bridge(payload)
+
+    @application.post("/ops/brain/bridges/commitments")
+    def ops_brain_bridges_prepare(payload: dict[str, Any] = Body(...)):
+        return services.brain_computer_fabric.bridge_manager.prepare_outbound(
+            bridge_id=str(payload.get("bridge_id") or ""),
+            destination=str(payload.get("destination") or ""),
+            payload=payload.get("payload") if isinstance(payload.get("payload"), dict) else {},
+        )
+
+    @application.post("/ops/brain/bridges/commitments/{commitment_id}/approve")
+    def ops_brain_bridges_approve(commitment_id: str, payload: dict[str, Any] = Body(...)):
+        return services.brain_computer_fabric.bridge_manager.approve(
+            commitment_id,
+            approved_by=str(payload.get("approved_by") or ""),
+        )
+
+    @application.post("/ops/brain/bridges/commitments/{commitment_id}/dispatch")
+    def ops_brain_bridges_dispatch(commitment_id: str):
+        return services.brain_computer_fabric.bridge_manager.dispatch(commitment_id)
 
     @application.get("/ops/brain/canon/assimilation-targets")
     def ops_brain_canon_assimilation_targets(session_id: str | None = None):
@@ -2588,6 +3900,12 @@ def create_app(project_root: str | None = None) -> FastAPI:
     def ops_brain_hive_substrate_forward_pass(payload: dict[str, Any] = Body(...)):
         request = HiveForwardPassRequest.model_validate(payload)
         result = services.brain_hive_substrate.run_forward_pass(request)
+        result["native_federated_peer_delivery"] = (
+            release_wrapper_runtime.dispatch_native_hive_federated_packet(
+                session_id=request.session_id,
+                hive_result=result,
+            )
+        )
         result["runtime_growth_dream_research"] = release_wrapper_runtime.queue_native_runtime_growth_review(
             session_id=request.session_id,
             hive_result=result,
@@ -2691,6 +4009,19 @@ def create_app(project_root: str | None = None) -> FastAPI:
     def ops_brain_harness_routing_recommend(payload: dict[str, Any] = Body(...)):
         request = HarnessRouteRequest.model_validate(payload)
         return services.brain_harness_router.recommend(request)
+
+    @application.post("/ops/brain/harness-routing/compose-prompt")
+    def ops_brain_harness_routing_compose_prompt(payload: dict[str, Any] = Body(...)):
+        return services.brain_harness_router.compose_prompt(
+            base_prompt=str(payload.get("base_prompt") or ""),
+            provider_overlay=payload.get("provider_overlay") or "",
+            model_family_overlay=payload.get("model_family_overlay") or "",
+            local_model_overlay=payload.get("local_model_overlay") or "",
+            provider_id=str(payload.get("provider_id") or "default"),
+            model_family=str(payload.get("model_family") or "default"),
+            runtime=str(payload.get("runtime") or "default"),
+            local_model=bool(payload.get("local_model")),
+        )
 
     @application.get("/ops/brain/canon/harness-routing")
     def ops_brain_canon_harness_routing():
@@ -3279,7 +4610,7 @@ def create_app(project_root: str | None = None) -> FastAPI:
 
     @application.get("/ops/brain/autonomous-updates")
     def ops_brain_autonomous_updates(limit: int = 50):
-        return services.brain_autonomous_updates.summary(limit=limit)
+        return services.brain_autonomous_updates.public_summary(limit=limit)
 
     @application.post("/ops/brain/autonomous-updates/proposals")
     def ops_brain_autonomous_updates_proposals(payload: dict[str, Any] = Body(...)):
@@ -3325,10 +4656,10 @@ def create_app(project_root: str | None = None) -> FastAPI:
                 endpoint_ref,
             )
             guard = _release_wrapper_ao_guard_or_400(update_id, "admin_approval", endpoint_ref)
+            admin_approval = _autonomous_update_admin_approval_from_payload(update_id, payload)
             approval = services.brain_autonomous_updates.approve(
                 update_id,
-                approved_by=str(payload.get("approved_by") or "admin"),
-                approval_ref=str(payload.get("approval_ref") or ""),
+                approval_evidence=admin_approval,
             )
             approval["linked_improvement_queue"] = _sync_linked_improvement_queue(
                 update_id,
@@ -3348,6 +4679,8 @@ def create_app(project_root: str | None = None) -> FastAPI:
             return approval
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @application.post("/ops/brain/autonomous-updates/{update_id}/apply")
     def ops_brain_autonomous_updates_apply(update_id: str, payload: dict[str, Any] = Body(...)):
@@ -3361,6 +4694,7 @@ def create_app(project_root: str | None = None) -> FastAPI:
                 test_results=[dict(item) for item in (payload.get("test_results") or []) if isinstance(item, dict)],
                 test_evidence_refs=[str(item) for item in (payload.get("test_evidence_refs") or [])],
                 ao_guard=guard,
+                immune_governance_decision_id=str(payload.get("immune_governance_decision_id") or ""),
             )
             applied["linked_improvement_queue"] = _sync_linked_improvement_queue(
                 update_id,
@@ -3420,7 +4754,14 @@ def create_app(project_root: str | None = None) -> FastAPI:
                 result=evidence,
                 endpoint_ref=endpoint_ref,
             )
-            return evidence
+            public_evidence = services.brain_autonomous_updates.public_sandbox_test_evidence(evidence)
+            public_evidence["linked_improvement_queue"] = evidence["linked_improvement_queue"]
+            public_evidence["release_wrapper_privacy_consent_gate"] = evidence[
+                "release_wrapper_privacy_consent_gate"
+            ]
+            public_evidence["release_wrapper_ao_guard"] = evidence["release_wrapper_ao_guard"]
+            public_evidence["release_wrapper_self_repair"] = evidence["release_wrapper_self_repair"]
+            return public_evidence
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
@@ -3452,6 +4793,21 @@ def create_app(project_root: str | None = None) -> FastAPI:
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    @application.post("/ops/wrapper/autonomous-updates/{update_id}/run")
+    def ops_wrapper_autonomous_update_governance_run(update_id: str, payload: dict[str, Any] = Body(...)):
+        payload = payload or {}
+        session_id = str(payload.get("session_id") or "")
+        if not session_id:
+            raise HTTPException(status_code=400, detail="session_id is required for the wrapper autonomous update lifecycle.")
+        admin_approval = _autonomous_update_admin_approval_from_payload(update_id, payload)
+        return release_wrapper_runtime.run_autonomous_update_governance_lifecycle(
+            session_id=session_id,
+            update_id=update_id,
+            command=str(payload.get("command") or payload.get("sandbox_command") or DEFAULT_RELEASE_WRAPPER_SANDBOX_COMMAND),
+            timeout_seconds=int(payload.get("timeout_seconds") or 60),
+            admin_approval=admin_approval,
+        )
+
     @application.post("/ops/wrapper/release-readiness/run")
     def ops_wrapper_release_readiness_run(payload: dict[str, Any] = Body(...)):
         session_id = str(payload.get("session_id") or "")
@@ -3461,54 +4817,18 @@ def create_app(project_root: str | None = None) -> FastAPI:
             if isinstance(status_card.get("operator_action_lane"), dict)
             else {}
         )
-        update_id = str(lane.get("proposal_update_id") or payload.get("update_id") or "")
+        update_id = str(payload.get("update_id") or lane.get("proposal_update_id") or "")
         if not update_id:
             raise HTTPException(status_code=400, detail="release wrapper proposal is required before readiness runner")
         command = str(payload.get("command") or payload.get("sandbox_command") or lane.get("default_sandbox_command") or "")
         timeout_seconds = int(payload.get("timeout_seconds") or 60)
-        approved_by = str(payload.get("approved_by") or "admin")
-        approval_ref = str(payload.get("approval_ref") or "operator-review::release-readiness-runner")
-        actions: dict[str, dict[str, Any]] = {}
-        actions["admin_approval"] = ops_brain_autonomous_updates_admin_approval(
-            update_id,
-            {
-                "approved_by": approved_by,
-                "approval_ref": approval_ref,
-            },
-        )
-        actions["sandbox_tests"] = ops_brain_autonomous_updates_sandbox_tests(
-            update_id,
-            {
-                "command": command,
-                "timeout_seconds": timeout_seconds,
-            },
-        )
-        if actions["sandbox_tests"].get("passed") is not True:
-            return release_wrapper_runtime.record_release_readiness_evidence_run(
-                session_id=session_id,
-                update_id=update_id,
-                command=command,
-                actions=actions,
-                status="blocked-sandbox-failed",
-            )
-        evidence_ref = str(actions["sandbox_tests"].get("evidence_ref") or "")
-        actions["apply"] = ops_brain_autonomous_updates_apply(
-            update_id,
-            {
-                "test_refs": [command],
-                "test_evidence_refs": [evidence_ref] if evidence_ref else [],
-            },
-        )
-        actions["rollback"] = ops_brain_autonomous_updates_rollback(
-            update_id,
-            {"reason": "release-readiness-runner-rollback-verification"},
-        )
-        return release_wrapper_runtime.record_release_readiness_evidence_run(
+        admin_approval = _autonomous_update_admin_approval_from_payload(update_id, payload)
+        return release_wrapper_runtime.run_autonomous_update_governance_lifecycle(
             session_id=session_id,
             update_id=update_id,
             command=command,
-            actions=actions,
-            status="completed",
+            timeout_seconds=timeout_seconds,
+            admin_approval=admin_approval,
         )
 
     @application.post("/ops/wrapper/initial-release-supervisor/run")
@@ -3563,7 +4883,7 @@ def create_app(project_root: str | None = None) -> FastAPI:
             if isinstance(status_after_chats.get("operator_action_lane"), dict)
             else {}
         )
-        update_id = str(lane.get("proposal_update_id") or payload.get("update_id") or "")
+        update_id = str(payload.get("update_id") or lane.get("proposal_update_id") or "")
         fallback_proposal: dict[str, Any] | None = None
         if not update_id:
             update_id = f"update::initial-release-supervisor::{_privacy_compat_digest(session_id)}"
@@ -3594,6 +4914,181 @@ def create_app(project_root: str | None = None) -> FastAPI:
                 }
             )
 
+        approval_decision_id = str(payload.get("approval_decision_id") or "").strip()
+        governed_update_lifecycle: dict[str, Any] | None = None
+        if approval_decision_id:
+            admin_approval = _autonomous_update_admin_approval_from_payload(update_id, payload)
+            governed_update_lifecycle = release_wrapper_runtime.run_autonomous_update_governance_lifecycle(
+                session_id=session_id,
+                update_id=update_id,
+                command=readiness_command,
+                timeout_seconds=timeout_seconds,
+                admin_approval=admin_approval,
+            )
+        production_approval_decision_id = str(payload.get("production_approval_decision_id") or "").strip()
+        production_lifecycle: dict[str, Any] = {
+            "status": "pending-separate-production-lifecycle-approval",
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+        }
+        production_rollback: dict[str, Any] = {
+            "status": "not-run",
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+        }
+        if production_approval_decision_id:
+            if not governed_update_lifecycle or governed_update_lifecycle.get("status") != "completed":
+                raise HTTPException(
+                    status_code=400,
+                    detail="A completed governed autonomous update is required before production spine lifecycle execution.",
+                )
+            production_lifecycle = ops_wrapper_production_spine_release_lifecycle_run(
+                {
+                    "session_id": session_id,
+                    "approval_decision_id": production_approval_decision_id,
+                    "operator_approved": True,
+                    "human_approved": True,
+                }
+            )
+            production_rollback = ops_wrapper_production_spine_release_lifecycle_rollback(
+                str(production_lifecycle.get("run_id") or ""),
+                {
+                    "session_id": session_id,
+                    "reason": "initial-release-supervisor-production-shadow-lifecycle-rollback-verification",
+                },
+            )
+
+        generated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        artifact_path = release_wrapper_runtime.initial_release_supervisor_path
+        pending_manifest = {
+            "schema_version": "nexusnet-release-wrapper-initial-release-supervisor-v1",
+            "surface_id": "release-wrapper-initial-release-supervisor",
+            "manifest_id": f"initial-release-supervisor::{_privacy_compat_digest(generated_at + session_id)}",
+            "generated_at": generated_at,
+            "authority": "NexusBrain",
+            "status_label": "PENDING ADMIN APPROVAL",
+            "status": "initial-release-pending-admin-approval",
+            "honest_status_label": "initial-release-pending-admin-approval",
+            "product_surface": "wrapper",
+            "product_scope": "whole-system",
+            "session_ref_digest": f"sha256:{_privacy_compat_digest(session_id)}",
+            "pending_update_id": update_id,
+            "governance": {
+                "status": (
+                    "governed-update-completed"
+                    if governed_update_lifecycle and governed_update_lifecycle.get("status") == "completed"
+                    else "pending-admin-approval"
+                ),
+                "approval_subject": "release-wrapper-autonomous-update",
+                "update_id": update_id,
+                "required_evidence": "persisted approved decision bound to pending_update_id",
+                "approval_endpoint": "/ops/approvals",
+                "execution_endpoint": f"/ops/wrapper/autonomous-updates/{update_id}/run",
+                "approval_decision_id": approval_decision_id or None,
+                "raw_content_included": False,
+            },
+            "actions": {
+                "wrapper_interactions": {
+                    "status": "recorded" if chat_attempt_count else "not-recorded",
+                    "interaction_count": chat_attempt_count,
+                    "trace_refs": chat_refs,
+                    "raw_content_included": False,
+                },
+                "autonomous_update_proposal": {
+                    "status": str((fallback_proposal or {}).get("status") or "existing-proposal-used"),
+                    "update_id": update_id,
+                    "raw_content_included": False,
+                    "active_production_mutation_allowed": False,
+                },
+                "autonomous_update_governance_lifecycle": (
+                    governed_update_lifecycle
+                    if isinstance(governed_update_lifecycle, dict)
+                    else {
+                        "status": "pending-admin-approval",
+                        "update_id": update_id,
+                        "raw_content_included": False,
+                        "active_production_mutation_allowed": False,
+                        "active_production_mutated": False,
+                    }
+                ),
+                "release_health_heartbeat_supervisor_repair": {
+                    "status": "pending-admin-approval",
+                    "update_id": update_id,
+                    "raw_content_included": False,
+                    "active_production_mutation_allowed": False,
+                },
+                "release_readiness_runner": {
+                    "status": "pending-admin-approval",
+                    "update_id": update_id,
+                    "raw_content_included": False,
+                    "active_production_mutation_allowed": False,
+                },
+                "production_spine_release_lifecycle": {
+                    **production_lifecycle,
+                    "raw_content_included": False,
+                    "active_production_mutation_allowed": False,
+                },
+                "production_spine_release_lifecycle_rollback": {
+                    **production_rollback,
+                    "raw_content_included": False,
+                    "active_production_mutation_allowed": False,
+                },
+            },
+            "runtime": {
+                "surface_id": runtime_after_chats.get("surface_id"),
+                "entrypoint_state": (
+                    (runtime_after_chats.get("entrypoint") or {}).get("runtime_state")
+                    if isinstance(runtime_after_chats.get("entrypoint"), dict)
+                    else None
+                ),
+                "latest_federated_packet_present": bool(runtime_after_chats.get("latest_federated_packet")),
+            },
+            "endpoint_refs": {
+                "initial_release_supervisor_run": "/ops/wrapper/initial-release-supervisor/run",
+                "autonomous_update_governance_run": "/ops/wrapper/autonomous-updates/{update_id}/run",
+                "approval_decisions": "/ops/approvals",
+                "release_readiness_runner": "/ops/wrapper/release-readiness/run",
+                "release_health_heartbeat_supervisor_repair_run": (
+                    "/ops/wrapper/release-health-heartbeat/supervisor/repair-run"
+                ),
+            },
+            "artifact_ref": "artifacts/release-wrapper-runtime/initial-release-supervisor.json",
+            "artifact_path_digest": f"sha256:{_privacy_compat_digest(str(artifact_path))}",
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "active_production_mutated": False,
+            "privacy_boundary": "sanitized-status-ids-counts-digests-only-no-raw-prompts-outputs-session-ids",
+            "mutation_boundary": "pending-admin-approval-no-autonomous-update-or-production-lifecycle-execution",
+        }
+        if governed_update_lifecycle and governed_update_lifecycle.get("status") == "completed":
+            pending_manifest["status_label"] = "GOVERNED UPDATE COMPLETED"
+            pending_manifest["status"] = "initial-release-governed-update-completed"
+            pending_manifest["honest_status_label"] = "initial-release-governed-update-completed"
+            pending_manifest["mutation_boundary"] = (
+                "stored-admin-approval-sandbox-immune-shadow-safe-file-apply-rollback-only; "
+                "production-lifecycle-remains-pending"
+            )
+        if (
+            production_lifecycle.get("status") == "approved-shadow-release-lifecycle"
+            and production_rollback.get("status") == "rolled-back"
+        ):
+            pending_manifest["status_label"] = "GOVERNED SHADOW LIFECYCLE COMPLETED"
+            pending_manifest["status"] = "initial-release-governed-shadow-lifecycle-completed"
+            pending_manifest["honest_status_label"] = "initial-release-governed-shadow-lifecycle-completed"
+            pending_manifest["mutation_boundary"] = (
+                "stored-update-and-production-approval-shadow-lifecycle-rollback-verified-only; "
+                "no-active-production-mutation"
+            )
+        shadow_lifecycle_completed = (
+            governed_update_lifecycle is not None
+            and governed_update_lifecycle.get("status") == "completed"
+            and production_lifecycle.get("status") == "approved-shadow-release-lifecycle"
+            and production_rollback.get("status") == "rolled-back"
+        )
+        if not shadow_lifecycle_completed:
+            artifact_path.write_text(json.dumps(pending_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            return pending_manifest
+
         try:
             heartbeat_repair_run = ops_wrapper_release_health_heartbeat_supervisor_repair_run(
                 {
@@ -3601,19 +5096,31 @@ def create_app(project_root: str | None = None) -> FastAPI:
                     "command": readiness_command,
                     "timeout_seconds": timeout_seconds,
                     "approved_by": approved_by,
-                    "approval_ref": f"{approval_ref}::heartbeat-supervisor-repair",
+                    "approval_decision_id": approval_decision_id,
                 }
             )
         except HTTPException as exc:
-            if (
-                int(exc.status_code) != 400
-                or str(exc.detail) != "heartbeat supervisor repair requires a pulse repair proposal update_id"
-            ):
+            heartbeat_repair_detail = str(exc.detail)
+            if int(exc.status_code) != 400 or heartbeat_repair_detail not in {
+                "heartbeat supervisor repair requires a pulse repair proposal update_id",
+                "Admin approval metadata must bind update_id before autonomous update execution.",
+            }:
                 raise
+            heartbeat_repair_pending_approval = heartbeat_repair_detail.startswith(
+                "Admin approval metadata must bind update_id"
+            )
             heartbeat_repair_run = {
                 "surface_id": "release-health-heartbeat-supervisor-repair-run",
-                "status": "not-required",
-                "detail": "heartbeat supervisor had no pulse repair proposal for this product-smoke pass",
+                "status": (
+                    "pending-separate-admin-approval"
+                    if heartbeat_repair_pending_approval
+                    else "not-required"
+                ),
+                "detail": (
+                    "heartbeat repair proposal requires its own persisted, update-bound admin approval"
+                    if heartbeat_repair_pending_approval
+                    else "heartbeat supervisor had no pulse repair proposal for this product-smoke pass"
+                ),
                 "session_ref_digest": f"sha256:{_privacy_compat_digest(session_id)}",
                 "actions": {},
                 "readiness_evidence_run": {
@@ -3639,61 +5146,45 @@ def create_app(project_root: str | None = None) -> FastAPI:
                 "packet": packet,
             }
         )
-        domain_replay = ops_wrapper_domain_expert_growth_admin_replay(
-            {
-                "session_id": session_id,
-                "domain_ao": str(payload.get("domain_ao") or "FederationAO"),
-                "approved_by": approved_by,
-                "approval_ref": f"{approval_ref}::domain-expert-growth",
-                "requested_decision": "approved",
-            }
-        )
-        readiness_run = ops_wrapper_release_readiness_run(
-            {
-                "session_id": session_id,
-                "update_id": update_id,
-                "command": readiness_command,
-                "timeout_seconds": timeout_seconds,
-                "approved_by": approved_by,
-                "approval_ref": approval_ref,
-            }
-        )
-        lifecycle_approval = ops_approvals(
-            ApprovalRequest.model_validate(
+        try:
+            domain_replay = ops_wrapper_domain_expert_growth_admin_replay(
                 {
-                    "subject": production_spine_lifecycle_approval_subject,
-                    "decision": "approved",
-                    "approver": approved_by,
-                    "rationale": "Initial release supervisor whole-system shadow lifecycle approval.",
-                    "metadata": {
-                        "session_ref_digest": f"sha256:{_privacy_compat_digest(session_id)}",
-                        "surface_id": "release-wrapper-initial-release-supervisor",
-                    },
+                    "session_id": session_id,
+                    "domain_ao": str(payload.get("domain_ao") or "FederationAO"),
+                    "approved_by": approved_by,
+                    "approval_ref": f"{approval_ref}::domain-expert-growth",
+                    "requested_decision": "approved",
                 }
             )
-        )
-        production_lifecycle = ops_wrapper_production_spine_release_lifecycle_run(
-            {
-                "session_id": session_id,
-                "approval_decision_id": lifecycle_approval["decision_id"],
-                "operator_approved": True,
-                "human_approved": True,
+        except HTTPException as exc:
+            missing_domain_replay = exc.detail if isinstance(exc.detail, dict) else {}
+            if int(exc.status_code) != 404 or not str(missing_domain_replay.get("status") or "").startswith(
+                "blocked-missing"
+            ):
+                raise
+            domain_replay = {
+                "surface_id": "release-wrapper-domain-expert-growth-admin-replay",
+                "status": "not-required",
+                "detail": "no matching domain expert growth handoff was produced by this release pass",
+                "run_id": None,
+                "promotion_decision": None,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
             }
-        )
-        production_rollback = ops_wrapper_production_spine_release_lifecycle_rollback(
-            str(production_lifecycle.get("run_id") or ""),
-            {"session_id": session_id, "reason": "initial-release-supervisor-rollback-verification"},
-        )
-        boot_supervisor = ops_wrapper_boot_supervisor_run(
-            {
-                "session_id": session_id,
-                "base_url": str(payload.get("base_url") or "http://127.0.0.1:0"),
-                "host": str(payload.get("host") or "127.0.0.1"),
-                "port": int(payload.get("port") or 0),
-                "pid": int(payload.get("pid") or 0),
-                "readiness_command": readiness_command,
-            }
-        )
+        # The governed update and production shadow lifecycle were already executed
+        # above with persisted, subject-bound approval decisions. Reuse those
+        # receipts here so the full-release evidence path cannot execute either
+        # lifecycle twice or substitute an unbound display label for a decision ID.
+        readiness_run = governed_update_lifecycle
+        boot_summary = release_wrapper_runtime._boot_supervisor_summary()
+        boot_supervisor = {
+            "surface_id": boot_summary.get("surface_id"),
+            "status": str(boot_summary.get("latest_status") or "not-run"),
+            "manifest_id": boot_summary.get("manifest_id"),
+            "pass_count": int(boot_summary.get("pass_count") or 0),
+            "failed_count": int(boot_summary.get("failed_count") or 0),
+        }
         release_readiness = ops_wrapper_release_readiness(session_id=session_id)
         runtime_after_release = ops_wrapper_release_runtime(session_id=session_id)
         release_health_heartbeat_supervisor = (
@@ -3744,21 +5235,7 @@ def create_app(project_root: str | None = None) -> FastAPI:
             "production_spine_release_lifecycle_rollback": str(production_rollback.get("status") or "not-rolled-back"),
             "boot_supervisor": str(boot_supervisor.get("status") or "not-run"),
         }
-        heartbeat_repair_status = str(heartbeat_repair_run.get("status") or "not-run")
-        heartbeat_repair_ok = heartbeat_repair_status in {"completed", "not-required"}
-        status = (
-            "initial-release-go"
-            if release_readiness.get("go_no_go") == "go"
-            and boot_supervisor.get("status") == "boot-smoke-passed"
-            and native_hive_heartbeat_history.get("status") == "fresh"
-            and native_hive_heartbeat_history.get("latest_fresh") is True
-            and release_health_heartbeat_supervisor.get("status") == "enabled"
-            and int(release_health_heartbeat_supervisor.get("pulse_count") or 0) > 0
-            and heartbeat_repair_ok
-            and production_lifecycle.get("status") == "approved-shadow-release-lifecycle"
-            and production_rollback.get("status") == "rolled-back"
-            else "initial-release-blocked"
-        )
+        status = "initial-release-governed-shadow-lifecycle-completed"
         artifact_path = release_wrapper_runtime.runtime_dir / "initial-release-supervisor.json"
         manifest = {
             "schema_version": "nexusnet-release-wrapper-initial-release-supervisor-v1",
@@ -3772,6 +5249,8 @@ def create_app(project_root: str | None = None) -> FastAPI:
             "product_surface": "wrapper",
             "product_scope": "whole-system",
             "session_ref_digest": f"sha256:{_privacy_compat_digest(session_id)}",
+            "pending_update_id": update_id,
+            "governance": pending_manifest["governance"],
             "actions": {
                 "wrapper_interactions": {
                     "status": action_statuses["wrapper_interactions"],
@@ -3808,6 +5287,7 @@ def create_app(project_root: str | None = None) -> FastAPI:
                     "raw_content_included": False,
                     "active_production_mutation_allowed": False,
                 },
+                "autonomous_update_governance_lifecycle": governed_update_lifecycle,
                 "federated_packet_import": {
                     "status": action_statuses["federated_packet_import"],
                     "import_id": imported_packet.get("import_id"),
@@ -3929,15 +5409,160 @@ def create_app(project_root: str | None = None) -> FastAPI:
                 "pid": pid,
                 "readiness_command": readiness_command,
                 "timeout_seconds": int(payload.get("timeout_seconds") or 60),
-                "approved_by": str(payload.get("approved_by") or "admin"),
-                "approval_ref": str(payload.get("approval_ref") or "operator-review::release-product-smoke"),
                 "prompts": smoke_prompts,
                 "model": str(payload.get("model") or "nexusnet-offline"),
                 "peer_node_id": str(payload.get("peer_node_id") or "release-product-smoke-peer"),
                 "domain_ao": str(payload.get("domain_ao") or "FederationAO"),
                 "update_id": str(payload.get("update_id") or ""),
+                "approval_decision_id": str(payload.get("approval_decision_id") or ""),
+                "production_approval_decision_id": str(payload.get("production_approval_decision_id") or ""),
             }
         )
+        if initial_release.get("status") in {
+            "initial-release-governed-update-completed",
+            "initial-release-governed-shadow-lifecycle-completed",
+        }:
+            generated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            update_id = str(initial_release.get("pending_update_id") or "")
+            artifact_path = release_wrapper_runtime.release_product_smoke_path
+            initial_actions = initial_release.get("actions") if isinstance(initial_release.get("actions"), dict) else {}
+            governance = initial_release.get("governance") if isinstance(initial_release.get("governance"), dict) else {}
+            shadow_lifecycle_completed = (
+                initial_release.get("status") == "initial-release-governed-shadow-lifecycle-completed"
+            )
+            manifest = {
+                "schema_version": "nexusnet-release-wrapper-product-smoke-v1",
+                "surface_id": "release-wrapper-product-smoke",
+                "manifest_id": f"release-product-smoke::{_privacy_compat_digest(generated_at + session_id)}",
+                "generated_at": generated_at,
+                "authority": "NexusBrain",
+                "status_label": "GOVERNED UPDATE COMPLETED",
+                "status": "release-product-smoke-governed-update-completed",
+                "honest_status_label": "release-product-smoke-governed-update-completed",
+                "session_ref_digest": f"sha256:{_privacy_compat_digest(session_id)}",
+                "pending_update_id": update_id,
+                "initial_release": {
+                    "surface_id": initial_release.get("surface_id"),
+                    "manifest_id": initial_release.get("manifest_id"),
+                    "status": initial_release.get("status"),
+                    "pending_update_id": update_id,
+                    "raw_content_included": False,
+                },
+                "governed_update_lifecycle": initial_actions.get("autonomous_update_governance_lifecycle"),
+                "governance": {
+                    "status": "governed-update-completed",
+                    "approval_subject": "release-wrapper-autonomous-update",
+                    "update_id": update_id,
+                    "approval_decision_id": governance.get("approval_decision_id"),
+                    "approval_endpoint": "/ops/approvals",
+                    "execution_endpoint": f"/ops/wrapper/autonomous-updates/{update_id}/run",
+                    "raw_content_included": False,
+                },
+                "production_lifecycle": {
+                    "status": (
+                        "approved-shadow-release-lifecycle"
+                        if shadow_lifecycle_completed
+                        else "pending-separate-production-lifecycle-approval"
+                    ),
+                    "raw_content_included": False,
+                    "active_production_mutation_allowed": False,
+                },
+                "endpoint_refs": {
+                    "release_product_smoke_run": "/ops/wrapper/release-product-smoke/run",
+                    "initial_release_supervisor_run": "/ops/wrapper/initial-release-supervisor/run",
+                    "autonomous_update_governance_run": f"/ops/wrapper/autonomous-updates/{update_id}/run",
+                    "approval_decisions": "/ops/approvals",
+                },
+                "artifact_ref": "artifacts/release-wrapper-runtime/release-product-smoke.json",
+                "artifact_path_digest": f"sha256:{_privacy_compat_digest(str(artifact_path))}",
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+                "privacy_boundary": "sanitized-release-product-smoke-status-counts-digests-and-endpoint-refs-only-no-prompts-outputs-session-ids-or-local-paths",
+                "mutation_boundary": "stored-admin-approval-sandbox-immune-shadow-safe-file-apply-rollback-only; production-lifecycle-remains-pending",
+            }
+            if shadow_lifecycle_completed:
+                manifest["status_label"] = "GOVERNED SHADOW LIFECYCLE COMPLETED"
+                manifest["status"] = "release-product-smoke-governed-shadow-lifecycle-completed"
+                manifest["honest_status_label"] = "release-product-smoke-governed-shadow-lifecycle-completed"
+                manifest["production_lifecycle"] = initial_actions.get("production_spine_release_lifecycle")
+                manifest["production_rollback"] = initial_actions.get(
+                    "production_spine_release_lifecycle_rollback"
+                )
+                manifest["mutation_boundary"] = (
+                    "stored-update-and-production-approval-shadow-lifecycle-rollback-verified-only; "
+                    "no-active-production-mutation"
+                )
+            runtime = ops_wrapper_release_runtime(session_id=session_id)
+            readiness = ops_wrapper_release_readiness(session_id=session_id)
+            status_card = ops_wrapper_status_card(session_id=session_id)
+            session_lifecycle = ops_wrapper_session_lifecycle(session_id=session_id)
+            visualizer = ops_brain_visualizer_state(session_id=session_id)
+            overlay = visualizer.get("overlay_state") if isinstance(visualizer, dict) else {}
+            control_panel = overlay.get("control_panel") if isinstance(overlay, dict) else {}
+            if not isinstance(control_panel, dict):
+                control_panel = {}
+            return release_wrapper_runtime.record_release_product_smoke_run(
+                session_id=session_id,
+                base_url=base_url,
+                host=host,
+                port=port,
+                pid=pid,
+                readiness_command=readiness_command,
+                initial_release_supervisor=initial_release,
+                runtime=runtime,
+                readiness=readiness,
+                status_card=status_card,
+                session_lifecycle=session_lifecycle,
+                control_panel=control_panel,
+                manifest_overrides=manifest,
+            )
+        if initial_release.get("status") == "initial-release-pending-admin-approval":
+            generated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            pending_update_id = str(initial_release.get("pending_update_id") or "")
+            artifact_path = release_wrapper_runtime.release_product_smoke_path
+            pending_manifest = {
+                "schema_version": "nexusnet-release-wrapper-product-smoke-v1",
+                "surface_id": "release-wrapper-product-smoke",
+                "manifest_id": f"release-product-smoke::{_privacy_compat_digest(generated_at + session_id)}",
+                "generated_at": generated_at,
+                "authority": "NexusBrain",
+                "status_label": "PENDING ADMIN APPROVAL",
+                "status": "release-product-smoke-pending-admin-approval",
+                "honest_status_label": "release-product-smoke-pending-admin-approval",
+                "session_ref_digest": f"sha256:{_privacy_compat_digest(session_id)}",
+                "pending_update_id": pending_update_id,
+                "initial_release": {
+                    "surface_id": initial_release.get("surface_id"),
+                    "manifest_id": initial_release.get("manifest_id"),
+                    "status": initial_release.get("status"),
+                    "pending_update_id": pending_update_id,
+                    "raw_content_included": False,
+                },
+                "governance": {
+                    "status": "pending-admin-approval",
+                    "approval_subject": "release-wrapper-autonomous-update",
+                    "update_id": pending_update_id,
+                    "approval_endpoint": "/ops/approvals",
+                    "execution_endpoint": f"/ops/wrapper/autonomous-updates/{pending_update_id}/run",
+                    "raw_content_included": False,
+                },
+                "endpoint_refs": {
+                    "release_product_smoke_run": "/ops/wrapper/release-product-smoke/run",
+                    "initial_release_supervisor_run": "/ops/wrapper/initial-release-supervisor/run",
+                    "autonomous_update_governance_run": f"/ops/wrapper/autonomous-updates/{pending_update_id}/run",
+                    "approval_decisions": "/ops/approvals",
+                },
+                "artifact_ref": "artifacts/release-wrapper-runtime/release-product-smoke.json",
+                "artifact_path_digest": f"sha256:{_privacy_compat_digest(str(artifact_path))}",
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+                "privacy_boundary": "sanitized-release-product-smoke-status-counts-digests-and-endpoint-refs-only-no-prompts-outputs-session-ids-or-local-paths",
+                "mutation_boundary": "pending-admin-approval-no-autonomous-update-or-production-lifecycle-execution",
+            }
+            artifact_path.write_text(json.dumps(pending_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            return pending_manifest
         runtime = ops_wrapper_release_runtime(session_id=session_id)
         readiness = ops_wrapper_release_readiness(session_id=session_id)
         status_card = ops_wrapper_status_card(session_id=session_id)
@@ -4005,6 +5630,62 @@ def create_app(project_root: str | None = None) -> FastAPI:
     @application.get("/ops/brain/forward-radar")
     def ops_brain_forward_radar(limit: int = 50):
         return services.brain_forward_radar.summary(limit=limit)
+
+    @application.get("/ops/brain/research-monitors")
+    def ops_brain_research_monitors():
+        return services.brain_research_monitor.summary()
+
+    @application.post("/ops/brain/research-monitors/sources")
+    def ops_brain_research_monitors_add_source(payload: dict[str, Any] = Body(...)):
+        try:
+            return services.brain_research_monitor.add_source(
+                source_id=str(payload.get("source_id") or ""),
+                url=str(payload.get("url") or ""),
+                interval_seconds=int(payload.get("interval_seconds") or 3600),
+                topics=[str(item) for item in payload.get("topics") or []],
+            )
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/research-monitors/sources/{source_id}/poll")
+    def ops_brain_research_monitors_poll(source_id: str):
+        try:
+            return services.brain_research_monitor.poll(source_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/research-monitors/poll-due")
+    def ops_brain_research_monitors_poll_due():
+        return services.brain_research_monitor.poll_due()
+
+    @application.get("/ops/brain/model-release-radar")
+    def ops_brain_model_release_radar(limit: int = 50):
+        return services.brain_forward_radar.model_release_summary(limit=limit)
+
+    @application.post("/ops/brain/model-release-radar/observations")
+    def ops_brain_model_release_radar_observe(request: ModelReleaseObservationRequest):
+        try:
+            return services.brain_forward_radar.observe_model_release(request)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/model-release-radar/downtime-benchmarks")
+    def ops_brain_model_release_radar_downtime_benchmark(request: DowntimeBenchmarkRequest):
+        return services.brain_forward_radar.schedule_downtime_benchmark(request)
+
+    @application.post("/ops/brain/model-release-radar/smoke-evals")
+    def ops_brain_model_release_radar_smoke_eval(request: BoundedSmokeEvalRequest):
+        try:
+            return services.brain_forward_radar.run_bounded_smoke_eval(request)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @application.post("/ops/brain/model-release-radar/synthetic-fixtures")
+    def ops_brain_model_release_radar_synthetic_fixture(request: SyntheticCapabilityFixtureRequest):
+        try:
+            return services.brain_forward_radar.run_synthetic_capability_fixture(request)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @application.get("/ops/brain/forward-radar/{radar_id}")
     def ops_brain_forward_radar_candidate(radar_id: str):
@@ -4479,14 +6160,24 @@ def create_app(project_root: str | None = None) -> FastAPI:
 
     @application.post("/ops/brain/teachers/attach")
     def ops_brain_teachers_attach(request: ModelAttachRequest):
-        attached = services.brain_teachers.attach(services.brain, request)
+        try:
+            attached = services.brain_teachers.attach(services.brain, request)
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
         return attached.model_dump(mode="json")
 
     @application.post("/ops/brain/teachers/select")
     def ops_brain_teachers_select(request: ModelAttachRequest):
-        if request.teacher_id and services.brain_teachers.set_active(request.teacher_id):
+        if (
+            request.usage_intent == "inference-reference"
+            and request.teacher_id
+            and services.brain_teachers.set_active(request.teacher_id)
+        ):
             return services.brain_teachers.active_teacher().model_dump(mode="json")
-        attached = services.brain_teachers.attach(services.brain, request)
+        try:
+            attached = services.brain_teachers.attach(services.brain, request)
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
         return attached.model_dump(mode="json")
 
     @application.get("/ops/brain/aos")
@@ -5641,6 +7332,11 @@ def create_app(project_root: str | None = None) -> FastAPI:
             benchmark_summary=benchmark,
             teacher_evidence=teacher_evidence,
         )
+        teacher_replacement_recommendation = genesis_node_contracts.record_teacher_replacement_recommendation(
+            teacher_id=teacher_replacement.teacher_id,
+            replacement_target=takeover.internal_target,
+            takeover=takeover,
+        )
         candidate = services.brain_promotions.create_candidate(
             candidate_kind="native-takeover",
             subject_id=f"native-takeover::{artifact.artifact_id}",
@@ -5663,6 +7359,7 @@ def create_app(project_root: str | None = None) -> FastAPI:
         payload["benchmark"] = benchmark
         payload["teacher_replacement"] = teacher_replacement.model_dump(mode="json")
         payload["takeover"] = takeover.model_dump(mode="json")
+        payload["teacher_replacement_recommendation"] = teacher_replacement_recommendation
         payload["teacher_evidence"] = teacher_evidence
         return payload
 
@@ -5815,6 +7512,91 @@ def create_app(project_root: str | None = None) -> FastAPI:
             entries.append(payload)
         return {"permission_mode": services.permission_context.mode, "tools": entries}
 
+    @application.post("/ops/tools/filesystem.readonly")
+    def ops_tool_filesystem_readonly(payload: dict[str, Any] = Body(...)):
+        relative_path = Path(str(payload.get("path") or ""))
+        candidate = (services.paths.project_root / relative_path).resolve()
+        try:
+            candidate.relative_to(services.paths.project_root.resolve())
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="path must remain within the project root") from exc
+        if not candidate.is_file():
+            raise HTTPException(status_code=404, detail="project file not found")
+        return services.tool_registry.execute(
+            "filesystem.readonly",
+            {"path": relative_path.as_posix()},
+            executor=lambda _: {"path": relative_path.as_posix(), "content": candidate.read_text(encoding="utf-8")},
+        )
+
+    @application.post("/ops/tools/filesystem.write")
+    def ops_tool_filesystem_write(payload: dict[str, Any] = Body(...)):
+        relative_path = Path(str(payload.get("path") or ""))
+        relative_ref = relative_path.as_posix()
+        candidate = (services.paths.project_root / relative_path).resolve()
+        try:
+            candidate.relative_to(services.paths.project_root.resolve())
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="path must remain within the project root") from exc
+        mode = str(payload.get("mode") or "")
+        if mode == "plan":
+            authorization = _policy_kernel().authorize_plan_write(relative_ref)
+            if not authorization["allowed"]:
+                raise HTTPException(status_code=400, detail=authorization["reason"])
+        elif mode == "implementation":
+            if not relative_ref.startswith("runtime/sandboxes/"):
+                raise HTTPException(status_code=400, detail="implementation writes require runtime/sandboxes scope")
+        else:
+            raise HTTPException(status_code=400, detail="mode must be plan or implementation")
+        content = payload.get("content")
+        if not isinstance(content, str):
+            raise HTTPException(status_code=400, detail="content must be a string")
+        checkpoint = services.brain_checkpoint_rewind_ledger.capture(
+            subject_ref=f"filesystem:{relative_ref}",
+            state={
+                "existed": candidate.is_file(),
+                "content": candidate.read_text(encoding="utf-8") if candidate.is_file() else None,
+            },
+        )
+
+        def write_file(_: dict[str, Any]) -> dict[str, Any]:
+            candidate.parent.mkdir(parents=True, exist_ok=True)
+            temporary = candidate.with_name(f".{candidate.name}.nexusnet-tmp")
+            temporary.write_text(content, encoding="utf-8")
+            temporary.replace(candidate)
+            return {"path": relative_ref, "bytes_written": len(content.encode("utf-8"))}
+
+        return services.tool_registry.execute_governed_write(
+            "filesystem.write",
+            {"path": relative_ref, "content": content, "mode": mode},
+            executor=write_file,
+            pre_write_checkpoint=checkpoint,
+            invalidated_cache_keys=[f"filesystem:{relative_ref}"],
+        )
+
+    @application.post("/ops/tools/batch")
+    def ops_tools_batch(payload: dict[str, Any] = Body(...)):
+        requests = payload.get("requests")
+        if not isinstance(requests, list):
+            raise HTTPException(status_code=400, detail="requests must be an array")
+
+        def execute_read(tool_name: str, item: dict[str, Any]) -> dict[str, Any]:
+            if tool_name != "filesystem.readonly":
+                raise ValueError(f"unsupported batch tool: {tool_name}")
+            relative_path = Path(str(item.get("path") or ""))
+            candidate = (services.paths.project_root / relative_path).resolve()
+            try:
+                candidate.relative_to(services.paths.project_root.resolve())
+            except ValueError as exc:
+                raise ValueError("path must remain within the project root") from exc
+            if not candidate.is_file():
+                raise FileNotFoundError(f"project file not found: {relative_path.as_posix()}")
+            return {"path": relative_path.as_posix(), "content": candidate.read_text(encoding="utf-8")}
+
+        try:
+            return services.tool_registry.execute_batch(requests, executor=execute_read)
+        except (FileNotFoundError, KeyError, PermissionError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @application.get("/ops/traces/{trace_id}")
     def ops_trace(trace_id: str):
         trace = services.store.get_trace(trace_id)
@@ -5946,16 +7728,81 @@ def create_app(project_root: str | None = None) -> FastAPI:
 
     @application.post("/chat")
     def chat(request: ChatRequest):
+        personality_preference_overlay = _local_personality_preference_overlay_for_inference(
+            hive_substrate=services.brain_hive_substrate,
+            session_id=request.session_id,
+        )
+        effective_request = ChatRequest.model_validate(
+            {
+                **request.model_dump(mode="python"),
+                "messages": _messages_with_local_personality_preference_overlay(
+                    [message.model_dump(mode="json") for message in request.messages],
+                    personality_preference_overlay,
+                ),
+            }
+        )
+        pre_dispatch_inference = _pre_dispatch_inference_admission(
+            router=services.brain_inference_economy_router,
+            session_id=effective_request.session_id,
+            requested_model=str(effective_request.model_hint or "native-operator"),
+            messages=[message if isinstance(message, dict) else message.model_dump(mode="json") for message in effective_request.messages],
+            provider_local=True,
+            metadata=effective_request.metadata,
+            surface_id="release-wrapper-native-chat",
+        )
+        if not pre_dispatch_inference["execution_allowed"]:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "native inference blocked by NexusBrain pre-dispatch admission",
+                    "pre_dispatch_inference": pre_dispatch_inference,
+                },
+            )
         try:
-            result = services.operator.execute_chat(request)
+            result = services.operator.execute_chat(effective_request)
         except RuntimeUnavailableError as exc:
             raise HTTPException(status_code=503, detail=exc.detail) from exc
         # Feed the release wrapper runtime: real use updates assimilation, global growth,
         # sanitized federation packets, and shadow-only autonomous update proposals.
+        forward_pass_evidence: dict[str, Any]
         try:
-            release_wrapper_runtime.record_chat_turn(request=request, result=result)
-        except Exception:
-            pass
+            runtime_summary = release_wrapper_runtime.record_chat_turn(request=effective_request, result=result)
+            interaction = (
+                runtime_summary.get("latest_interaction")
+                if isinstance(runtime_summary.get("latest_interaction"), dict)
+                else {}
+            )
+            activation = (
+                interaction.get("nexusbrain_genesis_activation")
+                if isinstance(interaction.get("nexusbrain_genesis_activation"), dict)
+                else {}
+            )
+            forward_pass_evidence = {
+                "surface_id": "nexusbrain-native-hive-forward-pass-evidence",
+                "status": (
+                    "completed"
+                    if activation.get("status") == "completed"
+                    and interaction.get("runtime_growth_receipt_id")
+                    and interaction.get("federated_packet_id")
+                    else "degraded"
+                ),
+                "nexusbrain_native_hive_forward_pass_id": activation.get("hive_run_id"),
+                "global_growth_receipt_id": interaction.get("runtime_growth_receipt_id"),
+                "federated_packet_id": interaction.get("federated_packet_id"),
+                "genesis_heartbeat_record_id": activation.get("genesis_heartbeat_record_id"),
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        except Exception as exc:
+            forward_pass_evidence = {
+                "surface_id": "nexusbrain-native-hive-forward-pass-evidence",
+                "status": "degraded",
+                "blocker_digest": f"sha256:{_privacy_compat_digest(type(exc).__name__)}",
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
         runtime_selection = result.runtime_selection or result.trace.runtime_selection or {}
         requested_model_id = runtime_selection.get("requested_model_id") or result.model_id
         requested_runtime = runtime_selection.get("requested_runtime_name")
@@ -5995,7 +7842,62 @@ def create_app(project_root: str | None = None) -> FastAPI:
             "trace": result.trace.model_dump(mode="json"),
             "runtime_selection": runtime_selection,
             "critique": result.critique.model_dump(mode="json") if result.critique else None,
+            "forward_pass_evidence": forward_pass_evidence,
+            "personality_preference_overlay": personality_preference_overlay,
+            "pre_dispatch_inference": pre_dispatch_inference,
         }
+
+    def _provider_inference_scope(*, provider_id: str, provider_local: bool) -> dict[str, Any]:
+        """The lease scope intentionally excludes prompts, outputs, endpoints, and credentials."""
+        return {
+            "provider_id": provider_id,
+            "provider_local": bool(provider_local),
+            "operation": "chat_completion",
+        }
+
+    def _publish_provider_inference_event(
+        *,
+        event_type: str,
+        session_id: str,
+        provider_id: str,
+        correlation_ref: str,
+        authority: dict[str, Any],
+    ) -> dict[str, Any]:
+        try:
+            projection = genesis_event_spine.publish_event(
+                event_type=event_type,
+                source_surface_id="execution-authority-provider-inference",
+                correlation_ref=correlation_ref,
+                session_ref_digest=f"sha256:{_privacy_compat_digest(session_id)}" if session_id else None,
+                artifact_refs=[
+                    f"provider-inference::{_privacy_compat_digest(provider_id)}",
+                    f"execution-authority-lease::{authority.get('lease_id') or 'none'}",
+                    "capability::model-inference",
+                ],
+                planes=["authority", "isolation", "model", "event", "evidence"],
+            )
+            return {
+                key: projection.get(key)
+                for key in (
+                    "event_ref",
+                    "blackboard_snapshot_ref",
+                    "plane_trace_ref",
+                    "event_type",
+                    "source_surface_id",
+                    "raw_content_included",
+                    "active_production_mutation_allowed",
+                    "active_production_mutated",
+                )
+            }
+        except Exception as exc:  # pragma: no cover - retain the execution receipt if telemetry degrades
+            return {
+                "status": "degraded-event-spine",
+                "event_type": event_type,
+                "blocker_digest": f"sha256:{_privacy_compat_digest(type(exc).__name__)}",
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
 
     @application.post("/v1/chat/completions")
     def openai_compatible_chat_completions(payload: dict[str, Any] = Body(...)):
@@ -6007,22 +7909,217 @@ def create_app(project_root: str | None = None) -> FastAPI:
         session_id = str(payload.get("user") or metadata.get("session_id") or payload.get("session_id") or "")
         requested_model = str(payload.get("model") or "")
         provider = provider_registry.get(requested_model) if requested_model else None
+        router_provider_binding: dict[str, Any] | None = None
+        if requested_model == "router:auto":
+            if not session_id:
+                session_id = f"openai-compatible-{_privacy_compat_digest(str(messages))}"
+            auto_overlay = _local_personality_preference_overlay_for_inference(
+                hive_substrate=services.brain_hive_substrate,
+                session_id=session_id,
+            )
+            auto_messages = _messages_with_local_personality_preference_overlay(messages, auto_overlay)
+            auto_admission = _pre_dispatch_inference_admission(
+                router=services.brain_inference_economy_router,
+                session_id=session_id,
+                requested_model=requested_model,
+                messages=auto_messages,
+                provider_local=True,
+                metadata=metadata,
+                max_tokens=payload.get("max_tokens"),
+                surface_id="release-wrapper-router-auto-chat",
+            )
+            router_provider_binding = _router_provider_binding(
+                admission=auto_admission,
+                provider_registry=provider_registry,
+            )
+            if not router_provider_binding["execution_allowed"]:
+                raise HTTPException(
+                    status_code=503,
+                    detail={
+                        "error": "router-selected provider binding is unavailable",
+                        "pre_dispatch_inference": auto_admission,
+                        "router_provider_binding": router_provider_binding,
+                    },
+                )
+            requested_model = str(router_provider_binding["wrapper_provider_id"])
+            provider = provider_registry.get(requested_model)
         if provider is not None:
             if not session_id:
                 session_id = f"openai-compatible-{_privacy_compat_digest(str(messages))}"
-            provider_result = provider_registry.complete(requested_model, messages)
+            personality_preference_overlay = _local_personality_preference_overlay_for_inference(
+                hive_substrate=services.brain_hive_substrate,
+                session_id=session_id,
+            )
+            provider_messages = _messages_with_local_personality_preference_overlay(
+                messages,
+                personality_preference_overlay,
+            )
+            pre_dispatch_inference = _pre_dispatch_inference_admission(
+                router=services.brain_inference_economy_router,
+                session_id=session_id,
+                requested_model=requested_model,
+                messages=provider_messages,
+                provider_local=bool(provider.is_local),
+                metadata=metadata,
+                max_tokens=payload.get("max_tokens"),
+                surface_id="release-wrapper-openai-compatible-chat",
+            )
+            if not pre_dispatch_inference["execution_allowed"]:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": "provider inference blocked by NexusBrain pre-dispatch admission",
+                        "pre_dispatch_inference": pre_dispatch_inference,
+                    },
+                )
+            authority_lease_id = ""
+            provider_authority: dict[str, Any] = {
+                "surface_id": "execution-authority-provider-inference",
+                "capability": "model_inference",
+                "provider_ref": f"provider::{_privacy_compat_digest(requested_model)}",
+                "required": not isinstance(provider, EchoProvider),
+                "execution_allowed": isinstance(provider, EchoProvider),
+                "status": "native-contained" if isinstance(provider, EchoProvider) else "pending-authority",
+                "reason": "native-no-network-provider" if isinstance(provider, EchoProvider) else "not_evaluated",
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+            if not isinstance(provider, EchoProvider):
+                authority_scope = _provider_inference_scope(
+                    provider_id=requested_model,
+                    provider_local=bool(provider.is_local),
+                )
+                authority_lease_id = str(
+                    metadata.get("execution_authority_lease_id")
+                    or payload.get("execution_authority_lease_id")
+                    or ""
+                )
+                if not authority_lease_id:
+                    provider_authority.update(
+                        {
+                            "status": "blocked-authority",
+                            "execution_allowed": False,
+                            "reason": "execution_authority_lease_required",
+                        }
+                    )
+                else:
+                    try:
+                        authority_evaluation = services.brain_execution_authority.evaluate(
+                            lease_id=authority_lease_id,
+                            capability="model_inference",
+                            scope=authority_scope,
+                        )
+                        authority_decision = authority_evaluation["decision"]
+                        provider_authority.update(
+                            {
+                                "lease_id": authority_decision.get("lease_id"),
+                                "status": "allowed" if authority_decision.get("execution_allowed") else "blocked-authority",
+                                "execution_allowed": bool(authority_decision.get("execution_allowed")),
+                                "reason": str(authority_decision.get("reason") or "authority-decision-missing"),
+                                "scope_hash": authority_decision.get("scope_hash"),
+                            }
+                        )
+                    except KeyError:
+                        provider_authority.update(
+                            {
+                                "lease_id": authority_lease_id,
+                                "status": "blocked-authority",
+                                "execution_allowed": False,
+                                "reason": "execution_authority_lease_not_found",
+                            }
+                        )
+                if not provider_authority["execution_allowed"]:
+                    blocked_runtime = release_wrapper_runtime.record_provider_turn(
+                        session_id=session_id,
+                        provider_id=requested_model,
+                        model_id=requested_model,
+                        messages=messages,
+                        output=f"execution_authority::{provider_authority['reason']}",
+                        ok=False,
+                        wrapper_mode="openai-compatible",
+                        metadata=metadata,
+                    )
+                    blocked_interaction = (
+                        blocked_runtime.get("latest_interaction")
+                        if isinstance(blocked_runtime.get("latest_interaction"), dict)
+                        else {}
+                    )
+                    provider_authority["shared_event_spine"] = _publish_provider_inference_event(
+                        event_type="genesis.execution_authority.provider_inference.blocked",
+                        session_id=session_id,
+                        provider_id=requested_model,
+                        correlation_ref=str(
+                            blocked_interaction.get("trace_id")
+                            or f"provider-inference::{_privacy_compat_digest(session_id + requested_model)}"
+                        ),
+                        authority=provider_authority,
+                    )
+                    raise HTTPException(
+                        status_code=403,
+                        detail={
+                            "error": "provider inference blocked by execution authority",
+                            "provider_authority": provider_authority,
+                        },
+                    )
+            provider_result = provider_registry.complete(
+                requested_model,
+                provider_messages,
+                authority_lease_id=authority_lease_id or None,
+                session_id=session_id,
+                correlation_ref=f"wrapper-provider::{session_id}::{requested_model}",
+            )
+            registry_authority = provider_result.get("provider_authority")
+            if isinstance(registry_authority, dict):
+                provider_authority.update(registry_authority)
             if not provider_result.get("ok"):
-                release_wrapper_runtime.record_provider_turn(
+                authority_blocked = provider_authority.get("execution_allowed") is False
+                failed_runtime = release_wrapper_runtime.record_provider_turn(
                     session_id=session_id,
                     provider_id=requested_model,
                     model_id=str(provider_result.get("model") or requested_model),
                     messages=messages,
-                    output=str(provider_result.get("text") or provider_result.get("error") or ""),
+                    output=(
+                        f"execution_authority::{provider_authority.get('reason') or 'blocked'}"
+                        if authority_blocked
+                        else str(provider_result.get("text") or provider_result.get("error") or "")
+                    ),
                     ok=False,
                     wrapper_mode="openai-compatible",
+                    metadata=metadata,
                 )
-                raise HTTPException(status_code=502, detail=str(provider_result.get("error") or "provider unavailable"))
-            release_wrapper_runtime.record_provider_turn(
+                failed_interaction = (
+                    failed_runtime.get("latest_interaction")
+                    if isinstance(failed_runtime.get("latest_interaction"), dict)
+                    else {}
+                )
+                if not isinstance(provider_authority.get("shared_event_spine"), dict):
+                    provider_authority["shared_event_spine"] = _publish_provider_inference_event(
+                        event_type=(
+                            "genesis.execution_authority.provider_inference.blocked"
+                            if authority_blocked
+                            else "genesis.execution_authority.provider_inference.failed"
+                        ),
+                        session_id=session_id,
+                        provider_id=requested_model,
+                        correlation_ref=str(
+                            failed_interaction.get("trace_id")
+                            or f"provider-inference::{_privacy_compat_digest(session_id + requested_model)}"
+                        ),
+                        authority=provider_authority,
+                    )
+                raise HTTPException(
+                    status_code=403 if authority_blocked else 502,
+                    detail={
+                        "error": (
+                            "provider inference blocked by execution authority"
+                            if authority_blocked
+                            else str(provider_result.get("error") or "provider unavailable")
+                        ),
+                        "provider_authority": provider_authority,
+                    },
+                )
+            provider_runtime = release_wrapper_runtime.record_provider_turn(
                 session_id=session_id,
                 provider_id=requested_model,
                 model_id=str(provider_result.get("model") or requested_model),
@@ -6030,8 +8127,47 @@ def create_app(project_root: str | None = None) -> FastAPI:
                 output=str(provider_result.get("text") or ""),
                 ok=True,
                 wrapper_mode="openai-compatible",
+                metadata=metadata,
             )
-            prompt_tokens = _rough_message_tokens(messages)
+            provider_interaction = (
+                provider_runtime.get("latest_interaction")
+                if isinstance(provider_runtime.get("latest_interaction"), dict)
+                else {}
+            )
+            provider_activation = (
+                provider_interaction.get("nexusbrain_genesis_activation")
+                if isinstance(provider_interaction.get("nexusbrain_genesis_activation"), dict)
+                else {}
+            )
+            provider_forward_pass_evidence = {
+                "surface_id": "nexusbrain-native-hive-forward-pass-evidence",
+                "status": (
+                    "completed"
+                    if provider_activation.get("status") == "completed"
+                    and provider_interaction.get("runtime_growth_receipt_id")
+                    and provider_interaction.get("federated_packet_id")
+                    else "degraded"
+                ),
+                "nexusbrain_native_hive_forward_pass_id": provider_activation.get("hive_run_id"),
+                "global_growth_receipt_id": provider_interaction.get("runtime_growth_receipt_id"),
+                "federated_packet_id": provider_interaction.get("federated_packet_id"),
+                "genesis_heartbeat_record_id": provider_activation.get("genesis_heartbeat_record_id"),
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+            if not isinstance(provider_authority.get("shared_event_spine"), dict):
+                provider_authority["shared_event_spine"] = _publish_provider_inference_event(
+                    event_type="genesis.execution_authority.provider_inference.executed",
+                    session_id=session_id,
+                    provider_id=requested_model,
+                    correlation_ref=str(
+                        provider_interaction.get("trace_id")
+                        or f"provider-inference::{_privacy_compat_digest(session_id + requested_model)}"
+                    ),
+                    authority=provider_authority,
+                )
+            prompt_tokens = _rough_message_tokens(provider_messages)
             completion_tokens = int(provider_result.get("tokens") or len(str(provider_result.get("text") or "").split()))
             response_payload = {
                 "id": f"chatcmpl-provider-{_privacy_compat_digest(session_id + requested_model)}",
@@ -6058,11 +8194,42 @@ def create_app(project_root: str | None = None) -> FastAPI:
                     "runtime": f"provider:{requested_model}",
                     "wrapper_mode": "openai-compatible",
                     "release_runtime_ref": "/ops/wrapper/release-runtime",
+                    "forward_pass_evidence": provider_forward_pass_evidence,
+                    "provider_authority": provider_authority,
+                    "personality_preference_overlay": personality_preference_overlay,
+                    "pre_dispatch_inference": pre_dispatch_inference,
+                    "router_provider_binding": router_provider_binding,
                 },
             }
             return _stream_chat_completion_response(response_payload) if stream else response_payload
+        personality_preference_overlay = _local_personality_preference_overlay_for_inference(
+            hive_substrate=services.brain_hive_substrate,
+            session_id=session_id,
+        )
+        effective_messages = _messages_with_local_personality_preference_overlay(
+            messages,
+            personality_preference_overlay,
+        )
+        pre_dispatch_inference = _pre_dispatch_inference_admission(
+            router=services.brain_inference_economy_router,
+            session_id=session_id,
+            requested_model=requested_model or "native-operator",
+            messages=effective_messages,
+            provider_local=True,
+            metadata=metadata,
+            max_tokens=payload.get("max_tokens"),
+            surface_id="release-wrapper-openai-compatible-native-chat",
+        )
+        if not pre_dispatch_inference["execution_allowed"]:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "native inference blocked by NexusBrain pre-dispatch admission",
+                    "pre_dispatch_inference": pre_dispatch_inference,
+                },
+            )
         request_payload: dict[str, Any] = {
-            "messages": messages,
+            "messages": effective_messages,
             "model_hint": requested_model or None,
             "wrapper_mode": "openai-compatible",
             "rag": bool(payload.get("rag")) if "rag" in payload else False,
@@ -6077,12 +8244,50 @@ def create_app(project_root: str | None = None) -> FastAPI:
         if session_id:
             request_payload["session_id"] = session_id
         request = ChatRequest.model_validate(request_payload)
-        result = services.operator.execute_chat(request)
         try:
-            release_wrapper_runtime.record_chat_turn(request=request, result=result)
-        except Exception:
-            pass
-        prompt_tokens = _rough_message_tokens(messages)
+            result = services.operator.execute_chat(request)
+        except RuntimeUnavailableError as exc:
+            raise HTTPException(status_code=503, detail=exc.detail) from exc
+        forward_pass_evidence: dict[str, Any]
+        try:
+            runtime_summary = release_wrapper_runtime.record_chat_turn(request=request, result=result)
+            interaction = (
+                runtime_summary.get("latest_interaction")
+                if isinstance(runtime_summary.get("latest_interaction"), dict)
+                else {}
+            )
+            activation = (
+                interaction.get("nexusbrain_genesis_activation")
+                if isinstance(interaction.get("nexusbrain_genesis_activation"), dict)
+                else {}
+            )
+            forward_pass_evidence = {
+                "surface_id": "nexusbrain-native-hive-forward-pass-evidence",
+                "status": (
+                    "completed"
+                    if activation.get("status") == "completed"
+                    and interaction.get("runtime_growth_receipt_id")
+                    and interaction.get("federated_packet_id")
+                    else "degraded"
+                ),
+                "nexusbrain_native_hive_forward_pass_id": activation.get("hive_run_id"),
+                "global_growth_receipt_id": interaction.get("runtime_growth_receipt_id"),
+                "federated_packet_id": interaction.get("federated_packet_id"),
+                "genesis_heartbeat_record_id": activation.get("genesis_heartbeat_record_id"),
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        except Exception as exc:
+            forward_pass_evidence = {
+                "surface_id": "nexusbrain-native-hive-forward-pass-evidence",
+                "status": "degraded",
+                "blocker_digest": f"sha256:{_privacy_compat_digest(type(exc).__name__)}",
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        prompt_tokens = _rough_message_tokens(effective_messages)
         completion_tokens = len(str(result.output or "").split())
         response_payload = {
             "id": f"chatcmpl-{result.trace_id}",
@@ -6110,6 +8315,9 @@ def create_app(project_root: str | None = None) -> FastAPI:
                 "runtime": result.runtime_name,
                 "wrapper_mode": result.wrapper_mode,
                 "release_runtime_ref": "/ops/wrapper/release-runtime",
+                "forward_pass_evidence": forward_pass_evidence,
+                "personality_preference_overlay": personality_preference_overlay,
+                "pre_dispatch_inference": pre_dispatch_inference,
             },
         }
         return _stream_chat_completion_response(response_payload) if stream else response_payload
@@ -6119,6 +8327,14 @@ def create_app(project_root: str | None = None) -> FastAPI:
         message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
         content = str(message.get("content") or "")
         finish_reason = str(choice.get("finish_reason") or "stop")
+        completion_nexusnet = completion.get("nexusnet") if isinstance(completion.get("nexusnet"), dict) else {}
+        terminal_nexusnet: dict[str, Any] = {}
+        if completion_nexusnet.get("release_runtime_ref"):
+            terminal_nexusnet["release_runtime_ref"] = completion_nexusnet["release_runtime_ref"]
+        if isinstance(completion_nexusnet.get("forward_pass_evidence"), dict):
+            terminal_nexusnet["forward_pass_evidence"] = completion_nexusnet["forward_pass_evidence"]
+        if isinstance(completion_nexusnet.get("provider_authority"), dict):
+            terminal_nexusnet["provider_authority"] = completion_nexusnet["provider_authority"]
 
         def event(payload: dict[str, Any]) -> str:
             return f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
@@ -6133,7 +8349,10 @@ def create_app(project_root: str | None = None) -> FastAPI:
             yield event({**base, "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}]})
             if content:
                 yield event({**base, "choices": [{"index": 0, "delta": {"content": content}, "finish_reason": None}]})
-            yield event({**base, "choices": [{"index": 0, "delta": {}, "finish_reason": finish_reason}]})
+            terminal_chunk = {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": finish_reason}]}
+            if terminal_nexusnet:
+                terminal_chunk["nexusnet"] = terminal_nexusnet
+            yield event(terminal_chunk)
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(events(), media_type="text/event-stream")

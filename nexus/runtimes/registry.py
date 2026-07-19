@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 from hashlib import sha256
+import hashlib
+import json
 import os
 from pathlib import Path
 from typing import Any
 
 import requests
+
+from nexusnet.runtime.evolutionary_inference.primitives import InferencePrimitiveRegistry
+from nexusnet.runtime.evolutionary_inference.schemas import InferenceMethodRecord
+from nexusnet.runtime.scorecards import RuntimeScorecardService
 
 from ..config import NexusPaths, env_flag
 from ..schemas import Message, RuntimeProfile
@@ -32,6 +38,7 @@ class MockRuntimeAdapter(RuntimeAdapter):
         return {"available": True, "mode": "deterministic", "capabilities": {"text": True}, "metrics": {"latency_ms": 1}}
 
     def generate(self, *, prompt: str | None, messages: list[Message], model_id: str, expert: str | None = None, metadata: dict[str, Any] | None = None) -> str:
+        self.verified_runtime_parameters(metadata)
         text = prompt_from_messages(messages, prompt).strip()
         preview = text[:240] if text else "No prompt provided."
         hint = f" expert={expert}" if expert else ""
@@ -41,6 +48,17 @@ class MockRuntimeAdapter(RuntimeAdapter):
 class OllamaRuntimeAdapter(RuntimeAdapter):
     runtime_name = "ollama"
     backend_type = "local-http"
+    supported_runtime_controls = frozenset(
+        {
+            "context_tokens",
+            "gpu_layers",
+            "main_gpu",
+            "max_new_tokens",
+            "runtime_batch_tokens",
+            "threads",
+        }
+    )
+    observable_runtime_controls = supported_runtime_controls
 
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
@@ -59,17 +77,22 @@ class OllamaRuntimeAdapter(RuntimeAdapter):
             return {"available": False, "mode": "error", "base_url": self.base_url, "error": str(exc)}
 
     def generate(self, *, prompt: str | None, messages: list[Message], model_id: str, expert: str | None = None, metadata: dict[str, Any] | None = None) -> str:
+        parameters = self.verified_runtime_parameters(metadata)
         text = prompt_from_messages(messages, prompt)
         if not self.live:
             return f"[ollama:dry] {text[:240]}"
         payload = {"model": model_id.split("/", 1)[-1] if "/" in model_id else self.default_model, "prompt": text}
-        parameters = _verified_runtime_parameters(metadata)
         if parameters:
             payload["options"] = {
                 "num_ctx": int(parameters.get("context_tokens", 4096)),
                 "num_batch": int(parameters.get("runtime_batch_tokens", 256)),
                 "num_gpu": int(parameters.get("gpu_layers", 0)),
+                "num_predict": int(parameters.get("max_new_tokens", 256)),
             }
+            if "main_gpu" in parameters:
+                payload["options"]["main_gpu"] = int(parameters["main_gpu"])
+            if "threads" in parameters:
+                payload["options"]["num_thread"] = int(parameters["threads"])
         response = requests.post(f"{self.base_url}/api/generate", json=payload, timeout=30)
         response.raise_for_status()
         return response.json().get("response", "")
@@ -78,6 +101,8 @@ class OllamaRuntimeAdapter(RuntimeAdapter):
 class OpenAICompatibleRuntimeAdapter(RuntimeAdapter):
     runtime_name = "openai-compatible"
     backend_type = "openai-http"
+    supported_runtime_controls = frozenset({"max_new_tokens"})
+    observable_runtime_controls = supported_runtime_controls
 
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
@@ -92,6 +117,7 @@ class OpenAICompatibleRuntimeAdapter(RuntimeAdapter):
         return {"available": True, "mode": "configured", "base_url": self.base_url, "capabilities": {"text": True, "structured_output": True}}
 
     def generate(self, *, prompt: str | None, messages: list[Message], model_id: str, expert: str | None = None, metadata: dict[str, Any] | None = None) -> str:
+        parameters = self.verified_runtime_parameters(metadata)
         if not self.base_url:
             return f"[openai-compatible:dry] {prompt_from_messages(messages, prompt)[:240]}"
         payload_messages = [{"role": message.role, "content": message.content} for message in messages]
@@ -101,7 +127,6 @@ class OpenAICompatibleRuntimeAdapter(RuntimeAdapter):
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         payload = {"model": model_id.split("/", 1)[-1] if "/" in model_id else self.default_model, "messages": payload_messages}
-        parameters = _verified_runtime_parameters(metadata)
         if parameters:
             payload["max_tokens"] = int(parameters.get("max_new_tokens", 256))
         response = requests.post(f"{self.base_url}/v1/chat/completions", json=payload, headers=headers, timeout=30)
@@ -115,9 +140,62 @@ class VLLMRuntimeAdapter(OpenAICompatibleRuntimeAdapter):
     backend_type = "openai-http"
 
 
+class TGIRuntimeAdapter(RuntimeAdapter):
+    runtime_name = "tgi"
+    backend_type = "text-generation-inference-http"
+    supported_runtime_controls = frozenset({"max_new_tokens"})
+    observable_runtime_controls = supported_runtime_controls
+
+    def __init__(self, config: dict[str, Any] | None = None):
+        super().__init__(config)
+        self.base_url = str(
+            os.environ.get("TGI_BASE_URL")
+            or self.config.get("endpoint")
+            or "http://127.0.0.1:8080"
+        ).rstrip("/")
+        self.live = env_flag("LIVE_ENGINES", False)
+
+    def health(self) -> dict[str, Any]:
+        if not self.live:
+            return {"available": False, "mode": "dry", "base_url": self.base_url}
+        try:
+            response = requests.get(f"{self.base_url}/health", timeout=2)
+            response.raise_for_status()
+            return {
+                "available": True,
+                "mode": "live",
+                "base_url": self.base_url,
+                "capabilities": {"text": True},
+            }
+        except Exception as exc:
+            return {
+                "available": False,
+                "mode": "error",
+                "base_url": self.base_url,
+                "error": str(exc),
+            }
+
+    def generate(self, *, prompt: str | None, messages: list[Message], model_id: str, expert: str | None = None, metadata: dict[str, Any] | None = None) -> str:
+        parameters = self.verified_runtime_parameters(metadata)
+        if not self.live:
+            raise RuntimeError("TGI runtime is not live")
+        payload = {
+            "inputs": prompt_from_messages(messages, prompt),
+            "parameters": {"max_new_tokens": int(parameters.get("max_new_tokens", 256))},
+        }
+        response = requests.post(f"{self.base_url}/generate", json=payload, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        if isinstance(data, list):
+            data = data[0] if data else {}
+        return str(data.get("generated_text") or "") if isinstance(data, dict) else ""
+
+
 class LMStudioRuntimeAdapter(RuntimeAdapter):
     runtime_name = "lmstudio"
     backend_type = "openai-http"
+    supported_runtime_controls = frozenset({"max_new_tokens"})
+    observable_runtime_controls = supported_runtime_controls
 
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
@@ -134,10 +212,11 @@ class LMStudioRuntimeAdapter(RuntimeAdapter):
             return {"available": False, "mode": "unreachable", "base_url": self.base_url, "error": str(exc)}
 
     def generate(self, *, prompt: str | None, messages: list[Message], model_id: str, expert: str | None = None, metadata: dict[str, Any] | None = None) -> str:
+        parameters = self.verified_runtime_parameters(metadata)
         payload = {
             "model": model_id.split("/", 1)[-1] if "/" in model_id else self.default_model,
             "prompt": prompt_from_messages(messages, prompt),
-            "max_tokens": int(_verified_runtime_parameters(metadata).get("max_new_tokens", 256)),
+            "max_tokens": int(parameters.get("max_new_tokens", 256)),
         }
         response = requests.post(f"{self.base_url}/v1/completions", json=payload, timeout=30)
         response.raise_for_status()
@@ -148,28 +227,72 @@ class LMStudioRuntimeAdapter(RuntimeAdapter):
 class TransformersRuntimeAdapter(RuntimeAdapter):
     runtime_name = "transformers"
     backend_type = "local-python"
+    supported_runtime_controls = frozenset({"max_new_tokens", "temperature", "top_p"})
+    observable_runtime_controls = supported_runtime_controls
+
+    def __init__(self, config: dict[str, Any] | None = None):
+        super().__init__(config)
+        self.default_model = str(self.config.get("model_id") or self.config.get("model") or "")
+        self.device = str(self.config.get("device") or "cpu")
+        self._engines: dict[str, Any] = {}
 
     def health(self) -> dict[str, Any]:
+        if not self.default_model:
+            return {"available": False, "mode": "unconfigured", "capabilities": {"text": True}}
         try:
             from core.inference.transformers import available  # type: ignore
 
             ready = bool(available())
-        except Exception:
-            ready = False
-        return {"available": ready, "mode": "live" if ready else "stub", "capabilities": {"text": True}}
+        except Exception as exc:
+            return {"available": False, "mode": "dependency-unavailable", "error": str(exc), "capabilities": {"text": True}}
+        return {
+            "available": ready,
+            "mode": "ready" if ready else "dependency-unavailable",
+            "model_id": self.default_model,
+            "device": self.device,
+            "capabilities": {"text": True},
+        }
 
     def generate(self, *, prompt: str | None, messages: list[Message], model_id: str, expert: str | None = None, metadata: dict[str, Any] | None = None) -> str:
-        try:
-            from core.inference.transformers import generate  # type: ignore
+        parameters = self.verified_runtime_parameters(metadata)
+        selected_model = (model_id.split("/", 1)[-1] if model_id else "") or self.default_model
+        if not selected_model:
+            raise RuntimeError("Transformers runtime requires model_id configuration")
+        from core.engines.transformers_engine import TransformersEngine  # type: ignore
 
-            return generate(prompt_from_messages(messages, prompt))
-        except Exception:
-            return f"[transformers:stub] {prompt_from_messages(messages, prompt)[:240]}"
+        engine = self._engines.get(selected_model)
+        if engine is None:
+            engine = TransformersEngine(selected_model, device=self.device)
+            self._engines[selected_model] = engine
+        return engine.generate(
+            prompt_from_messages(messages, prompt),
+            max_new_tokens=int(parameters.get("max_new_tokens", 256)),
+            temperature=float(parameters.get("temperature", 0.7)),
+            top_p=float(parameters.get("top_p", 0.95)),
+        )
 
 
 class LlamaCppRuntimeAdapter(RuntimeAdapter):
     runtime_name = "llama.cpp"
     backend_type = "local-python"
+    supported_runtime_controls = frozenset(
+        {
+            "batch_threads",
+            "cache_type_k",
+            "cache_type_v",
+            "context_tokens",
+            "flash_attention",
+            "gpu_layers",
+            "main_gpu",
+            "max_new_tokens",
+            "offload_kqv",
+            "runtime_batch_tokens",
+            "split_mode",
+            "tensor_split",
+            "threads",
+        }
+    )
+    observable_runtime_controls = supported_runtime_controls
 
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
@@ -179,13 +302,13 @@ class LlamaCppRuntimeAdapter(RuntimeAdapter):
 
     def health(self) -> dict[str, Any]:
         ready = self.model_path.exists()
-        return {"available": ready, "mode": "live" if ready else "stub", "model_path": str(self.model_path), "capabilities": {"text": True}}
+        return {"available": ready, "mode": "ready" if ready else "missing-model", "model_path": str(self.model_path), "capabilities": {"text": True}}
 
     def generate(self, *, prompt: str | None, messages: list[Message], model_id: str, expert: str | None = None, metadata: dict[str, Any] | None = None) -> str:
-        if not self.model_path.exists():
-            return f"[llama.cpp:stub] {prompt_from_messages(messages, prompt)[:240]}"
         selection = (metadata or {}).get("evolutionary_inference") or {}
-        parameters = _verified_runtime_parameters(metadata)
+        parameters = self.verified_runtime_parameters(metadata)
+        if not self.model_path.exists():
+            raise FileNotFoundError(f"llama.cpp model is missing: {self.model_path}")
         plan_id = str(selection.get("plan_id")) if parameters else "plan::runtime-default"
         if self._engine is None or self._engine_plan_id != plan_id:
             from core.engines.llamacpp_engine import LlamaCppEngine  # type: ignore
@@ -195,6 +318,17 @@ class LlamaCppRuntimeAdapter(RuntimeAdapter):
                 n_ctx=int(parameters.get("context_tokens", 4096)),
                 n_gpu_layers=int(parameters.get("gpu_layers", 0)),
                 n_batch=int(parameters.get("runtime_batch_tokens", 256)),
+                n_threads=int(parameters["threads"]) if "threads" in parameters else None,
+                n_threads_batch=(
+                    int(parameters["batch_threads"]) if "batch_threads" in parameters else None
+                ),
+                cache_type_k=parameters.get("cache_type_k"),
+                cache_type_v=parameters.get("cache_type_v"),
+                flash_attn=bool(parameters.get("flash_attention", False)),
+                offload_kqv=bool(parameters.get("offload_kqv", True)),
+                main_gpu=int(parameters.get("main_gpu", 0)),
+                split_mode=parameters.get("split_mode", "layer"),
+                tensor_split=parameters.get("tensor_split"),
             )
             self._engine_plan_id = plan_id
         return self._engine.generate(
@@ -214,6 +348,7 @@ class RuntimeRegistry:
             "ollama": OllamaRuntimeAdapter(inference_cfg.get("ollama", {})),
             "openai-compatible": OpenAICompatibleRuntimeAdapter(inference_cfg.get("openai_compatible", {})),
             "vllm": VLLMRuntimeAdapter({"base_url": inference_cfg.get("vllm", {}).get("endpoint", ""), "model": inference_cfg.get("vllm", {}).get("model", "default")}),
+            "tgi": TGIRuntimeAdapter(inference_cfg.get("tgi", {})),
             "lmstudio": LMStudioRuntimeAdapter({"base_url": os.environ.get("LMSTUDIO_BASE", "http://127.0.0.1:1234"), "model": "local"}),
             "transformers": TransformersRuntimeAdapter(inference_cfg.get("transformers", {})),
             "llama.cpp": LlamaCppRuntimeAdapter(inference_cfg.get("llama_cpp", {})),
@@ -242,18 +377,97 @@ class RuntimeRegistry:
         stored = [RuntimeProfile.model_validate(payload) for payload in self.store.list_runtime_profiles()]
         return stored or self.refresh_profiles()
 
+    def runtime_capability_profiles(self):
+        return [self.adapters[name].runtime_capability_profile() for name in sorted(self.adapters)]
+
+    def inference_method_records(self):
+        records = {
+            record.method_id: record
+            for record in (
+                self.adapters[name].inference_method_record() for name in sorted(self.adapters)
+            )
+        }
+        declared_providers = [
+            *RuntimeScorecardService.PROVIDERS,
+            {
+                "provider_id": "onnx-genai",
+                "name": "ONNX Runtime GenAI",
+                "mode": "local",
+                "cloud_local_mode": "local",
+                "openai_compatible": False,
+                "tool_calling": False,
+                "hardware_tier_fit": [
+                    "tier_1_constrained_edge",
+                    "tier_2_mainstream_local",
+                    "tier_3_premium_local",
+                ],
+                "formats": ["onnx"],
+                "quantization": "int8_int4_provider_dependent",
+            },
+        ]
+        runtime_aliases = {"llama-cpp": "llama.cpp", "lm-studio": "lmstudio"}
+        for provider in declared_providers:
+            runtime_name = runtime_aliases.get(provider["provider_id"], provider["provider_id"])
+            method_id = f"runtime::{runtime_name}"
+            claimed_capabilities = [f"mode::{provider['mode']}"]
+            if provider["openai_compatible"]:
+                claimed_capabilities.append("openai-compatible")
+            if provider["tool_calling"]:
+                claimed_capabilities.append("tool-calling")
+            existing = records.get(method_id)
+            if existing is not None:
+                records[method_id] = existing.model_copy(
+                    update={
+                        "claimed_capabilities": sorted(
+                            set(existing.claimed_capabilities) | set(claimed_capabilities)
+                        ),
+                        "supported_formats": sorted(
+                            set(existing.supported_formats) | set(provider["formats"])
+                        ),
+                        "supported_precisions": sorted(
+                            set(existing.supported_precisions) | {provider["quantization"]}
+                        ),
+                        "supported_hardware": sorted(
+                            set(existing.supported_hardware) | set(provider["hardware_tier_fit"])
+                        ),
+                    }
+                )
+                continue
+            source_payload = json.dumps(provider, sort_keys=True, separators=(",", ":"))
+            records[method_id] = InferenceMethodRecord(
+                method_id=method_id,
+                version="runtime-scorecard-v1",
+                source_kind="external-engine",
+                source_digest=f"sha256:{hashlib.sha256(source_payload.encode('utf-8')).hexdigest()}",
+                rights={
+                    "inference": "unknown",
+                    "evaluation": "unknown",
+                    "derivative": "unknown",
+                    "redistribution": "unknown",
+                },
+                claimed_capabilities=sorted(claimed_capabilities),
+                supported_formats=sorted(provider["formats"]),
+                supported_precisions=[provider["quantization"]],
+                supported_hardware=sorted(provider["hardware_tier_fit"]),
+                maturity="researched",
+                assimilation_paths=["whole-engine", "primitive"],
+            )
+        return [
+            *(records[method_id] for method_id in sorted(records)),
+            *InferencePrimitiveRegistry.default().method_records(),
+        ]
+
     def get_adapter(self, runtime_name: str) -> RuntimeAdapter:
         return self.adapters[runtime_name]
 
     def choose(self, preferred_runtime: str | None = None) -> RuntimeAdapter:
         if preferred_runtime and preferred_runtime in self.adapters:
             return self.adapters[preferred_runtime]
-        for runtime_name in ["ollama", "llama.cpp", "transformers", "vllm", "lmstudio", "openai-compatible"]:
+        for runtime_name in ["ollama", "llama.cpp", "transformers", "vllm", "tgi", "lmstudio", "openai-compatible"]:
             profile = self.adapters[runtime_name].profile()
             if profile.available:
                 return self.adapters[runtime_name]
         return self.adapters["mock"]
-
     def register_accelerator_route(self, evidence: RouteEvidence, adapter: RuntimeAdapter) -> None:
         if not evidence.verified or not evidence.healthy or not evidence.correctness_passed or evidence.quarantined:
             raise ValueError("accelerator routes require verified, healthy correctness evidence")

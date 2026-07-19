@@ -124,7 +124,6 @@ class HiveModelGrowthEngine:
             "authority": "NexusBrain",
             "surface_id": "hive-model-growth-engine",
             "cycle_id": normalized.cycle_id,
-            "cycle_dir": str(cycle_dir),
             "status": decision,
             "state": decision,
             "student_id": refs["student"],
@@ -146,11 +145,10 @@ class HiveModelGrowthEngine:
                 "reviewer_decision": refs["reviewer_decision"],
                 "rollback": refs["rollback"],
             },
-            "control_panel_replay": {
-                "cycle": str(cycle_dir / "cycle.json"),
-                "events": str(events_path),
-                "dataset_manifest": str(cycle_dir / "datasets" / "dataset_manifest.json"),
-                "reviewer_decision": str(cycle_dir / "reviewer-monitor" / "decision.json"),
+            "replay_refs": {
+                "growth_cycle": refs["growth_cycle"],
+                "dataset_manifest": refs["dataset_manifest"],
+                "reviewer_decision": refs["reviewer_decision"],
             },
             "created_at": now,
         }
@@ -167,18 +165,7 @@ class HiveModelGrowthEngine:
         return _dataset_radar_ids_for_request(request)
 
     def summary(self, *, limit: int = 50) -> dict[str, Any]:
-        cycles = []
-        for path in self.store.cycles_dir.glob("*/cycle.json"):
-            try:
-                import json
-
-                payload = json.loads(path.read_text(encoding="utf-8"))
-                payload["_cycle_dir"] = str(path.parent)
-                cycles.append(payload)
-            except (OSError, ValueError):
-                continue
-        cycles.sort(key=lambda item: item.get("updated_at") or item.get("created_at") or "", reverse=True)
-        cycles = cycles[:limit]
+        cycles = self._cycles(limit=limit)
         blocked_count = sum(1 for cycle in cycles if str(cycle.get("status") or "").startswith("blocked"))
         latest_cycle = cycles[0] if cycles else None
         latest_reviewer_decision = _load_reviewer_decision(latest_cycle)
@@ -211,7 +198,7 @@ class HiveModelGrowthEngine:
             "shadow_specialist_count": sum(1 for cycle in cycles if cycle.get("status") == "shadow_specialist"),
             "promotable_count": sum(1 for cycle in cycles if cycle.get("status") == "promotable"),
             "blocked_count": blocked_count,
-            "latest_cycle": latest_cycle,
+            "latest_cycle": _public_growth_cycle(latest_cycle),
             "latest_reviewer_decision": latest_reviewer_decision,
             "latest_training_run": latest_training_run,
             "latest_hidden_eval_attestation": latest_hidden_eval_attestation,
@@ -228,10 +215,24 @@ class HiveModelGrowthEngine:
             "latest_eval_case_results_summary": latest_eval_case_results_summary,
             "latest_cycle_artifact_replay_keys": latest_cycle_artifact_replay_keys,
             "latest_cycle_artifact_replay_availability": latest_cycle_artifact_replay_availability,
-            "cycles": cycles,
+            "cycles": [_public_growth_cycle(cycle) for cycle in cycles],
             "required_artifacts": _required_artifacts(),
             "operator_actions": _operator_actions(),
         }
+
+    def _cycles(self, *, limit: int) -> list[dict[str, Any]]:
+        cycles = []
+        for path in self.store.cycles_dir.glob("*/cycle.json"):
+            try:
+                import json
+
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                payload["_cycle_dir"] = str(path.parent)
+                cycles.append(payload)
+            except (OSError, ValueError):
+                continue
+        cycles.sort(key=lambda item: item.get("updated_at") or item.get("created_at") or "", reverse=True)
+        return cycles[:limit]
 
     def scorecard(self) -> dict[str, Any]:
         summary = self.summary()
@@ -252,9 +253,9 @@ class HiveModelGrowthEngine:
 
     def replay_cycle(self, cycle_id: str) -> dict[str, Any] | None:
         normalized = cycle_id if ":" in cycle_id else f"cycle:{cycle_id}"
-        for cycle in self.summary(limit=500).get("cycles", []):
+        for cycle in self._cycles(limit=500):
             if cycle.get("cycle_id") == normalized or str(cycle.get("cycle_id", "")).endswith(cycle_id):
-                return {**cycle, "artifact_replay": _artifact_replay_for_cycle(cycle)}
+                return {**_public_growth_cycle(cycle), "artifact_replay": _artifact_replay_for_cycle(cycle)}
         return None
 
     def _write_material_scout(
@@ -976,6 +977,16 @@ class HiveModelGrowthEngine:
             source_refs=source_refs or [],
             governance_state=governance_state,
         )
+
+
+def _public_growth_cycle(cycle: dict[str, Any] | None) -> dict[str, Any] | None:
+    if cycle is None:
+        return None
+    return {
+        key: value
+        for key, value in cycle.items()
+        if key not in {"_cycle_dir", "control_panel_replay"}
+    }
 
 
 def _refs(request: GrowthCycleRequest) -> dict[str, str]:

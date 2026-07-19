@@ -243,6 +243,21 @@ class PolicyKernel:
             },
         }
 
+    def authorize_plan_write(self, target_path: str) -> dict[str, Any]:
+        normalized_path = target_path.replace("\\", "/").lstrip("/")
+        allowed_prefixes = ("docs/superpowers/plans/", "docs/superpowers/specs/")
+        allowed = (
+            ".." not in normalized_path.split("/")
+            and any(normalized_path.startswith(prefix) for prefix in allowed_prefixes)
+        )
+        return {
+            "plan_mode": True,
+            "target_path": normalized_path,
+            "allowed": allowed,
+            "reason": "plan_artifact_allowlist" if allowed else "plan_mode_repo_write_blocked",
+            "allowed_prefixes": list(allowed_prefixes),
+        }
+
     def scan(
         self,
         targets: list[PolicyTarget | dict[str, Any]],

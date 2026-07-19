@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -126,6 +128,37 @@ class MemoryOperatingSystem:
             self._persist()
         return current
 
+    def forget(self, fact_id: str) -> MemoryRecord | None:
+        """Redact stored content while preserving a non-retrievable audit tombstone."""
+        current = self.retrieve(fact_id, include_archived=True, include_discarded=True)
+        for record in self._versions.get(fact_id, []):
+            digest = hashlib.sha256(record.content.encode("utf-8")).hexdigest()
+            record.content = f"[forgotten:sha256:{digest}]"
+            record.discarded = True
+        if current is not None:
+            self._persist()
+        return current
+
+    def export_state(self) -> dict[str, Any]:
+        return {
+            "schema_version": 1,
+            "records": [
+                record.model_dump(mode="json")
+                for fact_versions in self._versions.values()
+                for record in fact_versions
+            ],
+        }
+
+    def restore_state(self, payload: dict[str, Any]) -> None:
+        records = payload.get("records")
+        if not isinstance(records, list):
+            raise ValueError("memory state requires a records list")
+        self._versions.clear()
+        self._by_memory_id.clear()
+        for item in records:
+            self._append(MemoryRecord.model_validate(item), persist=False)
+        self._persist()
+
     def dereference(self, memory_id: str) -> dict[str, Any]:
         record = self._by_memory_id[memory_id]
         return {
@@ -165,10 +198,7 @@ class MemoryOperatingSystem:
         if self.persistence_path is None:
             return
         self.persistence_path.parent.mkdir(parents=True, exist_ok=True)
-        records = [
-            record.model_dump(mode="json")
-            for fact_versions in self._versions.values()
-            for record in fact_versions
-        ]
-        payload = {"schema_version": 1, "records": records}
-        self.persistence_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        payload = self.export_state()
+        temporary = self.persistence_path.with_suffix(self.persistence_path.suffix + ".tmp")
+        temporary.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        os.replace(temporary, self.persistence_path)

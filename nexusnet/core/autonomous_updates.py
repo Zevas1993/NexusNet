@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -66,10 +67,13 @@ class AutonomousUpdateController:
         self._memory_applied: list[dict[str, Any]] = []
         self._memory_rollbacks: list[dict[str, Any]] = []
         self._memory_test_evidence: list[dict[str, Any]] = []
+        self._proposal_cache: list[dict[str, Any]] | None = None
         self.policy_kernel = PolicyKernel.default()
 
     def propose(self, request: AutonomousUpdateRequest | dict[str, Any]) -> dict[str, Any]:
         normalized = request if isinstance(request, AutonomousUpdateRequest) else AutonomousUpdateRequest.model_validate(request)
+        # Proposal input cannot grant the operator approval required for execution.
+        normalized = normalized.model_copy(update={"operator_approved": False})
         upstream_eval_gate = _upstream_eval_gate(normalized)
         update_findings = _update_findings(normalized, upstream_eval_gate=upstream_eval_gate)
         policy_scan = self.policy_kernel.scan(_policy_targets(normalized))
@@ -111,16 +115,28 @@ class AutonomousUpdateController:
         self._persist(proposal)
         return proposal
 
-    def approve(self, update_id: str, *, approved_by: str, approval_ref: str = "") -> dict[str, Any]:
+    def approve(
+        self,
+        update_id: str,
+        *,
+        approved_by: str = "",
+        approval_ref: str = "",
+        approval_evidence: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         proposal = self._find_proposal(update_id)
+        bound_approval = _bound_admin_approval_evidence(update_id, approval_evidence)
         evidence_gate = _admin_approval_evidence_gate(proposal)
         approval = {
             "status_label": "LOCKED CANON",
             "surface_id": "autonomous-updates",
             "update_id": update_id,
             "status": "admin-approved",
-            "approved_by": approved_by,
-            "approval_ref": approval_ref,
+            "approval_ref": bound_approval["approval_ref"],
+            "approval_subject": bound_approval["approval_subject"],
+            "approved_update_id": bound_approval["approved_update_id"],
+            "approver_digest": bound_approval["approver_digest"],
+            "rationale_digest": bound_approval["rationale_digest"],
+            "metadata_digest": bound_approval["metadata_digest"],
             "approved_at": utcnow().isoformat(),
             "operator_approved": True,
             "active_production_mutated": False,
@@ -173,10 +189,11 @@ class AutonomousUpdateController:
         test_results: list[dict[str, Any]] | None = None,
         test_evidence_refs: list[str] | None = None,
         ao_guard: dict[str, Any] | None = None,
+        immune_governance_decision_id: str | None = None,
     ) -> dict[str, Any]:
         proposal = self._find_proposal(update_id)
-        if not proposal.get("operator_approved"):
-            raise ValueError("admin approval is required before safe apply")
+        if not _proposal_has_bound_admin_approval(proposal):
+            raise ValueError("stored admin approval bound to this update is required before safe apply")
         rollback_plan = str(proposal.get("rollback_plan") or "").strip()
         if not rollback_plan:
             raise ValueError("rollback plan is required before safe apply")
@@ -193,6 +210,16 @@ class AutonomousUpdateController:
         ):
             raise ValueError("artifact-backed passed shadow eval replay evidence is required before release-wrapper safe apply")
         ao_guard_summary = _safe_apply_ao_guard_summary(ao_guard)
+        immune_governance = getattr(self, "immune_governance", None)
+        immune_decision = (
+            immune_governance.require_decision(
+                decision_id=immune_governance_decision_id,
+                candidate_ref=update_id,
+                candidate_kind="autonomous-update-safe-apply",
+            )
+            if immune_governance is not None
+            else None
+        )
 
         safe_file_path = self._safe_file_path(update_id)
         previous_content = safe_file_path.read_text(encoding="utf-8") if safe_file_path.exists() else None
@@ -204,6 +231,7 @@ class AutonomousUpdateController:
             "safe_payload": safe_payload,
             "active_production_mutated": False,
             "test_results": normalized_test_results,
+            "immune_governance_decision": immune_decision,
             **ao_guard_summary,
             "applied_at": utcnow().isoformat(),
         }
@@ -219,6 +247,7 @@ class AutonomousUpdateController:
             "test_refs": list(test_refs or []),
             "test_evidence_refs": list(test_evidence_refs or []),
             "test_results": normalized_test_results,
+            "immune_governance_decision": immune_decision,
             "active_production_mutated": False,
             **ao_guard_summary,
             "applied_at": safe_record["applied_at"],
@@ -274,8 +303,8 @@ class AutonomousUpdateController:
         if self.test_evidence_dir is None:
             raise ValueError("sandbox test execution requires an artifacts_dir")
         proposal = self._find_proposal(update_id)
-        if not proposal.get("operator_approved"):
-            raise ValueError("admin approval is required before sandbox test execution")
+        if not _proposal_has_bound_admin_approval(proposal):
+            raise ValueError("stored admin approval bound to this update is required before sandbox test execution")
         root = Path(project_root).resolve()
         _allowlisted_pytest_argv(command, project_root=root)
         bounded_timeout = max(1, min(int(timeout_seconds or 60), 120))
@@ -328,6 +357,7 @@ class AutonomousUpdateController:
         pre_manifest_path = artifact_run_root / "pre-manifest.json"
         pre_manifest_path.write_text(json.dumps(_manifest_payload(pre_manifest, root=sandbox_workspace), indent=2, sort_keys=True), encoding="utf-8")
         argv = _allowlisted_pytest_argv(command, project_root=sandbox_workspace)
+        sandbox_environment = _sandbox_subprocess_environment(sandbox_workspace)
         phase_started = time.perf_counter()
         mark_phase("pytest")
         try:
@@ -338,6 +368,7 @@ class AutonomousUpdateController:
                 text=True,
                 timeout=bounded_timeout,
                 shell=False,
+                env=sandbox_environment,
             )
             returncode = int(completed.returncode)
             stdout = completed.stdout or ""
@@ -440,7 +471,12 @@ class AutonomousUpdateController:
                 "active_manifest_excluded_prefixes": active_evidence_prefixes,
                 "write_scope": "sandbox-copy-only; allowed changes limited to pytest cache, runtime, and artifacts inside sandbox",
                 "isolation_boundary": "pytest executes in copied sandbox workspace, not active project root",
+                "environment_policy": "credential-cleansed-minimal-child-environment",
+                "ambient_credential_environment_inherited": False,
+                "environment_variable_count": len(sandbox_environment),
                 "network_required": False,
+                "network_policy": "not-required-no-os-level-network-enforcement",
+                "os_level_network_enforcement": False,
             },
             "allowlist": {
                 "runner": "pytest",
@@ -493,8 +529,40 @@ class AutonomousUpdateController:
             "operator_actions": _operator_actions(),
         }
 
+    def public_summary(self, *, limit: int = 50) -> dict[str, Any]:
+        summary = self.summary(limit=limit)
+        public_proposals = [
+            _public_autonomous_update_record(proposal)
+            for proposal in summary.get("proposals", [])
+            if isinstance(proposal, dict)
+        ]
+        public_by_update_id = {
+            str(proposal.get("update_id") or ""): proposal
+            for proposal in public_proposals
+            if str(proposal.get("update_id") or "")
+        }
+        latest_proposal = summary.get("latest_proposal")
+        latest_update_id = str(latest_proposal.get("update_id") or "") if isinstance(latest_proposal, dict) else ""
+        return {
+            **summary,
+            "latest_proposal": public_by_update_id.get(latest_update_id),
+            "latest_applied": _public_autonomous_update_record(summary.get("latest_applied")),
+            "latest_rollback": _public_autonomous_update_record(summary.get("latest_rollback")),
+            "latest_sandbox_test_evidence": _public_sandbox_test_evidence(
+                summary.get("latest_sandbox_test_evidence")
+            ),
+            "proposals": public_proposals,
+            "privacy_boundary": (
+                "sanitized-autonomous-update-statuses-refs-counts-and-contained-sandbox-evidence-only-"
+                "no-raw-output-local-paths-or-subprocess-argv"
+            ),
+        }
+
+    def public_sandbox_test_evidence(self, evidence: dict[str, Any]) -> dict[str, Any]:
+        return _public_sandbox_test_evidence(evidence)
+
     def scorecard(self) -> dict[str, Any]:
-        summary = self.summary()
+        summary = self.public_summary()
         return {
             **summary,
             "source_documents": [
@@ -510,6 +578,7 @@ class AutonomousUpdateController:
         existing = [item for item in self._memory_proposals if item.get("update_id") != proposal.get("update_id")]
         self._memory_proposals.insert(0, proposal)
         self._memory_proposals = [proposal, *existing][:50]
+        self._proposal_cache = None
         if self.proposals_dir is not None:
             safe_id = _safe_id(proposal["update_id"])
             path = self.proposals_dir / f"{safe_id}.json"
@@ -517,18 +586,20 @@ class AutonomousUpdateController:
             path.write_text(json.dumps(proposal, indent=2), encoding="utf-8")
 
     def _list_proposals(self, *, limit: int) -> list[dict[str, Any]]:
-        proposals = list(self._memory_proposals)
-        seen = {proposal.get("update_id") for proposal in proposals}
-        if self.proposals_dir is not None:
-            for path in self.proposals_dir.glob("*.json"):
-                try:
-                    payload = json.loads(path.read_text(encoding="utf-8"))
-                except (OSError, json.JSONDecodeError):
-                    continue
-                if payload.get("update_id") not in seen:
-                    proposals.append(payload)
-        proposals.sort(key=lambda item: item.get("created_at") or "", reverse=True)
-        return proposals[:limit]
+        if self._proposal_cache is None:
+            proposals = list(self._memory_proposals)
+            seen = {proposal.get("update_id") for proposal in proposals}
+            if self.proposals_dir is not None:
+                for path in self.proposals_dir.glob("*.json"):
+                    try:
+                        payload = json.loads(path.read_text(encoding="utf-8"))
+                    except (OSError, json.JSONDecodeError):
+                        continue
+                    if payload.get("update_id") not in seen:
+                        proposals.append(payload)
+            proposals.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+            self._proposal_cache = proposals
+        return self._proposal_cache[:limit]
 
     def _find_proposal(self, update_id: str) -> dict[str, Any]:
         for proposal in self._list_proposals(limit=500):
@@ -627,6 +698,46 @@ class AutonomousUpdateController:
                 }
             )
         return results
+
+
+AUTONOMOUS_UPDATE_APPROVAL_SUBJECT = "release-wrapper-autonomous-update"
+
+
+def _bound_admin_approval_evidence(
+    update_id: str,
+    approval_evidence: dict[str, Any] | None,
+) -> dict[str, str]:
+    evidence = approval_evidence if isinstance(approval_evidence, dict) else {}
+    approval_ref = str(evidence.get("approval_ref") or evidence.get("approval_decision_id") or "").strip()
+    subject = str(evidence.get("approval_subject") or evidence.get("subject") or "").strip()
+    decision = str(evidence.get("decision") or evidence.get("status") or "").strip().lower()
+    approved_update_id = str(evidence.get("approved_update_id") or evidence.get("update_id") or "").strip()
+    if (
+        not approval_ref
+        or subject != AUTONOMOUS_UPDATE_APPROVAL_SUBJECT
+        or decision != "approved"
+        or approved_update_id != update_id
+    ):
+        raise ValueError("stored admin approval must bind the exact autonomous update before execution")
+    return {
+        "approval_ref": approval_ref,
+        "approval_subject": subject,
+        "approved_update_id": approved_update_id,
+        "approver_digest": str(evidence.get("approver_digest") or ""),
+        "rationale_digest": str(evidence.get("rationale_digest") or ""),
+        "metadata_digest": str(evidence.get("metadata_digest") or ""),
+    }
+
+
+def _proposal_has_bound_admin_approval(proposal: dict[str, Any]) -> bool:
+    approval = proposal.get("admin_approval") if isinstance(proposal.get("admin_approval"), dict) else {}
+    return bool(
+        proposal.get("operator_approved") is True
+        and approval.get("status") == "admin-approved"
+        and approval.get("approval_subject") == AUTONOMOUS_UPDATE_APPROVAL_SUBJECT
+        and approval.get("approved_update_id") == proposal.get("update_id")
+        and approval.get("approval_ref")
+    )
 
 
 def _update_findings(request: AutonomousUpdateRequest, *, upstream_eval_gate: dict[str, Any]) -> list[dict[str, str]]:
@@ -1145,6 +1256,91 @@ def _sandbox_copy_ignore(directory: str, names: list[str]) -> set[str]:
 
 def _sandbox_workspace_root(update_id: str, run_id: str) -> Path:
     return Path(tempfile.gettempdir()) / "nexusnet-autonomous-update-sandboxes" / _safe_id(update_id) / run_id / "workspace"
+
+
+def _sandbox_subprocess_environment(sandbox_workspace: Path) -> dict[str, str]:
+    sandbox_temp = sandbox_workspace / ".nexusnet-sandbox-tmp"
+    sandbox_home = sandbox_workspace / ".nexusnet-sandbox-home"
+    for directory in (
+        sandbox_temp,
+        sandbox_home,
+        sandbox_home / "AppData" / "Roaming",
+        sandbox_home / "AppData" / "Local",
+    ):
+        directory.mkdir(parents=True, exist_ok=True)
+
+    bootstrap_keys = ("SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "PATH")
+    environment = {
+        key: value
+        for key in bootstrap_keys
+        if (value := os.environ.get(key))
+    }
+    environment.update(
+        {
+            "TEMP": str(sandbox_temp),
+            "TMP": str(sandbox_temp),
+            "TMPDIR": str(sandbox_temp),
+            "HOME": str(sandbox_home),
+            "USERPROFILE": str(sandbox_home),
+            "APPDATA": str(sandbox_home / "AppData" / "Roaming"),
+            "LOCALAPPDATA": str(sandbox_home / "AppData" / "Local"),
+            "PYTHONNOUSERSITE": "1",
+            "PYTHONPATH": "",
+            "PYTEST_ADDOPTS": "",
+            "PIP_NO_INPUT": "1",
+            "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+            "NEXUSNET_AUTONOMOUS_SANDBOX": "1",
+        }
+    )
+    return environment
+
+
+_PUBLIC_AUTONOMOUS_UPDATE_OMITTED_KEYS = {
+    "argv",
+    "artifact_path",
+    "diff_path",
+    "phase_status_path",
+    "post_manifest_path",
+    "pre_manifest_path",
+    "previous_content",
+    "safe_file_path",
+    "stderr_tail",
+    "stdout_tail",
+}
+
+
+def _public_autonomous_update_record(record: Any) -> dict[str, Any] | None:
+    if not isinstance(record, dict):
+        return None
+    public: dict[str, Any] = {}
+    for key, value in record.items():
+        if key in _PUBLIC_AUTONOMOUS_UPDATE_OMITTED_KEYS:
+            continue
+        if key in {"changes", "unsafe_changes"}:
+            continue
+        if isinstance(value, dict):
+            public[key] = _public_autonomous_update_record(value) or {}
+        elif isinstance(value, list):
+            public[key] = [
+                _public_autonomous_update_record(item) if isinstance(item, dict) else item
+                for item in value
+            ]
+        else:
+            public[key] = value
+    return public
+
+
+def _public_sandbox_test_evidence(evidence: Any) -> dict[str, Any] | None:
+    public = _public_autonomous_update_record(evidence)
+    if public is None:
+        return None
+    public["diagnostic_artifact_available"] = bool(public.get("evidence_ref"))
+    public["raw_content_included"] = False
+    public["privacy_boundary"] = (
+        "sanitized-sandbox-status-refs-counts-and-containment-metadata-only-"
+        "no-output-local-paths-or-subprocess-argv"
+    )
+    return public
 
 
 def _file_manifest(

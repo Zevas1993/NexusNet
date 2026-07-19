@@ -54,6 +54,7 @@ class TeacherRegistry:
         self._active_teacher_id: str | None = None
         self._routing = TeacherRoutingPolicyEngine(self.routing_policy)
         self._retirement_advisor = TeacherRetirementAdvisor()
+        self.teacher_governance_registry: Any | None = None
 
     def list_profiles(self) -> list[TeacherProfile]:
         return sorted((self._hydrate_profile(profile) for profile in self._profiles.values()), key=lambda profile: profile.teacher_id)
@@ -112,7 +113,16 @@ class TeacherRegistry:
         profile = self._resolve_profile(request.teacher_id, request.model_hint)
         if profile is None:
             registration = self.model_registry.resolve_model(request.model_hint or "mock/default")
-            adapter = brain.attach_base_model(registration.model_id, role=request.attach_role)
+            rights = self._teacher_use_rights(
+                teacher_id=request.teacher_id or f"adhoc::{registration.model_id}",
+                usage_intent=request.usage_intent,
+            )
+            adapter = brain.attach_base_model(
+                registration.model_id,
+                role=request.attach_role,
+                usage_intent=("teacher-or-distillation" if rights else "inference"),
+                teacher_rights_attestation=rights,
+            )
             attached = AttachedTeacher(
                 teacher_id=f"adhoc::{registration.model_id}",
                 model_id=registration.model_id,
@@ -130,6 +140,7 @@ class TeacherRegistry:
                     "selected_teachers": [f"adhoc::{registration.model_id}"],
                     "selected_teacher_roles": {"primary": f"adhoc::{registration.model_id}"},
                     "capability_profile": adapter.capability_profile().model_dump(mode="json"),
+                    "teacher_use_rights": rights,
                 },
             )
             self._attached[attached.teacher_id] = attached
@@ -139,7 +150,16 @@ class TeacherRegistry:
 
         resolved_model_hint = request.model_hint or next(iter(profile.model_hints), None) or "mock/default"
         registration = self.model_registry.resolve_model(resolved_model_hint)
-        adapter = brain.attach_base_model(registration.model_id, role=request.attach_role)
+        rights = self._teacher_use_rights(
+            teacher_id=profile.teacher_id,
+            usage_intent=request.usage_intent,
+        )
+        adapter = brain.attach_base_model(
+            registration.model_id,
+            role=request.attach_role,
+            usage_intent=("teacher-or-distillation" if rights else "inference"),
+            teacher_rights_attestation=rights,
+        )
         selected_layer = registry_layer or self._default_registry_layer_for_profile(profile)
         subject_for_threshold = (
             getattr(routing_decision, "subject", None)
@@ -161,24 +181,40 @@ class TeacherRegistry:
             attach_role=request.attach_role,
             active=request.set_active,
             status_label=profile.status_label,
-            provenance=teacher_provenance_payload(
-                profile=profile,
-                model_id=registration.model_id,
-                attach_role=request.attach_role,
-                capability_profile=adapter.capability_profile().model_dump(mode="json"),
-                registry_layer=selected_layer,
-                routing_decision=routing_decision,
-                arbitration=arbitration,
-                lineage=lineage,
-                benchmark_family=benchmark_family,
-                threshold_set_id=threshold_set_id,
-                native_takeover_candidate_id=native_takeover_candidate_id,
-            ),
+            provenance={
+                **teacher_provenance_payload(
+                    profile=profile,
+                    model_id=registration.model_id,
+                    attach_role=request.attach_role,
+                    capability_profile=adapter.capability_profile().model_dump(mode="json"),
+                    registry_layer=selected_layer,
+                    routing_decision=routing_decision,
+                    arbitration=arbitration,
+                    lineage=lineage,
+                    benchmark_family=benchmark_family,
+                    threshold_set_id=threshold_set_id,
+                    native_takeover_candidate_id=native_takeover_candidate_id,
+                ),
+                "teacher_use_rights": rights,
+            },
         )
         self._attached[profile.teacher_id] = attached
         if request.set_active:
             self.set_active(profile.teacher_id)
         return self._attached[profile.teacher_id]
+
+    def _teacher_use_rights(self, *, teacher_id: str, usage_intent: str) -> dict[str, Any] | None:
+        if usage_intent != "teacher-or-distillation":
+            return None
+        if self.teacher_governance_registry is None:
+            raise PermissionError("teacher execution blocked because Layer 13 governance is unavailable")
+        authorization = self.teacher_governance_registry.authorize_teacher_use(
+            teacher_id=teacher_id,
+            usage_intent=usage_intent,
+        )
+        if authorization.get("teacher_or_distillation_use_authorized") is not True:
+            raise PermissionError("teacher execution blocked because teacher or distillation rights are not authorized")
+        return authorization
 
     def resolve_for_task(
         self,

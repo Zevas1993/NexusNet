@@ -34,6 +34,17 @@ from nexusnet.core import AutonomousUpdateController, SelfReviewGate
 from nexusnet.core.self_improvement import ImprovementQueue, SelfImprovementLineageRegistry
 from nexusnet.curriculum import DatasetRadar
 from nexusnet.evals import EvalRegistry, VerifierSearchRegistry
+from nexusnet.genesis import (
+    GenesisDreamResearchService,
+    GenesisEvidenceSpineService,
+    GenesisEventSpineService,
+    GenesisFederatedOutcomeService,
+    GenesisFoundationStatusService,
+    GenesisHeartbeatService,
+    GenesisMemoryAdmissionService,
+    GenesisSensoryProvenanceService,
+    GenesisSelfRepairService,
+)
 from nexusnet.growth import HiveModelGrowthEngine, NexusNetProductionSpine
 from nexusnet.knowledge import KnowledgeArtifactCompiler
 from nexusnet.memory import MemoryQualityLedger, NexusEngramIndex
@@ -83,6 +94,7 @@ from nexusnet.canon import (
     tool_execution_scorecard,
     visualops_scorecard,
 )
+from nexusnet.context_graph import ContextGraphService
 
 
 def _repo_root() -> Path:
@@ -632,6 +644,16 @@ class NexusVisualizerService:
         tool_action_harness=None,
         runtime_decision_ledger=None,
         assimilation_catalog=None,
+        genesis_foundation=None,
+        genesis_event_spine=None,
+        genesis_heartbeat=None,
+        genesis_evidence_spine=None,
+        genesis_sensory_provenance=None,
+        genesis_memory_admission=None,
+        genesis_federated_outcomes=None,
+        genesis_self_repair=None,
+        genesis_dream_research=None,
+        context_graph: ContextGraphService | None = None,
     ):
         self.paths = paths
         self.teacher_registry = teacher_registry
@@ -656,6 +678,60 @@ class NexusVisualizerService:
         self.tool_action_harness = tool_action_harness or ToolActionHarness(artifacts_dir=paths.artifacts_dir)
         self.runtime_decision_ledger = runtime_decision_ledger or RuntimeDecisionLedger(artifacts_dir=paths.artifacts_dir)
         self.assimilation_catalog = assimilation_catalog or AssimilationTargetCatalog()
+        self.context_graph = context_graph or ContextGraphService(artifacts_dir=paths.artifacts_dir)
+        self.genesis_foundation = genesis_foundation or GenesisFoundationStatusService(
+            artifacts_dir=paths.artifacts_dir,
+            project_root=paths.project_root,
+        )
+        self.genesis_event_spine = (
+            genesis_event_spine
+            or getattr(genesis_heartbeat, "event_spine", None)
+            or GenesisEventSpineService(
+                artifacts_dir=paths.artifacts_dir,
+                project_root=paths.project_root,
+            )
+        )
+        self.genesis_heartbeat = genesis_heartbeat or GenesisHeartbeatService(
+            artifacts_dir=paths.artifacts_dir,
+            project_root=paths.project_root,
+            event_spine=self.genesis_event_spine,
+        )
+        self.genesis_evidence_spine = genesis_evidence_spine or GenesisEvidenceSpineService(
+            artifacts_dir=paths.artifacts_dir,
+            project_root=paths.project_root,
+            heartbeat_service=self.genesis_heartbeat,
+            event_spine=self.genesis_event_spine,
+        )
+        self.genesis_sensory_provenance = genesis_sensory_provenance or GenesisSensoryProvenanceService(
+            artifacts_dir=paths.artifacts_dir,
+            project_root=paths.project_root,
+            event_spine=self.genesis_event_spine,
+        )
+        self.genesis_memory_admission = genesis_memory_admission or GenesisMemoryAdmissionService(
+            artifacts_dir=paths.artifacts_dir,
+            project_root=paths.project_root,
+            sensory_service=self.genesis_sensory_provenance,
+            event_spine=self.genesis_event_spine,
+        )
+        self.genesis_federated_outcomes = genesis_federated_outcomes or GenesisFederatedOutcomeService(
+            artifacts_dir=paths.artifacts_dir,
+            project_root=paths.project_root,
+            event_spine=self.genesis_event_spine,
+        )
+        self.genesis_self_repair = genesis_self_repair or GenesisSelfRepairService(
+            artifacts_dir=paths.artifacts_dir,
+            project_root=paths.project_root,
+            event_spine=self.genesis_event_spine,
+            evidence_spine=self.genesis_evidence_spine,
+            federated_outcomes=self.genesis_federated_outcomes,
+        )
+        self.genesis_dream_research = genesis_dream_research or GenesisDreamResearchService(
+            artifacts_dir=paths.artifacts_dir,
+            project_root=paths.project_root,
+            event_spine=self.genesis_event_spine,
+            self_repair=self.genesis_self_repair,
+            federated_outcomes=self.genesis_federated_outcomes,
+        )
         self.compiler = NexusVisualizerCompiler()
         self.scene = self.compiler.compile_scene()
         self.telemetry = VisualizerTelemetryAdapter(
@@ -1331,6 +1407,12 @@ class NexusVisualizerService:
         retrieval_summary = snapshot.get("retrieval") or {}
         promotions = snapshot.get("promotions") or {}
         aos = snapshot.get("aos") or {}
+        unified_node_contracts = (
+            ((aos.get("replay") or {}).get("unified_node_contract_registry"))
+            if isinstance(aos.get("replay"), dict)
+            else {}
+        ) or {}
+        teacher_governance = unified_node_contracts.get("teacher_governance") or {}
         agents = snapshot.get("agents") or {}
         core_execution = snapshot.get("core_execution") or {}
         release_wrapper_runtime = snapshot.get("release_runtime") or {}
@@ -1428,6 +1510,46 @@ class NexusVisualizerService:
             }
         )
         project_heartbeat_replay = release_wrapper_runtime.get("project_heartbeat_replay") or {}
+        genesis_foundation_status = self.genesis_foundation.summary(session_id=session_id)
+        genesis_event_spine_status = self.genesis_event_spine.summary(session_id=session_id, limit=100)
+        genesis_heartbeat_status = self.genesis_heartbeat.summary(session_id=session_id)
+        genesis_evidence_spine_status = self.genesis_evidence_spine.summary(session_id=session_id)
+        genesis_self_repair_status = self.genesis_self_repair.summary(session_id=session_id)
+        genesis_immune_governance = getattr(self, "genesis_immune_governance", None)
+        genesis_immune_governance_status = (
+            genesis_immune_governance.summary()
+            if genesis_immune_governance is not None
+            else {
+                "surface_id": "genesis-immune-governance",
+                "status": "not-configured",
+                "evaluation_count": 0,
+                "quarantine_count": 0,
+                "approved_promotion_count": 0,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+            }
+        )
+        genesis_dream_research_status = self.genesis_dream_research.summary(session_id=session_id)
+        genesis_federated_outcome_status = self.genesis_federated_outcomes.summary(session_id=session_id)
+        genesis_sensory_provenance_status = self.genesis_sensory_provenance.summary(session_id=session_id)
+        genesis_memory_admission_status = self.genesis_memory_admission.summary(session_id=session_id)
+        genesis_memory_replay_status = self.genesis_memory_admission.replay(session_id=session_id, limit=100)
+        genesis_memory_replay_promotion_gate_status = self.genesis_memory_admission.promotion_gate_summary(
+            session_id=session_id,
+            limit=100,
+        )
+        genesis_memory_foundation_status = genesis_memory_replay_promotion_gate_status.get(
+            "memory_foundation_status",
+            {
+                "surface_id": "genesis-memory-foundation",
+                "status": "not-configured",
+                "honest_status_label": "genesis-layer7-memory-foundation-not-configured",
+                "active_memory_count": 0,
+                "revoked_memory_count": 0,
+                "raw_content_included": False,
+            },
+        )
+        context_graph_status = self.context_graph.compact_summary()
         native_project_heartbeat_replay_status = {
             "surface_id": "project-heartbeat-native-replay-control-status",
             "status": (
@@ -1812,7 +1934,13 @@ class NexusVisualizerService:
         runtime_candidates = runtime_summary.get("candidates") or []
         teacher_profiles = ((snapshot.get("teachers") or {}).get("profiles") or [])
         memory_configs = memory_planes.get("configs") or []
-        ao_records = aos.get("orchestrators") or aos.get("aos") or aos.get("items") or []
+        ao_records = (
+            aos.get("active_aos")
+            or aos.get("orchestrators")
+            or aos.get("aos")
+            or aos.get("items")
+            or []
+        )
         agent_capabilities = agents.get("capabilities") or []
         promotion_items = promotions.get("items") or []
         extension_summary = goose_extensions if isinstance(goose_extensions, dict) else {}
@@ -2220,14 +2348,38 @@ class NexusVisualizerService:
             page(
                 "ao-hive",
                 "AO Hive",
-                state=map_state(ao_records, "static-canon"),
+                state=(
+                    "live"
+                    if str(unified_node_contracts.get("status") or "").startswith("live-contract-registry")
+                    else map_state(ao_records, "static-canon")
+                ),
                 summary="AO roles, active work, context shards, model/tool permissions, and collaboration state.",
                 metrics={
                     "ao_count": count(ao_records),
                     "agent_capability_count": count(agent_capabilities),
                     "active_agent_id": (agents.get("session_provenance") or {}).get("active_agent_id"),
+                    "node_contract_registry_status": unified_node_contracts.get("status"),
+                    "node_contract_count": unified_node_contracts.get("contract_count", 0),
+                    "complete_node_contract_count": unified_node_contracts.get("complete_contract_count", 0),
+                    "temporary_child_count": unified_node_contracts.get("temporary_child_count", 0),
+                    "retirement_event_count": unified_node_contracts.get("retirement_event_count", 0),
+                    "teacher_governance_status": teacher_governance.get("status"),
+                    "teacher_governance_honest_status": teacher_governance.get("honest_status_label"),
+                    "teacher_candidate_intake_count": teacher_governance.get("persisted_candidate_intake_count", 0),
+                    "verified_teacher_birth_count": teacher_governance.get("verified_birth_count", 0),
+                    "blocked_teacher_birth_count": teacher_governance.get("blocked_birth_count", 0),
+                    "teacher_replacement_recommendation_count": teacher_governance.get(
+                        "teacher_replacement_recommendation_count",
+                        0,
+                    ),
                 },
-                refs=["/ops/brain/subagents", "/ops/brain/agents/scheduled"],
+                refs=[
+                    "/ops/brain/aos",
+                    "/ops/brain/genesis-node-contracts",
+                    "/ops/brain/genesis-teacher-governance",
+                    "/ops/brain/subagents",
+                    "/ops/brain/agents/scheduled",
+                ],
                 required=["AO roles", "delegation state", "context ownership", "tool permissions"],
                 research=["agent-protocols", "autonomous-updates"],
             ),
@@ -2384,15 +2536,28 @@ class NexusVisualizerService:
             page(
                 "eval-center",
                 "Eval Center",
-                state=map_state(promotions or retrieval_summary or teacher_visibility.get("scorecards"), "static-canon"),
+                state=(
+                    "live"
+                    if str(genesis_immune_governance_status.get("status") or "").startswith("live-")
+                    else map_state(promotions or retrieval_summary or teacher_visibility.get("scorecards"), "static-canon")
+                ),
                 summary="GAIA, tau-bench, OSWorld, SWE-bench, BrowserGym/WebArena, RAG, private NexusNet evals, and promotion blockers.",
                 metrics={
                     "promotion_candidate_count": count(promotion_items),
                     "teacher_scorecard_count": count(teacher_visibility.get("scorecards") or []),
                     "retrieval_review_count": count(retrieval_summary.get("promotion_reviews") or []),
                     "held_out_eval_state": "required",
+                    "immune_governance_status": genesis_immune_governance_status.get("status"),
+                    "closed_sandbox_evaluation_count": genesis_immune_governance_status.get("evaluation_count", 0),
+                    "quarantine_count": genesis_immune_governance_status.get("quarantine_count", 0),
+                    "approved_governed_promotion_count": genesis_immune_governance_status.get("approved_promotion_count", 0),
                 },
-                refs=["/ops/brain/promotions", "/ops/brain/promotions/evaluate", compare_refs.get("cost_energy")],
+                refs=[
+                    "/ops/brain/genesis-immune-governance",
+                    "/ops/brain/promotions",
+                    "/ops/brain/promotions/evaluate",
+                    compare_refs.get("cost_energy"),
+                ],
                 required=["EvalSuiteRegistry", "HeldOutTaskLedger", "TraceReplayEvalHarness", "regression gates"],
                 research=["agent-evals", "memory-rag-kg"],
             ),
@@ -2768,6 +2933,20 @@ class NexusVisualizerService:
             "release_wrapper_privacy_consent_enforcement": release_wrapper_privacy_consent_enforcement,
             "release_wrapper_privacy_retention_enforcement": release_wrapper_privacy_retention_enforcement,
             "project_heartbeat": project_heartbeat,
+            "genesis_foundation_status": genesis_foundation_status,
+            "genesis_event_spine_status": genesis_event_spine_status,
+            "genesis_heartbeat_status": genesis_heartbeat_status,
+            "genesis_evidence_spine_status": genesis_evidence_spine_status,
+            "genesis_self_repair_status": genesis_self_repair_status,
+            "genesis_immune_governance_status": genesis_immune_governance_status,
+            "genesis_dream_research_status": genesis_dream_research_status,
+            "genesis_federated_outcome_status": genesis_federated_outcome_status,
+            "genesis_sensory_provenance_status": genesis_sensory_provenance_status,
+            "genesis_memory_admission_status": genesis_memory_admission_status,
+            "genesis_memory_replay_status": genesis_memory_replay_status,
+            "genesis_memory_replay_promotion_gate_status": genesis_memory_replay_promotion_gate_status,
+            "genesis_memory_foundation_status": genesis_memory_foundation_status,
+            "context_graph_status": context_graph_status,
             "project_heartbeat_native_replay_status": native_project_heartbeat_replay_status,
             "release_wrapper_telemetry": release_wrapper_telemetry,
             "release_wrapper_self_repair_ledger": release_wrapper_self_repair_ledger,
@@ -2807,6 +2986,20 @@ class NexusVisualizerService:
                 "dataset_flow_view": "overlay.control_panel.dataset_flow_view",
                 "knowledge_artifacts": "/ops/brain/knowledge-artifacts",
                 "project_heartbeat": "overlay.control_panel.project_heartbeat",
+                "genesis_foundation_status": "/ops/brain/genesis-foundation",
+                "genesis_event_spine_status": "/ops/brain/genesis-event-spine",
+                "genesis_heartbeat_status": "/ops/brain/genesis-heartbeat",
+                "genesis_evidence_spine_status": "/ops/brain/genesis-evidence-spine",
+                "genesis_self_repair_status": "/ops/brain/genesis-self-repair",
+                "genesis_immune_governance_status": "/ops/brain/genesis-immune-governance",
+                "genesis_dream_research_status": "/ops/brain/genesis-dream-research",
+                "genesis_federated_outcome_status": "/ops/brain/genesis-federated-outcomes",
+                "genesis_sensory_provenance_status": "/ops/brain/genesis-sensory-provenance",
+                "genesis_memory_admission_status": "/ops/brain/genesis-memory-admission",
+                "genesis_memory_replay_status": "/ops/brain/genesis-memory-replay",
+                "genesis_memory_replay_promotion_gate_status": "/ops/brain/genesis-memory-replay/promotion-gate",
+                "genesis_memory_foundation_status": "/ops/brain/genesis-memory-foundation",
+                "context_graph_status": "/ops/brain/context-graph",
                 "project_heartbeat_native_replay_status": (
                     "overlay.control_panel.project_heartbeat_native_replay_status"
                 ),

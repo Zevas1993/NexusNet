@@ -7,6 +7,15 @@ from .primitives import InferencePrimitiveRegistry
 from .schemas import ExecutionPlan, HardwareCapabilityGraph, ModelExecutionFingerprint, SLOProfile, WorkloadProfile
 
 
+INFERENCE_EVOLUTION_ASSIMILATION_TARGET_IDS = (
+    "nanochat-constrained-hardware-reference",
+)
+"""Source-backed target for bounded plan-scale and quality/throughput tradeoff work.
+
+See docs/assimilation/videos/2026-07-14/11-nanochat-constrained-hardware-reference-spec.md.
+"""
+
+
 class ExecutionPlanSynthesizer:
     def __init__(self, registry: InferencePrimitiveRegistry | None = None) -> None:
         self.registry = registry or InferencePrimitiveRegistry.default()
@@ -20,6 +29,7 @@ class ExecutionPlanSynthesizer:
         priors: dict[str, float] | None = None,
     ) -> list[ExecutionPlan]:
         feature_key = self.feature_key(graph, fingerprint, workload)
+        runtime_threads = self._runtime_threads(graph)
         reference = ExecutionPlan(
             plan_id="plan::portable-reference",
             primitive_ids=["portable.cpu-reference", "transfer.pageable"],
@@ -31,6 +41,7 @@ class ExecutionPlanSynthesizer:
                 "runtime_batch_tokens": self._runtime_batch_tokens(workload, slo),
                 "context_tokens": min(fingerprint.context_length, workload.prompt_tokens + workload.max_new_tokens),
                 "max_new_tokens": workload.max_new_tokens,
+                "threads": runtime_threads,
             },
             fallback_plan_id=None,
             estimated_peak_ram_bytes=min(fingerprint.tensor_bytes, 256 * 1024 * 1024),
@@ -56,6 +67,7 @@ class ExecutionPlanSynthesizer:
                         "runtime_batch_tokens": self._runtime_batch_tokens(workload, slo),
                         "context_tokens": min(fingerprint.context_length, workload.prompt_tokens + workload.max_new_tokens),
                         "max_new_tokens": workload.max_new_tokens,
+                        "threads": runtime_threads,
                     },
                     fingerprint,
                     feature_key,
@@ -74,6 +86,7 @@ class ExecutionPlanSynthesizer:
                         "runtime_batch_tokens": self._runtime_batch_tokens(workload, slo),
                         "context_tokens": min(fingerprint.context_length, workload.prompt_tokens + workload.max_new_tokens),
                         "max_new_tokens": workload.max_new_tokens,
+                        "threads": runtime_threads,
                     },
                     fingerprint,
                     feature_key,
@@ -96,6 +109,7 @@ class ExecutionPlanSynthesizer:
                         "runtime_batch_tokens": self._runtime_batch_tokens(workload, slo),
                         "context_tokens": min(fingerprint.context_length, workload.prompt_tokens + workload.max_new_tokens),
                         "max_new_tokens": workload.max_new_tokens,
+                        "threads": runtime_threads,
                     },
                     fingerprint,
                     feature_key,
@@ -137,6 +151,14 @@ class ExecutionPlanSynthesizer:
         if slo.objective == "memory":
             return max(32, base // 2)
         return base
+
+    @staticmethod
+    def _runtime_threads(graph: HardwareCapabilityGraph) -> int:
+        logical_units = max(
+            (node.logical_units or 1 for node in graph.nodes if node.kind == "cpu"),
+            default=1,
+        )
+        return max(1, min(64, logical_units // 2 or 1))
 
     @staticmethod
     def _plan(

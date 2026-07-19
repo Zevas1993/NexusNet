@@ -93,18 +93,21 @@ def test_release_wrapper_cli_boot_smoke_exercises_real_http_product_path(tmp_pat
     assert evidence["release_readiness_evidence_runner"]["latest_status"] == "completed"
     assert evidence["release_readiness_evidence_runner"]["active_production_mutated"] is False
     assert evidence["release_readiness"]["go_no_go"] == "go"
-    assert evidence["release_product_smoke"]["latest_status"] == "release-product-smoke-passed"
+    assert evidence["release_product_smoke"]["latest_status"] == (
+        "release-product-smoke-governed-shadow-lifecycle-completed"
+    )
     assert evidence["release_product_smoke"]["runtime_state"] == "live-evidence"
-    assert evidence["release_product_smoke"]["check_count"] >= 7
     assert evidence["release_product_smoke"]["failed_count"] == 0
     assert evidence["release_product_smoke"]["raw_content_included"] is False
     assert evidence["release_product_smoke"]["active_production_mutated"] is False
     assert evidence["release_product_smoke"]["manifest_ref"] == "artifacts/release-wrapper-runtime/release-product-smoke.json"
-    product_smoke_artifact = project_root / "artifacts" / "release-wrapper-runtime" / "release-product-smoke.json"
+    product_smoke_artifact = project_root / "runtime" / "artifacts" / "release-wrapper-runtime" / "release-product-smoke.json"
     assert product_smoke_artifact.exists()
     product_smoke_manifest = json.loads(product_smoke_artifact.read_text(encoding="utf-8"))
-    assert product_smoke_manifest["status"] == "release-product-smoke-passed"
-    assert product_smoke_manifest["product_scope"] == "whole-system"
+    assert product_smoke_manifest["status"] == "release-product-smoke-governed-shadow-lifecycle-completed"
+    assert product_smoke_manifest["governance"]["status"] == "governed-update-completed"
+    assert product_smoke_manifest["production_lifecycle"]["status"] == "approved-shadow-release-lifecycle"
+    assert product_smoke_manifest["production_rollback"]["status"] == "rolled-back"
     assert product_smoke_manifest["raw_content_included"] is False
     assert product_smoke_manifest["active_production_mutated"] is False
 

@@ -27,7 +27,10 @@ from nexusnet.hive.governed_route_candidate_evaluation import (
 from nexusnet.hive.multi_user_growth import MultiUserGrowthCoordinator
 from nexusnet.hive.project_heartbeat_cycle import run_native_project_heartbeat_cycle
 from nexusnet.hive.project_heartbeat_replay import PROJECT_HEARTBEAT_NATIVE_REPLAY_REF
-from nexusnet.hive.runtime_growth_federation import run_runtime_growth_federation_cycle
+from nexusnet.hive.runtime_growth_federation import (
+    attach_per_plane_sync_producers,
+    run_runtime_growth_federation_cycle,
+)
 from nexusnet.policy import PolicyKernel
 
 
@@ -46,6 +49,18 @@ NEURAL_RUNTIME_INPUT_CONTRACT = (
     "neural-bus-blackboard-sensory-temporal-memory-embedding-attention-normalization-gate-feedforward-"
     "microcircuit-pathway-transmission-plasticity-neuromodulator-latent-loop-kv-cache-backprop-"
     "optimizer-school-ledger-only"
+)
+PERSONALITY_PREFERENCE_KEY_ALLOWLIST = frozenset(
+    {
+        "concise",
+        "detailed",
+        "direct",
+        "federation-opt-in",
+        "step-by-step",
+        "structured",
+        "technical",
+        "tool-first",
+    }
 )
 
 
@@ -270,6 +285,28 @@ class HiveActivation(BaseModel):
     action_refs: list[str] = Field(default_factory=list)
     checkpoint_ref: str
     artifact_path: str | None = None
+    created_at: str
+
+
+class HivePersonalityPreferenceLedger(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    preference_ledger_id: str
+    surface_id: str = "hive-personality-preference-ledger-v0"
+    contract_id: str = "hive-personality-preference-ledger-v0"
+    run_id: str
+    session_ref_digest: str
+    task_ref_digest: str
+    source_ref_digest: str
+    privacy_consent_record_ref: str | None = None
+    personal_data_federation_allowed: bool = False
+    preference_keys: list[str] = Field(default_factory=list)
+    preference_vector: dict[str, int] = Field(default_factory=dict)
+    preference_feature_count: int = 0
+    preference_vector_digest: str
+    raw_content_included: bool = False
+    contains_personal_data: bool = False
+    active_production_mutation_allowed: bool = False
     created_at: str
 
 
@@ -1125,6 +1162,9 @@ class HiveNeuralSubstrate:
             self.substrate_dir / "route-candidate-rollbacks" if self.substrate_dir else None
         )
         self.project_heartbeat_dir = self.substrate_dir / "project-heartbeats" if self.substrate_dir else None
+        self.personality_preference_dir = (
+            self.substrate_dir / "personality-preferences" if self.substrate_dir else None
+        )
         for path in [
             self.activation_dir,
             self.sensory_input_dir,
@@ -1180,6 +1220,7 @@ class HiveNeuralSubstrate:
             self.route_candidate_approval_dir,
             self.route_candidate_rollback_dir,
             self.project_heartbeat_dir,
+            self.personality_preference_dir,
         ]:
             if path is not None:
                 path.mkdir(parents=True, exist_ok=True)
@@ -1187,6 +1228,7 @@ class HiveNeuralSubstrate:
         self.harmonic_geometry = _harmonic_geometry_kernel()
         self.planes = _planes(self.harmonic_geometry)
         self.nodes = _seed_nodes()
+        self._artifact_cache: dict[Path, list[tuple[int, dict[str, Any]]]] = {}
         self.hydrate_runtime_growth_from_artifacts()
 
     def hydrate_runtime_growth_from_artifacts(
@@ -1285,6 +1327,7 @@ class HiveNeuralSubstrate:
             if not project_heartbeat_session_ref
             or record.get("session_ref_digest") == project_heartbeat_session_ref
         ]
+        personality_preference_records = self._personality_preference_artifacts(session_id=session_id)
         runtime_growth_receipts = [
             run.get("runtime_growth_receipt")
             for run in runs
@@ -1346,6 +1389,9 @@ class HiveNeuralSubstrate:
                 ),
                 "global_latest_runtime_receipt": global_latest_runtime_receipt,
             },
+            "personality_preference_ledger": _personality_preference_ledger_summary(
+                personality_preference_records
+            ),
             "activation_ledger": _activation_ledger(activations),
             "sensory_input_ledger": _sensory_input_ledger(sensory_inputs),
             "embedding_tensor_ledger": _embedding_tensor_ledger(embedding_tensors),
@@ -1485,6 +1531,9 @@ class HiveNeuralSubstrate:
             ),
             "latest_runtime_growth_receipt": runtime_growth_receipts[0] if runtime_growth_receipts else None,
             "latest_runtime_growth_packet": runtime_growth_packets[0] if runtime_growth_packets else None,
+            "latest_personality_preference": (
+                personality_preference_records[0] if personality_preference_records else None
+            ),
             "required_controls": _required_controls(),
             "operator_actions": _operator_actions(),
             "substrate_boundary": "graph-recurrent-sparse-moe-memory-harness-not-weight-training-yet",
@@ -1773,6 +1822,9 @@ class HiveNeuralSubstrate:
 
     def run_forward_pass(self, request: HiveForwardPassRequest | dict[str, Any]) -> dict[str, Any]:
         normalized = request if isinstance(request, HiveForwardPassRequest) else HiveForwardPassRequest.model_validate(request)
+        normalized = normalized.model_copy(
+            update={"metadata": _sanitize_hive_forward_metadata(normalized.metadata)}
+        )
         created_at = utcnow().isoformat()
         run_id = new_id("hive_forward")
         activation_id = new_id("hive_activation")
@@ -2014,6 +2066,34 @@ class HiveNeuralSubstrate:
             sensory_input_ledger=sensory_input_ledger,
             temporal_positional_ledger=temporal_positional_ledger,
             checkpoint=checkpoint,
+        )
+        personality_preference_ledger_id = new_id("hive_personality_preference")
+        personality_preference_artifact_path = self._artifact_path(
+            self.personality_preference_dir,
+            personality_preference_ledger_id,
+        )
+        personality_preference_ledger = _hive_personality_preference_payload(
+            preference_ledger_id=personality_preference_ledger_id,
+            run_id=run_id,
+            task_id=task_id,
+            created_at=created_at,
+            request=normalized,
+        )
+        federated_learning_packet["per_plane_sync"] = attach_per_plane_sync_producers(
+            federated_learning_packet.get("per_plane_sync") or {},
+            embedding_ref=embedding_tensor_ledger["embedding_ledger_id"],
+            temporal_ref=temporal_positional_ledger["temporal_ledger_id"],
+            tool_action_count=int(tool_execution_registry.get("action_count") or 0),
+            ungated_write_count=len((tool_execution_registry.get("write_gate") or {}).get("ungated_write_action_ids") or []),
+            hard_fail_count=int(policy_scan.summary.active_hard_fail_count),
+            immune_finding_count=len(immune_findings),
+            personality_preference_ref=personality_preference_ledger["preference_ledger_id"],
+            personality_preference_feature_count=personality_preference_ledger[
+                "preference_feature_count"
+            ],
+            personality_federation_allowed=personality_preference_ledger[
+                "personal_data_federation_allowed"
+            ],
         )
         attention_ledger_id = new_id("hive_attention")
         attention_routing_artifact_path = self._artifact_path(self.attention_routing_dir, attention_ledger_id)
@@ -2533,6 +2613,25 @@ class HiveNeuralSubstrate:
             "executable_dream_cycle_ref",
             executable_dream_cycle_ledger["dream_cycle_id"],
         )
+        federated_learning_packet["per_plane_sync"] = attach_per_plane_sync_producers(
+            federated_learning_packet.get("per_plane_sync") or {},
+            embedding_ref=embedding_tensor_ledger["embedding_ledger_id"],
+            temporal_ref=temporal_positional_ledger["temporal_ledger_id"],
+            tool_action_count=int(tool_execution_registry.get("action_count") or 0),
+            ungated_write_count=len((tool_execution_registry.get("write_gate") or {}).get("ungated_write_action_ids") or []),
+            hard_fail_count=int(policy_scan.summary.active_hard_fail_count),
+            immune_finding_count=len(immune_findings),
+            dream_cycle_ref=executable_dream_cycle_ledger["dream_cycle_id"],
+            dream_candidate_count=int(executable_dream_cycle_ledger.get("dream_candidate_count") or 0),
+            critic_review_count=len(executable_dream_cycle_ledger.get("critic_reviews") or []),
+            personality_preference_ref=personality_preference_ledger["preference_ledger_id"],
+            personality_preference_feature_count=personality_preference_ledger[
+                "preference_feature_count"
+            ],
+            personality_federation_allowed=personality_preference_ledger[
+                "personal_data_federation_allowed"
+            ],
+        )
         replay_drilldown_id = new_id("hive_deep_replay")
         deep_replay_drilldown_artifact_path = self._artifact_path(self.deep_replay_drilldown_dir, replay_drilldown_id)
         deep_replay_drilldown_ledger = _hive_deep_replay_drilldown_payload(
@@ -2644,12 +2743,24 @@ class HiveNeuralSubstrate:
             "backend_quantization_execution_ref",
             backend_quantization_execution_ledger["backend_execution_id"],
         )
+        source_brain_generate_status = (
+            normalized.metadata.get("brain_generate_status")
+            if str(normalized.source_ref).startswith("nexusbrain-generate::")
+            else None
+        )
+        source_runtime_degraded = str(source_brain_generate_status or "unknown").strip().lower() in {
+            "blocked",
+            "error",
+            "failed",
+            "runtime-unavailable",
+        }
+        project_heartbeat_blocked = blocked or source_runtime_degraded
         health_event = _hive_health_event_payload(
             run_id=run_id,
             session_id=normalized.session_id,
             task_id=task_id,
             created_at=created_at,
-            blocked=blocked,
+            blocked=project_heartbeat_blocked,
             neural_bus=neural_bus,
             hive_blackboard=hive_blackboard,
             selected_nodes=selected_nodes,
@@ -2660,7 +2771,7 @@ class HiveNeuralSubstrate:
         health_event["artifact_path"] = str(health_artifact_path) if health_artifact_path else None
         self_healing_route_around = None
         self_healing_artifact_path = None
-        if blocked:
+        if project_heartbeat_blocked:
             self_healing_route_around = _self_healing_route_around_payload(
                 run_id=run_id,
                 session_id=normalized.session_id,
@@ -2684,7 +2795,7 @@ class HiveNeuralSubstrate:
                 "run_id": run_id,
                 "session_id": normalized.session_id,
                 "created_at": created_at,
-                "blocked": blocked,
+                "blocked": project_heartbeat_blocked,
                 "nodes": self.nodes,
                 "selected_nodes": selected_nodes,
                 "activation": activation,
@@ -2710,6 +2821,7 @@ class HiveNeuralSubstrate:
                 "self_healing_route_around": self_healing_route_around,
                 "policy_scan": policy_scan.model_dump(mode="json"),
                 "immune_findings": immune_findings,
+                "source_brain_generate_status": source_brain_generate_status,
             },
             record_id=project_heartbeat_record_id,
             recorded_at=created_at,
@@ -2782,6 +2894,7 @@ class HiveNeuralSubstrate:
             "embedding_tensor_ledger": embedding_tensor_ledger,
             "temporal_positional_ledger": temporal_positional_ledger,
             "memory_engram_ledger": memory_engram_ledger,
+            "personality_preference_ledger": personality_preference_ledger,
             "attention_routing_ledger": attention_routing_ledger,
             "residual_normalization_ledger": residual_normalization_ledger,
             "sparse_expert_gate_ledger": sparse_expert_gate_ledger,
@@ -2844,6 +2957,7 @@ class HiveNeuralSubstrate:
         self._persist(embedding_tensor_artifact_path, embedding_tensor_ledger)
         self._persist(temporal_positional_artifact_path, temporal_positional_ledger)
         self._persist(memory_engram_artifact_path, memory_engram_ledger)
+        self._persist(personality_preference_artifact_path, personality_preference_ledger)
         self._persist(attention_routing_artifact_path, attention_routing_ledger)
         self._persist(residual_normalization_artifact_path, residual_normalization_ledger)
         self._persist(sparse_expert_gate_artifact_path, sparse_expert_gate_ledger)
@@ -3030,6 +3144,10 @@ class HiveNeuralSubstrate:
         limit: int = 20,
     ) -> dict[str, Any]:
         runs = self._list_artifacts(self.forward_dir, session_id=session_id, limit=limit)
+        personality_preferences = self._personality_preference_artifacts(
+            session_id=session_id,
+            limit=limit,
+        )
         sensory_inputs = self._list_artifacts(self.sensory_input_dir, session_id=session_id, limit=limit)
         embedding_tensors = self._list_artifacts(self.embedding_tensor_dir, session_id=session_id, limit=limit)
         temporal_positionals = self._list_artifacts(self.temporal_positional_dir, session_id=session_id, limit=limit)
@@ -3210,6 +3328,14 @@ class HiveNeuralSubstrate:
             and (run_id is None or run.get("run_id") == run_id)
         ]
         project_heartbeat_chain = project_heartbeat_records or embedded_project_heartbeat_chain
+        federated_per_plane_sync = _federated_per_plane_sync_replay(
+            (selected_run or {}).get("federated_learning_packet")
+        )
+        personality_preference_chain = [
+            record
+            for record in personality_preferences
+            if run_id is None or record.get("run_id") == run_id
+        ]
         return {
             "status_label": "LOCKED CANON",
             "surface_id": "hive-neural-substrate-replay-v0",
@@ -3225,6 +3351,8 @@ class HiveNeuralSubstrate:
             "federated_prior_ledger": _federated_prior_ledger(
                 self._list_artifacts(self.prior_dir, session_id=session_id, limit=limit)
             ),
+            "federated_per_plane_sync": federated_per_plane_sync,
+            "personality_preference_chain": personality_preference_chain,
             "checkpoint_chain": checkpoints,
             "sensory_input_chain": sensory_inputs,
             "embedding_tensor_chain": embedding_tensors,
@@ -3297,6 +3425,8 @@ class HiveNeuralSubstrate:
                     "neural_bus",
                     "hive_blackboard",
                     "federated_prior_ledger",
+                    "federated_per_plane_sync",
+                    "personality_preference_chain",
                     "checkpoint_chain",
                     "sensory_input_chain",
                     "embedding_tensor_chain",
@@ -3366,6 +3496,8 @@ class HiveNeuralSubstrate:
                     "neural_bus",
                     "hive_blackboard",
                     "federated_prior_ledger",
+                    "federated_per_plane_sync",
+                    "personality_preference_chain",
                     "checkpoint_chain",
                     "sensory_input_chain",
                     "embedding_tensor_chain",
@@ -3433,6 +3565,8 @@ class HiveNeuralSubstrate:
                     "plane_trace": 1 if selected_run and selected_run.get("plane_trace") else 0,
                     "neural_bus": 1 if selected_run and selected_run.get("neural_bus") else 0,
                     "hive_blackboard": 1 if selected_run and selected_run.get("hive_blackboard") else 0,
+                    "federated_per_plane_sync": 1 if federated_per_plane_sync.get("packet_ref") else 0,
+                    "personality_preference_chain": len(personality_preference_chain),
                     "sensory_input_chain": len(sensory_inputs),
                     "embedding_tensor_chain": len(embedding_tensors),
                     "temporal_positional_chain": len(temporal_positionals),
@@ -4665,6 +4799,7 @@ class HiveNeuralSubstrate:
     def _persist(self, path: Path | None, payload: dict[str, Any]) -> None:
         if path is not None:
             path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            self._artifact_cache.pop(path.parent, None)
             index_path = path.parent / "_index.jsonl"
             record = {
                 "artifact_file": path.name,
@@ -4718,18 +4853,60 @@ class HiveNeuralSubstrate:
     def _list_artifacts(self, directory: Path | None, *, session_id: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
         if directory is None or not directory.exists():
             return []
-        payloads: list[tuple[int, dict[str, Any]]] = []
-        for path in directory.glob("*.json"):
-            try:
-                payload = json.loads(path.read_text(encoding="utf-8"))
-                modified_at = path.stat().st_mtime_ns
-            except (OSError, json.JSONDecodeError):
-                continue
-            if session_id and payload.get("session_id") != session_id:
-                continue
-            payloads.append((modified_at, payload))
-        payloads.sort(key=lambda item: (item[1].get("created_at") or "", item[0]), reverse=True)
+        payloads = self._artifact_cache.get(directory)
+        if payloads is None:
+            payloads = []
+            for path in directory.glob("*.json"):
+                try:
+                    payload = json.loads(path.read_text(encoding="utf-8"))
+                    modified_at = path.stat().st_mtime_ns
+                except (OSError, json.JSONDecodeError):
+                    continue
+                payloads.append((modified_at, payload))
+            payloads.sort(key=lambda item: (item[1].get("created_at") or "", item[0]), reverse=True)
+            self._artifact_cache[directory] = payloads
+        if session_id:
+            payloads = [item for item in payloads if item[1].get("session_id") == session_id]
         return [payload for _, payload in payloads[:limit]]
+
+    def _personality_preference_artifacts(
+        self,
+        *,
+        session_id: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        session_ref_digest = _privacy_digest(session_id) if session_id else None
+        records = self._list_artifacts(self.personality_preference_dir, limit=500)
+        if session_ref_digest:
+            records = [
+                record
+                for record in records
+                if record.get("session_ref_digest") == session_ref_digest
+            ]
+        return records[:limit]
+
+    def local_personality_preference_overlay(
+        self,
+        *,
+        session_id: str | None,
+    ) -> dict[str, Any]:
+        """Resolve the newest usable local response-style vector for one session.
+
+        This deliberately reads only the local profile ledger. Federation consent and
+        federated packets never participate in response-style inference.
+        """
+        records = self._personality_preference_artifacts(session_id=session_id, limit=500)
+        for record in records:
+            preference_keys = _local_personality_response_style_keys(record.get("preference_keys"))
+            if preference_keys:
+                return _local_personality_preference_overlay_payload(
+                    preference_keys=preference_keys,
+                    profile_recorded=True,
+                )
+        return _local_personality_preference_overlay_payload(
+            preference_keys=[],
+            profile_recorded=bool(records),
+        )
 
     def _find_route_candidate_evaluation(
         self,
@@ -10496,6 +10673,136 @@ def _federated_prior_update(
 
 def _federated_prior_ledger(prior_updates: list[dict[str, Any]]) -> dict[str, Any]:
     return build_federated_prior_ledger(prior_updates)
+
+
+def _sanitize_hive_forward_metadata(metadata: Any) -> dict[str, Any]:
+    sanitized = dict(metadata) if isinstance(metadata, dict) else {}
+    if "personality_preference_keys" not in sanitized:
+        return sanitized
+    supplied_keys = sanitized.get("personality_preference_keys")
+    raw_keys = supplied_keys if isinstance(supplied_keys, list) else []
+    sanitized["personality_preference_keys"] = sorted(
+        {
+            str(value).strip().lower()
+            for value in raw_keys
+            if str(value).strip().lower() in PERSONALITY_PREFERENCE_KEY_ALLOWLIST
+        }
+    )
+    return sanitized
+
+
+def _hive_personality_preference_payload(
+    *,
+    preference_ledger_id: str,
+    run_id: str,
+    task_id: str,
+    created_at: str,
+    request: HiveForwardPassRequest,
+) -> dict[str, Any]:
+    metadata = request.metadata if isinstance(request.metadata, dict) else {}
+    preference_keys = list(metadata.get("personality_preference_keys") or [])
+    preference_vector = {key: 1 for key in preference_keys}
+    consent_record_id = str(metadata.get("privacy_consent_record_id") or "").strip()
+    return HivePersonalityPreferenceLedger(
+        preference_ledger_id=preference_ledger_id,
+        run_id=run_id,
+        session_ref_digest=_privacy_digest(request.session_id),
+        task_ref_digest=_privacy_digest(task_id),
+        source_ref_digest=_privacy_digest(request.source_ref),
+        privacy_consent_record_ref=(
+            f"consent::{_privacy_digest(consent_record_id)}" if consent_record_id else None
+        ),
+        personal_data_federation_allowed=metadata.get("personal_data_federation_allowed") is True,
+        preference_keys=preference_keys,
+        preference_vector=preference_vector,
+        preference_feature_count=len(preference_keys),
+        preference_vector_digest=_privacy_digest(json.dumps(preference_vector, sort_keys=True)),
+        created_at=created_at,
+    ).model_dump(mode="json")
+
+
+def _personality_preference_ledger_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
+    latest = records[0] if records else {}
+    return {
+        "surface_id": "hive-personality-preference-ledger-summary-v0",
+        "status": "live-sanitized-ledger" if latest else "not-recorded",
+        "record_count": len(records),
+        "latest_preference_ledger_id": latest.get("preference_ledger_id"),
+        "latest_preference_feature_count": int(latest.get("preference_feature_count") or 0),
+        "personal_data_federation_allowed": bool(
+            latest.get("personal_data_federation_allowed")
+        ),
+        "raw_content_included": False,
+        "contains_personal_data": False,
+        "active_production_mutation_allowed": False,
+    }
+
+
+def _local_personality_response_style_keys(value: Any) -> list[str]:
+    raw_keys = value if isinstance(value, list) else []
+    return sorted(
+        {
+            str(key).strip().lower()
+            for key in raw_keys
+            if str(key).strip().lower() in PERSONALITY_PREFERENCE_KEY_ALLOWLIST
+            and str(key).strip().lower() != "federation-opt-in"
+        }
+    )
+
+
+def _local_personality_preference_overlay_payload(
+    *,
+    preference_keys: list[str],
+    profile_recorded: bool,
+) -> dict[str, Any]:
+    return {
+        "surface_id": "hive-local-personality-preference-overlay-v0",
+        "status": "active-local-session-overlay" if preference_keys else "no-local-preferences",
+        "profile_recorded": profile_recorded,
+        "applied_preference_keys": preference_keys,
+        "preference_feature_count": len(preference_keys),
+        "federated_packet_used": False,
+        "federation_consent_consulted": False,
+        "raw_content_included": False,
+        "contains_personal_data": False,
+        "active_production_mutation_allowed": False,
+        "active_production_mutated": False,
+    }
+
+
+def _federated_per_plane_sync_replay(packet: Any) -> dict[str, Any]:
+    """Project the persisted federation receipt without replaying private payloads."""
+    safe_packet = packet if isinstance(packet, dict) else {}
+    receipt = safe_packet.get("per_plane_sync")
+    safe_receipt = receipt if isinstance(receipt, dict) else {}
+    plane_fields = (
+        "canonical_plane",
+        "sync_allowed",
+        "payload_mode",
+        "producer_status",
+        "producer_ref",
+        "action_count",
+        "ungated_write_count",
+        "hard_fail_count",
+        "immune_finding_count",
+        "dream_candidate_count",
+        "critic_review_count",
+    )
+    planes = [
+        {field: plane[field] for field in plane_fields if field in plane}
+        for plane in safe_receipt.get("planes") or []
+        if isinstance(plane, dict)
+    ]
+    return {
+        "surface_id": "hive-federated-per-plane-sync-replay-v0",
+        "status": safe_receipt.get("status") or "not-available",
+        "policy_ref": safe_receipt.get("policy_ref"),
+        "packet_ref": safe_packet.get("packet_id"),
+        "plane_count": len(planes),
+        "planes": planes,
+        "raw_content_included": False,
+        "contains_personal_data": False,
+    }
 
 
 def _sum_prior_deltas(prior_updates: list[dict[str, Any]], key: str) -> dict[str, float]:

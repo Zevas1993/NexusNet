@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from datetime import datetime
@@ -46,6 +47,7 @@ class ExecutionAuthorityService:
         "memory_hierarchy_mutation",
         "citation_research_ingestion",
         "model_growth_cycle",
+        "model_inference",
     }
 
     ALLOW_DECISIONS = {"allow", "allowed", "approved", "passed", "grant", "granted"}
@@ -56,7 +58,7 @@ class ExecutionAuthorityService:
         self.events = events
 
     def summary(self, *, limit: int = 100) -> dict[str, Any]:
-        leases = self._leases(limit=limit)
+        leases = [self.public_lease(lease) for lease in self._leases(limit=limit)]
         return {
             "status_label": "STRONG ACCEPTED DIRECTION",
             "lease_count": len(leases),
@@ -159,6 +161,13 @@ class ExecutionAuthorityService:
         self._event("execution_authority.lease_requested", lease)
         return {"status_label": "STRONG ACCEPTED DIRECTION", "lease": lease}
 
+    def request_lease_public(self, **kwargs: Any) -> dict[str, Any]:
+        result = self.request_lease(**kwargs)
+        return {
+            "status_label": result["status_label"],
+            "lease": self.public_lease(result["lease"]),
+        }
+
     def evaluate(
         self,
         *,
@@ -207,6 +216,47 @@ class ExecutionAuthorityService:
         }
         self._event("execution_authority.lease_evaluated", {**lease, "decision": decision})
         return {"status_label": "STRONG ACCEPTED DIRECTION", "decision": decision, "lease": lease}
+
+    def evaluate_public(self, **kwargs: Any) -> dict[str, Any]:
+        result = self.evaluate(**kwargs)
+        return {
+            "status_label": result["status_label"],
+            "decision": copy.deepcopy(result["decision"]),
+            "lease": self.public_lease(result["lease"]),
+        }
+
+    def public_lease(self, lease: dict[str, Any]) -> dict[str, Any]:
+        """Return the operator-safe lease projection; raw records stay on the private artifact path."""
+        scope = lease.get("scope") if isinstance(lease.get("scope"), dict) else {}
+        approval_path = lease.get("approval_path") if isinstance(lease.get("approval_path"), dict) else {}
+        return {
+            "lease_id": str(lease["lease_id"]),
+            "status": str(lease.get("status") or "unknown"),
+            "capability": str(lease.get("capability") or "unknown"),
+            "scope_hash": str(lease.get("scope_hash") or ""),
+            "scope_key_count": len(scope),
+            "expires_at": lease.get("expires_at"),
+            "requested_execution": bool(lease.get("requested_execution")),
+            "requested_mutation": bool(lease.get("requested_mutation")),
+            "required_authority": copy.deepcopy(dict(lease.get("required_authority") or {})),
+            "execution_allowed": bool(lease.get("execution_allowed")),
+            "mutation_allowed": bool(lease.get("mutation_allowed")),
+            "policy_path": copy.deepcopy(list(lease.get("policy_path") or [])),
+            "approval_path": {
+                "decision": str(approval_path.get("decision") or "not_requested"),
+                "human_approval_is_not_execution_authority": bool(
+                    approval_path.get("human_approval_is_not_execution_authority", True)
+                ),
+            },
+            "product_sweep_gate_count": len(list(lease.get("product_sweep_gate_ids") or [])),
+            "product_sweep_decision": str(lease.get("product_sweep_decision") or "not_evaluated"),
+            "budget_configured": bool(lease.get("budget")),
+            "rollback_configured": bool(dict(lease.get("rollback_plan") or {}).get("strategy")),
+            "evidence_configured": bool(lease.get("evidence")),
+            "artifact_ref": self._artifact_ref(str(lease["lease_id"])),
+            "artifact_available": Path(str(lease.get("artifact_path") or "")).exists(),
+            "created_at": lease.get("created_at"),
+        }
 
     def _required_authority(
         self,
@@ -288,9 +338,12 @@ class ExecutionAuthorityService:
                 "execution_allowed": decision.get("execution_allowed", lease.get("execution_allowed", False)),
                 "mutation_allowed": decision.get("mutation_allowed", lease.get("mutation_allowed", False)),
                 "decision": "allow" if decision.get("execution_allowed", lease.get("execution_allowed", False)) else "deny",
-                "artifact_path": lease.get("artifact_path"),
+                "artifact_ref": self._artifact_ref(str(lease["lease_id"])),
             },
         )
+
+    def _artifact_ref(self, lease_id: str) -> str:
+        return f"execution-authority://{lease_id}"
 
     def _counts(self, leases: list[dict[str, Any]], key: str) -> dict[str, int]:
         counts: dict[str, int] = {}

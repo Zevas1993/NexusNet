@@ -4,11 +4,14 @@ import hashlib
 import json
 import os
 import subprocess
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from nexus.api.app import create_app
+from nexusnet.providers.model_providers import EchoProvider
 from nexusnet.release_wrapper import (
     ReleaseWrapperRuntime,
     _build_nexusbrain_runtime_cycle_receipt,
@@ -27,6 +30,97 @@ CANON_CONTRACT_SOURCE_REFS = [
     "docs/assimilation/NEXUSNET_ALL_ASSIMILATION_TARGETS_CONSOLIDATED_2026-05-31.md",
     "docs/assimilation/FULL_CHAT_SPEC_TO_CURRENT_STATE_GAP_REPORT_2026-05-06.md",
 ]
+
+
+def _stored_autonomous_update_approval(client: TestClient, *, update_id: str) -> str:
+    approval = client.post(
+        "/ops/approvals",
+        json={
+            "subject": "release-wrapper-autonomous-update",
+            "decision": "approved",
+            "approver": "operator@example.invalid",
+            "rationale": "Approve this sandbox-only autonomous update test path.",
+            "metadata": {"update_id": update_id},
+        },
+    )
+    assert approval.status_code == 200
+    return str(approval.json()["decision_id"])
+
+
+def _approved_immune_governance_decision(
+    client: TestClient,
+    *,
+    candidate_ref: str,
+    command: str,
+) -> str:
+    evaluation = client.post(
+        "/ops/brain/genesis-immune-governance/candidates/evaluate",
+        json={
+            "candidate_ref": candidate_ref,
+            "candidate_kind": "autonomous-update-safe-apply",
+            "command": command,
+            "baseline_ref": f"baseline::{candidate_ref}",
+            "rollback_proof_ref": f"rollback-proof::{candidate_ref}",
+            "artifact_trust_ref": f"artifact-trust::{candidate_ref}",
+            "eval_case_refs": [f"eval-case::{candidate_ref}"],
+            "regression_suite_ref": "regression-suite::autonomous-update-safe-apply",
+            "judge_policy": {
+                "human_review_required": True,
+                "domain_check_required": True,
+                "calibrated_judge_refs": ["judge::autonomous-update-held-out"],
+            },
+        },
+    )
+    assert evaluation.status_code == 200, evaluation.text
+    candidate_id = str(evaluation.json()["candidate_id"])
+    decision = client.post(
+        f"/ops/brain/genesis-immune-governance/candidates/{candidate_id}/decide",
+        json={
+            "decision": "approve",
+            "approved_by": "autonomous-update-immune-admin",
+            "human_review_ref": f"human-review::{candidate_ref}",
+            "domain_check_ref": f"domain-check::{candidate_ref}",
+            "governance_ref": f"governance::{candidate_ref}",
+        },
+    )
+    assert decision.status_code == 200
+    assert decision.json()["promotion_allowed"] is True, decision.json()
+    return str(decision.json()["decision_id"])
+
+
+def _install_test_heartbeat_repair_approval(monkeypatch) -> None:
+    original = ReleaseWrapperRuntime._record_autonomous_update_governance_lifecycle
+
+    def _approved_heartbeat_repair(self, *args, **kwargs):
+        update_id = str(kwargs.get("update_id") or "")
+        heartbeat_repair_update = update_id.startswith(
+            (
+                "update::whole-system-heartbeat-repair::",
+                "update::whole-system-heartbeat-post-repair-self-repair::",
+                "update::release-wrapper-health-heartbeat-loop::",
+            )
+        )
+        heartbeat_repair_update = heartbeat_repair_update or (
+            kwargs.get("approval_ref")
+            == "operator-review::whole-system-heartbeat-post-repair-self-repair-governance"
+        )
+        if heartbeat_repair_update and kwargs.get("admin_approval") is None:
+            kwargs["admin_approval"] = {
+                "approval_ref": f"approval::test::{update_id}",
+                "approval_subject": "release-wrapper-autonomous-update",
+                "decision": "approved",
+                "approved_update_id": update_id,
+                "approver_digest": "sha256:test-operator",
+                "rationale_digest": "sha256:test-governed-heartbeat-repair",
+                "metadata_digest": "sha256:test-update-binding",
+            }
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(
+        ReleaseWrapperRuntime,
+        "_record_autonomous_update_governance_lifecycle",
+        _approved_heartbeat_repair,
+    )
 
 
 def _complete_nexusbrain_cycle_interaction() -> dict:
@@ -205,6 +299,25 @@ def test_release_wrapper_sandbox_command_falls_back_to_project_local_probe(tmp_p
     assert "test_release_wrapper_auto_sandbox_probe" in probe.read_text(encoding="utf-8")
 
 
+def test_release_wrapper_sandbox_command_rejects_missing_pytest_node_and_uses_existing_file(tmp_path: Path):
+    project_root = tmp_path / "project"
+    test_file = project_root / "tests" / "test_release_wrapper_runtime.py"
+    test_file.parent.mkdir(parents=True)
+    test_file.write_text(
+        "def test_existing_release_wrapper_probe():\n"
+        "    assert True\n",
+        encoding="utf-8",
+    )
+
+    command = _release_wrapper_sandbox_command_for_project(
+        project_root,
+        "pytest tests/test_release_wrapper_runtime.py::test_missing_release_wrapper_probe -q",
+    )
+
+    assert command == "pytest tests/test_release_wrapper_runtime.py -q"
+    assert not (project_root / "tests" / "release_wrapper_auto_sandbox_probe_test.py").exists()
+
+
 def test_root_boots_to_release_wrapper_entrypoint(tmp_path: Path):
     client = TestClient(create_app(str(make_project(tmp_path))))
 
@@ -351,34 +464,35 @@ def test_chat_turn_updates_release_wrapper_growth_federation_and_update_proposal
         == canon_receipt["receipt_id"]
     )
     automatic_repair_plan = payload["latest_interaction"]["release_health_automatic_repair_plan"]
-    assert automatic_repair_plan["status"] == "completed-heartbeat-supervisor-repair"
-    assert automatic_repair_plan["lifecycle_status"] == "completed"
-    assert automatic_repair_plan["actions"]["admin_approval"]["status"] == "admin-approved"
-    assert automatic_repair_plan["actions"]["sandbox_tests"]["status"] == "passed"
-    assert automatic_repair_plan["actions"]["apply"]["status"] == "applied-shadow-safe-file"
-    assert automatic_repair_plan["actions"]["rollback"]["status"] == "rolled-back"
+    assert automatic_repair_plan["status"] == "blocked-heartbeat-supervisor-repair-pending-admin-approval"
+    assert automatic_repair_plan["lifecycle_status"] == "pending-admin-approval"
+    assert automatic_repair_plan["actions"]["admin_approval"]["status"] == "pending-admin-approval"
+    assert automatic_repair_plan["actions"]["shadow_eval_replay"]["status"] == "not-linked"
+    assert "sandbox_tests" not in automatic_repair_plan["actions"]
+    assert "apply" not in automatic_repair_plan["actions"]
+    assert "rollback" not in automatic_repair_plan["actions"]
     assert automatic_repair_plan["subsystem_repair_envelope_count"] >= 1
     assert automatic_repair_plan["active_production_mutation_allowed"] is False
     assert automatic_repair_plan["active_production_mutated"] is False
     assert automatic_repair_plan["raw_content_included"] is False
     repair_history = payload["release_health_heartbeat_supervisor"]["repair_history"]
     assert repair_history["status"] == "recorded"
-    assert repair_history["latest_status"] == "completed-heartbeat-supervisor-repair"
+    assert repair_history["latest_status"] == "blocked-heartbeat-supervisor-repair-pending-admin-approval"
     assert repair_history["latest_run_id"] == automatic_repair_plan["run_id"]
     assert repair_history["latest_subsystem_repair_envelope_count"] == (
         automatic_repair_plan["subsystem_repair_envelope_count"]
     )
     latest_repair = repair_history["repairs"][-1]
     assert latest_repair["action_statuses"] == {
-        "admin_approval": "admin-approved",
-        "shadow_eval_replay": "passed-shadow",
-        "sandbox_tests": "passed",
-        "apply": "applied-shadow-safe-file",
-        "rollback": "rolled-back",
+        "admin_approval": "pending-admin-approval",
+        "shadow_eval_replay": "not-linked",
+        "sandbox_tests": "not-run",
+        "apply": "not-applied",
+        "rollback": "not-rolled-back",
     }
     latest_envelope = repair_history["latest_subsystem_repair_envelopes"][0]
-    assert latest_envelope["honest_status_label"] == "completed-shadow-safe-file-rollback-verified"
-    assert latest_envelope["admin_approval_ref"] == "operator-review::automatic-wrapper-interaction-repair"
+    assert latest_envelope["honest_status_label"] == "blocked-before-shadow-safe-file-rollback-completion"
+    assert latest_envelope["admin_approval_ref"] == "/ops/approvals"
     assert latest_envelope["raw_content_included"] is False
     assert latest_envelope["active_production_mutation_allowed"] is False
     assert latest_envelope["active_production_mutated"] is False
@@ -476,10 +590,10 @@ def test_chat_turn_updates_release_wrapper_growth_federation_and_update_proposal
     live_shadow_run = next(
         run for run in eval_registry["shadow_runs"] if run["run_id"] == live_eval_ref["shadow_run_id"]
     )
-    assert live_shadow_run["status"] == "passed-shadow"
-    assert live_shadow_run["operator_approved"] is True
-    assert live_shadow_run["promotion_allowed"] is True
-    assert live_shadow_run["shadow_findings"] == []
+    assert live_shadow_run["status"] == "blocked"
+    assert live_shadow_run["operator_approved"] is False
+    assert live_shadow_run["promotion_allowed"] is False
+    assert live_shadow_run["shadow_findings"]
     assert live_shadow_run["metadata"]["raw_content_included"] is False
     assert live_shadow_run["metadata"]["active_production_mutation_allowed"] is False
     assert "active_production_mutation_allowed" in latest_runtime_decision["quantization_state"]
@@ -828,6 +942,7 @@ def test_degraded_whole_system_heartbeat_runs_governed_repair_from_live_use(
     tmp_path: Path,
     monkeypatch,
 ):
+    _install_test_heartbeat_repair_approval(monkeypatch)
     project_root = make_project(tmp_path)
     session_id = "whole-system-heartbeat-repair-user"
     prompt = "Exercise a degraded whole-system heartbeat without leaking SECRET-HEARTBEAT-REPAIR."
@@ -1081,6 +1196,7 @@ def test_degraded_whole_system_heartbeat_recovers_growth_and_federation_from_liv
     tmp_path: Path,
     monkeypatch,
 ):
+    _install_test_heartbeat_repair_approval(monkeypatch)
     project_root = make_project(tmp_path)
     session_id = "whole-system-growth-federation-repair-user"
     prompt = "Recover global growth and federation without leaking SECRET-GROWTH-FEDERATION-REPAIR."
@@ -1287,6 +1403,7 @@ def test_degraded_whole_system_heartbeat_recovers_project_heartbeat_and_storage_
     tmp_path: Path,
     monkeypatch,
 ):
+    _install_test_heartbeat_repair_approval(monkeypatch)
     project_root = make_project(tmp_path)
     session_id = "whole-system-project-storage-repair-user"
     prompt = "Recover project heartbeat and replay storage without SECRET-PROJECT-STORAGE-REPAIR."
@@ -1477,6 +1594,7 @@ def test_degraded_whole_system_heartbeat_recovers_developmental_cortex_and_dream
     tmp_path: Path,
     monkeypatch,
 ):
+    _install_test_heartbeat_repair_approval(monkeypatch)
     project_root = make_project(tmp_path)
     session_id = "whole-system-developmental-dream-repair-user"
     prompt = "Recover developmental cortex and dream research without SECRET-DEVELOPMENTAL-DREAM-REPAIR."
@@ -1700,6 +1818,7 @@ def test_degraded_whole_system_heartbeat_recovers_authority_evals_tools_from_liv
     tmp_path: Path,
     monkeypatch,
 ):
+    _install_test_heartbeat_repair_approval(monkeypatch)
     project_root = make_project(tmp_path)
     session_id = "whole-system-authority-evals-tools-repair-user"
     prompt = "Recover authority evals and tool governance without SECRET-AUTHORITY-EVALS-TOOLS-REPAIR."
@@ -1912,6 +2031,7 @@ def test_degraded_whole_system_heartbeat_recovers_self_repair_update_governance_
     tmp_path: Path,
     monkeypatch,
 ):
+    _install_test_heartbeat_repair_approval(monkeypatch)
     project_root = make_project(tmp_path)
     session_id = "whole-system-self-repair-governance-repair-user"
     prompt = "Recover self repair update governance without SECRET-SELF-REPAIR-GOVERNANCE-REPAIR."
@@ -1945,10 +2065,25 @@ def test_degraded_whole_system_heartbeat_recovers_self_repair_update_governance_
                 "active_production_mutation_allowed": False,
                 "active_production_mutated": False,
             }
-        if approval_ref == "operator-review::whole-system-heartbeat-degraded-stage-repair":
+        if update_id.startswith("update::whole-system-heartbeat-repair::"):
             lifecycle_calls["repair_plan"] += 1
-        if approval_ref == "operator-review::whole-system-heartbeat-post-repair-self-repair-governance":
+        if (
+            update_id.startswith("update::release-wrapper::")
+            and approval_ref == "operator-review::release-wrapper-runtime-auto-governance"
+            and lifecycle_calls["suppressed_runtime_auto"] == 1
+        ):
             lifecycle_calls["post_repair_probe"] += 1
+        admin_approval = None
+        if (
+            approval_ref == "operator-review::release-wrapper-runtime-auto-governance"
+            and lifecycle_calls["suppressed_runtime_auto"] == 1
+        ):
+            admin_approval = {
+                "approval_ref": f"approval::test::{update_id}",
+                "approval_subject": "release-wrapper-autonomous-update",
+                "decision": "approved",
+                "approved_update_id": update_id,
+            }
         return original_lifecycle(
             session_id=session_id,
             update_id=update_id,
@@ -1956,6 +2091,7 @@ def test_degraded_whole_system_heartbeat_recovers_self_repair_update_governance_
             timeout_seconds=timeout_seconds,
             approved_by=approved_by,
             approval_ref=approval_ref,
+            admin_approval=admin_approval,
         )
 
     monkeypatch.setattr(
@@ -2186,6 +2322,14 @@ def test_release_wrapper_live_use_records_default_off_privacy_consent_for_federa
     assert packet_policy["personal_data_federation_allowed"] is False
     assert packet_policy["sanitized_metadata_federation_allowed"] is True
     assert packet_policy["federated_packet_scope"] == "sanitized-metadata-only"
+    default_personality_plane = next(
+        plane
+        for plane in runtime["latest_federated_packet"]["per_plane_sync"]["planes"]
+        if plane["canonical_plane"] == "personality"
+    )
+    assert default_personality_plane["producer_status"] == "live-local-only-consent-required"
+    assert default_personality_plane["personal_data_federation_allowed"] is False
+    assert "producer_ref" not in default_personality_plane
     assert runtime["federated_packet_outbox"]["privacy_consent"]["latest_record_id"] == latest_record["record_id"]
 
     dream_item = runtime["dream_research_queue"]["latest_item"]
@@ -2203,6 +2347,9 @@ def test_release_wrapper_live_use_records_default_off_privacy_consent_for_federa
     assert status_card["privacy_consent"]["latest_record_id"] == latest_record["record_id"]
     assert control_panel["release_wrapper_runtime"]["privacy_consent"]["latest_record_id"] == latest_record["record_id"]
     assert control_panel["release_wrapper_privacy_consent"]["status"] == consent["status"]
+    app_js = (project_root / "ui" / "control-panel" / "app.js").read_text(encoding="utf-8")
+    assert "latestPersonalityPlane" in app_js
+    assert "federated personality plane" in app_js
 
     restarted = TestClient(create_app(str(project_root)))
     replayed = restarted.get("/ops/wrapper/release-runtime", params={"session_id": session_id}).json()
@@ -2308,6 +2455,15 @@ def test_release_wrapper_privacy_consent_opt_in_and_revocation_gate_live_learnin
     assert opted_in_policy["federated_packet_scope"] == "sanitized-metadata-plus-consented-derived-features"
     assert opted_in_policy["raw_content_included"] is False
     assert opted_in_policy["contains_personal_data"] is False
+    opted_in_personality_plane = next(
+        plane
+        for plane in opted_in_runtime["latest_federated_packet"]["per_plane_sync"]["planes"]
+        if plane["canonical_plane"] == "personality"
+    )
+    assert opted_in_personality_plane["producer_status"] == "live-sanitized-producer"
+    assert opted_in_personality_plane["personal_data_federation_allowed"] is True
+    assert opted_in_personality_plane["producer_ref"].startswith("preference-vector::")
+    assert opted_in_personality_plane["preference_feature_count"] >= 1
 
     opted_in_dream_metadata = opted_in_runtime["dream_research_queue"]["latest_item"]["metadata"]
     assert opted_in_dream_metadata["privacy_consent_record_id"] == opted_in_record["record_id"]
@@ -2388,6 +2544,336 @@ def test_release_wrapper_privacy_consent_opt_in_and_revocation_gate_live_learnin
     assert "SECRET-CONSENT-GOVERNANCE-REVOKED" not in serialized
     assert session_id not in serialized
     assert str(project_root) not in serialized
+
+
+def test_openai_provider_wrapper_projects_sanitized_personality_preferences_into_native_hive(
+    tmp_path: Path,
+):
+    project_root = make_project(tmp_path)
+    client = TestClient(create_app(str(project_root)))
+    session_id = "provider-personality-preference-session"
+    secret = "SECRET-PROVIDER-PERSONALITY-PREFERENCE"
+
+    opt_in = client.post(
+        "/ops/wrapper/privacy-consent",
+        json={
+            "session_id": session_id,
+            "decision": "opt-in",
+            "personal_data_training_opt_in": True,
+            "personal_data_federation_allowed": True,
+            "personal_data_dream_training_allowed": False,
+            "approved_by": "admin",
+            "approval_ref": "provider-personality-preference-opt-in",
+        },
+    )
+    assert opt_in.status_code == 200
+
+    chat = client.post(
+        "/v1/chat/completions",
+        json={
+            "session_id": session_id,
+            "model": "nexusnet-offline",
+            "metadata": {
+                "personality_preference_keys": ["concise", "technical", secret],
+            },
+            "messages": [{"role": "user", "content": f"Do not retain or export {secret}."}],
+        },
+    )
+    assert chat.status_code == 200
+
+    runtime = client.get("/ops/wrapper/release-runtime", params={"session_id": session_id}).json()
+    packet = runtime["latest_federated_packet"]
+    personality_plane = next(
+        plane for plane in packet["per_plane_sync"]["planes"] if plane["canonical_plane"] == "personality"
+    )
+    replay = client.get("/ops/brain/hive-substrate/replay", params={"session_id": session_id}).json()
+    profile = replay["personality_preference_chain"][0]
+
+    assert profile["preference_keys"] == ["concise", "federation-opt-in", "technical"]
+    assert profile["personal_data_federation_allowed"] is True
+    assert personality_plane["producer_status"] == "live-sanitized-producer"
+    assert personality_plane["producer_ref"] == f"preference-vector::{profile['preference_ledger_id']}"
+    assert personality_plane["preference_feature_count"] == 3
+    assert secret not in json.dumps({"profile": profile, "packet": packet})
+    assert session_id not in json.dumps({"profile": profile, "packet": packet})
+
+
+def test_provider_inference_applies_persisted_local_personality_overlay_across_consent_changes_and_restart(
+    tmp_path: Path,
+):
+    class CapturingEchoProvider(EchoProvider):
+        def __init__(self) -> None:
+            super().__init__(provider_id="personality-capture", is_local=True)
+            self.requests: list[list[dict[str, str]]] = []
+
+        def complete(self, messages: list[dict[str, str]]) -> dict:
+            self.requests.append([dict(message) for message in messages])
+            return super().complete(messages)
+
+    project_root = make_project(tmp_path)
+    session_id = "local-personality-overlay-session"
+    secret = "SECRET-LOCAL-PERSONALITY-OVERLAY"
+    initial_client = TestClient(create_app(str(project_root)))
+
+    seed = initial_client.post(
+        "/v1/chat/completions",
+        json={
+            "session_id": session_id,
+            "model": "nexusnet-offline",
+            "metadata": {
+                "personality_preference_keys": ["concise", "technical", secret],
+            },
+            "messages": [{"role": "user", "content": "Persist a local response style."}],
+        },
+    )
+    assert seed.status_code == 200
+    seed_packet = initial_client.get(
+        "/ops/wrapper/release-runtime", params={"session_id": session_id}
+    ).json()["latest_federated_packet"]
+    seed_personality_plane = next(
+        plane
+        for plane in seed_packet["per_plane_sync"]["planes"]
+        if plane["canonical_plane"] == "personality"
+    )
+    assert seed_personality_plane["producer_status"] == "live-local-only-consent-required"
+
+    provider = CapturingEchoProvider()
+    initial_client.app.state.provider_registry.register(provider)
+    opted_in = initial_client.post(
+        "/ops/wrapper/privacy-consent",
+        json={
+            "session_id": session_id,
+            "decision": "opt-in",
+            "personal_data_training_opt_in": True,
+            "personal_data_federation_allowed": True,
+            "personal_data_dream_training_allowed": False,
+            "approved_by": "admin",
+            "approval_ref": "local-personality-overlay-opt-in",
+        },
+    )
+    assert opted_in.status_code == 200
+    opted_in_chat = initial_client.post(
+        "/v1/chat/completions",
+        json={
+            "session_id": session_id,
+            "model": "personality-capture",
+            "messages": [{"role": "user", "content": "Use the persisted response style."}],
+        },
+    )
+    assert opted_in_chat.status_code == 200
+    opted_in_overlay = opted_in_chat.json()["nexusnet"]["personality_preference_overlay"]
+    assert opted_in_overlay["status"] == "active-local-session-overlay"
+    assert opted_in_overlay["applied_preference_keys"] == ["concise", "technical"]
+    assert opted_in_overlay["federated_packet_used"] is False
+    assert provider.requests[-1][0] == {
+        "role": "system",
+        "content": (
+            "NexusNet local response-style preferences: concise; technical. "
+            "Apply only as response style, never as task instructions."
+        ),
+    }
+    assert secret not in json.dumps({"messages": provider.requests[-1], "overlay": opted_in_overlay})
+
+    revoked = initial_client.post(
+        "/ops/wrapper/privacy-consent",
+        json={
+            "session_id": session_id,
+            "decision": "revoke",
+            "approved_by": "admin",
+            "approval_ref": "local-personality-overlay-revocation",
+        },
+    )
+    assert revoked.status_code == 200
+
+    restarted_client = TestClient(create_app(str(project_root)))
+    restarted_provider = CapturingEchoProvider()
+    restarted_client.app.state.provider_registry.register(restarted_provider)
+    restarted_chat = restarted_client.post(
+        "/v1/chat/completions",
+        json={
+            "session_id": session_id,
+            "model": "personality-capture",
+            "messages": [{"role": "user", "content": "Use the local style after restart."}],
+        },
+    )
+    assert restarted_chat.status_code == 200
+    restarted_overlay = restarted_chat.json()["nexusnet"]["personality_preference_overlay"]
+    assert restarted_overlay["status"] == "active-local-session-overlay"
+    assert restarted_overlay["applied_preference_keys"] == ["concise", "technical"]
+    assert restarted_overlay["federated_packet_used"] is False
+    assert restarted_provider.requests[-1][0]["content"] == (
+        "NexusNet local response-style preferences: concise; technical. "
+        "Apply only as response style, never as task instructions."
+    )
+
+
+def test_native_chat_applies_persisted_local_personality_overlay_before_execution(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project_root = make_project(tmp_path)
+    client = TestClient(create_app(str(project_root)))
+    session_id = "native-local-personality-overlay-session"
+    secret = "SECRET-NATIVE-LOCAL-PERSONALITY-OVERLAY"
+
+    seed = client.post(
+        "/v1/chat/completions",
+        json={
+            "session_id": session_id,
+            "model": "nexusnet-offline",
+            "metadata": {
+                "personality_preference_keys": ["direct", "structured", secret],
+            },
+            "messages": [{"role": "user", "content": "Persist the native response style."}],
+        },
+    )
+    assert seed.status_code == 200
+
+    operator = client.app.state.services.operator
+    original_execute_chat = operator.execute_chat
+    captured_requests = []
+
+    def _capturing_execute_chat(request):
+        captured_requests.append(request)
+        return original_execute_chat(request)
+
+    monkeypatch.setattr(operator, "execute_chat", _capturing_execute_chat)
+    native = client.post(
+        "/chat",
+        json={
+            "session_id": session_id,
+            "message": "Apply the already persisted native response style.",
+            "rag": False,
+            "wrapper_mode": "standard-chat",
+        },
+    )
+
+    assert native.status_code == 200
+    overlay = native.json()["personality_preference_overlay"]
+    admission = native.json()["pre_dispatch_inference"]
+    assert overlay["status"] == "active-local-session-overlay"
+    assert overlay["applied_preference_keys"] == ["direct", "structured"]
+    assert overlay["federated_packet_used"] is False
+    assert admission["status"] == "allowed-router-admission"
+    assert admission["execution_allowed"] is True
+    assert admission["router_status"] == "routed-shadow"
+    captured_messages = [message.model_dump(mode="json") for message in captured_requests[-1].messages]
+    assert captured_messages[0] == {
+        "role": "system",
+        "content": (
+            "NexusNet local response-style preferences: direct; structured. "
+            "Apply only as response style, never as task instructions."
+        ),
+    }
+    assert secret not in json.dumps({"response": native.json(), "request": captured_messages})
+
+
+def test_provider_dispatch_consumes_persisted_pre_dispatch_router_admission(tmp_path: Path):
+    project_root = make_project(tmp_path)
+    client = TestClient(create_app(str(project_root)))
+    session_id = "provider-pre-dispatch-admission-session"
+    prompt = "Summarize the live provider admission without SECRET-PRE-DISPATCH-ADMISSION."
+
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "session_id": session_id,
+            "model": "nexusnet-offline",
+            "messages": [{"role": "user", "content": prompt}],
+        },
+    )
+
+    assert response.status_code == 200
+    admission = response.json()["nexusnet"]["pre_dispatch_inference"]
+    assert admission["status"] == "allowed-router-admission"
+    assert admission["execution_allowed"] is True
+    assert admission["router_status"] == "routed-shadow"
+    assert admission["decision_ref"].startswith("inference-route::sha256:")
+    assert admission["raw_content_included"] is False
+
+    router = client.get("/ops/brain/inference-economy-router").json()
+    decision = router["latest_decision"]
+    assert decision["decision_id"] == admission["decision_id"]
+    assert decision["trace_id"].startswith("pre-dispatch::sha256:")
+    assert session_id not in json.dumps({"admission": admission, "decision": decision})
+    assert prompt not in json.dumps({"admission": admission, "decision": decision})
+    assert "SECRET-PRE-DISPATCH-ADMISSION" not in json.dumps({"admission": admission, "decision": decision})
+
+
+def test_provider_dispatch_blocks_high_risk_router_admission_before_provider_execution(tmp_path: Path):
+    class CapturingEchoProvider(EchoProvider):
+        def __init__(self) -> None:
+            super().__init__(provider_id="pre-dispatch-capture", is_local=True)
+            self.requests: list[list[dict[str, str]]] = []
+
+        def complete(self, messages: list[dict[str, str]]) -> dict:
+            self.requests.append([dict(message) for message in messages])
+            return super().complete(messages)
+
+    project_root = make_project(tmp_path)
+    client = TestClient(create_app(str(project_root)))
+    provider = CapturingEchoProvider()
+    client.app.state.provider_registry.register(provider)
+    secret = "SECRET-PRE-DISPATCH-BLOCK"
+
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "session_id": "provider-pre-dispatch-block-session",
+            "model": "pre-dispatch-capture",
+            "metadata": {"inference_risk_level": "high", "private_marker": secret},
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Analyze this trading strategy and decide whether to execute a broker order.",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 409
+    admission = response.json()["detail"]["pre_dispatch_inference"]
+    assert admission["status"] == "blocked-router-admission"
+    assert admission["execution_allowed"] is False
+    assert admission["router_status"] == "blocked-pending-human-approval"
+    assert provider.requests == []
+    assert secret not in json.dumps(response.json())
+
+
+def test_router_auto_dispatches_only_through_a_live_registered_route_binding(tmp_path: Path):
+    class CapturingLmStudioProvider(EchoProvider):
+        def __init__(self) -> None:
+            super().__init__(provider_id="lmstudio", is_local=True)
+            self.requests: list[list[dict[str, str]]] = []
+
+        def complete(self, messages: list[dict[str, str]]) -> dict:
+            self.requests.append([dict(message) for message in messages])
+            return super().complete(messages)
+
+    project_root = make_project(tmp_path)
+    client = TestClient(create_app(str(project_root)))
+    provider = CapturingLmStudioProvider()
+    client.app.state.provider_registry.register(provider)
+
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "session_id": "router-auto-live-binding-session",
+            "model": "router:auto",
+            "messages": [{"role": "user", "content": "Run the native runtime admission."}],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    binding = payload["nexusnet"]["router_provider_binding"]
+    assert payload["nexusnet"]["provider_id"] == "lmstudio"
+    assert binding["status"] == "live-route-binding"
+    assert binding["execution_allowed"] is True
+    assert binding["router_provider_id"] == "ollama"
+    assert binding["wrapper_provider_id"] == "lmstudio"
+    assert binding["fallback_applied"] is True
+    assert provider.requests
 
 
 def test_release_wrapper_privacy_revocation_quarantines_existing_personal_data_learning_artifacts(tmp_path: Path):
@@ -2582,7 +3068,12 @@ def test_release_wrapper_revocation_blocks_personal_data_import_promotion_but_al
 
     blocked_admin = client.post(
         imported_governance["admin_approval_ref"],
-        json={"approved_by": "admin", "approval_ref": "operator-review::revoked-personal-data-import"},
+        json={
+            "approval_decision_id": _stored_autonomous_update_approval(
+                client,
+                update_id=imported_governance["proposal_update_id"],
+            )
+        },
     )
     assert blocked_admin.status_code == 400
     blocked_admin_detail = blocked_admin.json()["detail"]
@@ -2875,7 +3366,7 @@ def test_release_wrapper_privacy_retention_rejects_revoked_queue_items_and_repla
     assert str(project_root) not in serialized
 
 
-def test_successful_coding_chat_runs_domain_expert_growth_admin_replay_from_live_use(tmp_path: Path):
+def test_successful_coding_chat_requires_bound_admin_approval_for_sandbox_growth_lifecycle(tmp_path: Path):
     project_root = make_project(tmp_path)
     client = TestClient(create_app(str(project_root)))
     session_id = "successful-coding-domain-growth-user"
@@ -2890,25 +3381,8 @@ def test_successful_coding_chat_runs_domain_expert_growth_admin_replay_from_live
         },
     )
     assert chat.status_code == 200
-    admin_replay = client.post(
-        "/ops/wrapper/domain-expert-growth/admin-replay",
-        json={
-            "session_id": session_id,
-            "domain_ao": "CodingAO",
-            "approved_by": "release-wrapper-test-admin",
-            "approval_ref": "test-admin::successful-coding-domain-growth",
-            "requested_decision": "approved",
-        },
-    )
-    assert admin_replay.status_code == 200
-    assert admin_replay.json()["status"] == "recorded"
 
     runtime = client.get("/ops/wrapper/release-runtime", params={"session_id": session_id}).json()
-    status_card = client.get("/ops/wrapper/status-card", params={"session_id": session_id}).json()
-    lifecycle = client.get("/ops/wrapper/session-lifecycle", params={"session_id": session_id}).json()
-    visualizer = client.get("/ops/brain/visualizer/state", params={"session_id": session_id}).json()
-    control_panel = visualizer["overlay_state"]["control_panel"]
-
     latest_interaction = runtime["latest_interaction"]
     handoff = runtime["domain_teacher_eval_handoff"]
     matrix_rows = {
@@ -2923,47 +3397,118 @@ def test_successful_coding_chat_runs_domain_expert_growth_admin_replay_from_live
     assert handoff["latest_domain_ao"] == "CodingAO"
     assert handoff["latest_teacher_subject"] == "coder"
     assert handoff["passed"] is True
-    assert handoff["admin_eval_replay_count"] == 1
-    assert handoff["latest_admin_eval_replay_status"] == "passed-shadow"
-    assert handoff["latest_admin_eval_replay_id"]
-    assert handoff["latest_admin_promotion_decision_id"]
-    assert handoff["latest_admin_promotion_decision"] in {"approved", "shadow"}
-    assert handoff["latest_sandbox_takeover_evidence_status"] == "recorded"
-    assert handoff["latest_teacher_evidence_bundle_id"]
-    assert handoff["latest_takeover_scorecard_id"]
-    assert handoff["latest_growth_archive_candidate_id"]
+    assert handoff["admin_eval_replay_count"] == 0
+    assert handoff["latest_admin_eval_replay_status"] is None
+    assert handoff["latest_sandbox_takeover_evidence_status"] is None
     assert handoff["raw_content_included"] is False
     assert handoff["active_production_mutation_allowed"] is False
+    assert latest_interaction["domain_expert_growth_admin_replay_status"] == "pending-admin-approval"
+    assert domain_replay_row["status"] == "missing"
+    assert runtime["production_spine_release_lifecycle"]["latest_run"] is None
 
-    assert latest_interaction["domain_teacher_eval_handoff"]["admin_replay_status"] == "passed-shadow"
-    assert domain_replay_row["status"] == "covered"
-    assert domain_replay_row["honest_status_label"] == "covered"
-    assert any(
-        ref == f"latest_admin_eval_replay_id::{handoff['latest_admin_eval_replay_id']}"
-        for ref in domain_replay_row["evidence_refs"]
+    handoff_id = handoff["latest_handoff_id"]
+    admin_replay = client.post(
+        "/ops/wrapper/domain-expert-growth/admin-replay",
+        json={
+            "session_id": session_id,
+            "domain_ao": "CodingAO",
+            "approved_by": "release-wrapper-test-admin",
+            "approval_ref": "test-admin::successful-coding-domain-growth",
+            "requested_decision": "approved",
+        },
     )
-    assert status_card["operator_action_lane"]["latest_action_statuses"][
-        "domain_expert_growth_admin_replay"
-    ] == "passed-shadow"
-    assert lifecycle["domain_teacher_eval_handoff"]["latest_admin_eval_replay_id"] == (
-        handoff["latest_admin_eval_replay_id"]
-    )
-    assert control_panel["release_wrapper_runtime"]["domain_teacher_eval_handoff"][
-        "latest_admin_eval_replay_id"
-    ] == handoff["latest_admin_eval_replay_id"]
+    assert admin_replay.status_code == 200
+    assert admin_replay.json()["status"] == "recorded"
 
-    replay_client = TestClient(create_app(str(project_root)))
-    replayed_runtime = replay_client.get("/ops/wrapper/release-runtime", params={"session_id": session_id}).json()
-    assert replayed_runtime["domain_teacher_eval_handoff"]["latest_admin_eval_replay_id"] == (
-        handoff["latest_admin_eval_replay_id"]
+    replayed_runtime = client.get("/ops/wrapper/release-runtime", params={"session_id": session_id}).json()
+    replayed_handoff = replayed_runtime["domain_teacher_eval_handoff"]
+    replayed_rows = {
+        row["entrypoint_id"]: row
+        for row in replayed_runtime["whole_system_forward_pass_enforcement_matrix"]["entrypoints"]
+    }
+    assert replayed_handoff["admin_eval_replay_count"] == 1
+    assert replayed_handoff["latest_admin_eval_replay_status"] == "passed-shadow"
+    assert replayed_handoff["latest_admin_eval_replay_id"]
+    assert replayed_handoff["latest_admin_promotion_decision_id"]
+    assert replayed_handoff["latest_admin_promotion_decision"] in {"approved", "shadow"}
+    assert replayed_handoff["latest_sandbox_takeover_evidence_status"] == "recorded"
+    assert replayed_rows["domain_expert_growth_admin_replay"]["status"] == "covered"
+
+    unbound_approval = client.post(
+        "/ops/approvals",
+        json={
+            "subject": "release-wrapper-production-spine-release-lifecycle",
+            "decision": "approved",
+            "approver": "operator@example.invalid",
+            "rationale": "Approval without a bound domain-growth handoff.",
+            "metadata": {"session_id": session_id},
+        },
     )
+    assert unbound_approval.status_code == 200
+    unbound_run = client.post(
+        "/ops/wrapper/production-spine-release-lifecycle/run",
+        json={
+            "session_id": session_id,
+            "approval_decision_id": unbound_approval.json()["decision_id"],
+            "operator_approved": True,
+            "human_approved": True,
+            "request_overrides": {"domain_growth_handoff_id": handoff_id},
+        },
+    )
+    assert unbound_run.status_code == 400
+
+    bound_approval = client.post(
+        "/ops/approvals",
+        json={
+            "subject": "release-wrapper-production-spine-release-lifecycle",
+            "decision": "approved",
+            "approver": "operator@example.invalid",
+            "rationale": "Approve sandbox-only domain-growth lifecycle.",
+            "metadata": {
+                "session_id": session_id,
+                "domain_growth_handoff_id": handoff_id,
+            },
+        },
+    )
+    assert bound_approval.status_code == 200
+    run_response = client.post(
+        "/ops/wrapper/production-spine-release-lifecycle/run",
+        json={
+            "session_id": session_id,
+            "approval_decision_id": bound_approval.json()["decision_id"],
+            "operator_approved": True,
+            "human_approved": True,
+            "request_overrides": {"domain_growth_handoff_id": handoff_id},
+        },
+    )
+    assert run_response.status_code == 200
+    run = run_response.json()
+    assert run["status"] == "approved-shadow-release-lifecycle"
+    assert run["domain_growth_handoff"]["status"] == "admin-approved-bound"
+    assert run["domain_growth_handoff"]["handoff_id"] == handoff_id
+    assert run["domain_growth_handoff"]["sandbox_training_status"] in {
+        "sandbox_training_complete",
+        "trained_sandbox_proof",
+    }
+    assert run["active_production_mutation_allowed"] is False
+    assert run["release_mutation_allowed"] is False
+
+    rollback_response = client.post(
+        f"/ops/wrapper/production-spine-release-lifecycle/{run['run_id']}/rollback",
+        json={"session_id": session_id, "reason": "domain-growth-handoff-test"},
+    )
+    assert rollback_response.status_code == 200
+    rollback = rollback_response.json()
+    assert rollback["status"] == "rolled-back"
+    assert rollback["domain_growth_handoff"]["handoff_id"] == handoff_id
+    assert rollback["active_production_mutated"] is False
 
     serialized = json.dumps(
         {
             "runtime": runtime,
-            "status_card": status_card,
-            "lifecycle": lifecycle,
-            "control_panel": control_panel,
+            "replayed_runtime": replayed_runtime,
+            "run": run,
+            "rollback": rollback,
         },
         sort_keys=True,
     )
@@ -2971,6 +3516,161 @@ def test_successful_coding_chat_runs_domain_expert_growth_admin_replay_from_live
     assert prompt not in serialized
     assert "SECRET-DOMAIN-GROWTH" not in serialized
     assert str(project_root) not in serialized
+
+
+def test_wrapper_chat_requires_stored_update_approval_for_sandbox_apply_and_rollback(tmp_path: Path):
+    project_root = make_project(tmp_path)
+    client = TestClient(create_app(str(project_root)))
+    session_id = "wrapper-stored-update-approval-user"
+    prompt = "Propose a safe runtime update without leaking SECRET-STORED-UPDATE-APPROVAL."
+
+    chat = client.post(
+        "/v1/chat/completions",
+        json={
+            "session_id": session_id,
+            "model": "nexusnet-offline",
+            "messages": [{"role": "user", "content": prompt}],
+        },
+    )
+    assert chat.status_code == 200
+
+    runtime = client.get("/ops/wrapper/release-runtime", params={"session_id": session_id}).json()
+    interaction = runtime["latest_interaction"]
+    update_id = interaction["autonomous_update_lifecycle_update_id"]
+    assert interaction["autonomous_update_lifecycle_status"] == "pending-admin-approval"
+    control_panel = client.get(
+        "/ops/brain/visualizer/state", params={"session_id": session_id}
+    ).json()["overlay_state"]["control_panel"]
+    assert control_panel["release_wrapper_runtime"]["latest_interaction"][
+        "autonomous_update_lifecycle_status"
+    ] == "pending-admin-approval"
+    proposal = next(
+        proposal
+        for proposal in runtime["autonomous_updates"]["proposals"]
+        if proposal["update_id"] == update_id
+    )
+    assert proposal["operator_approved"] is False
+
+    unbound_native_approval = client.post(
+        f"/ops/brain/autonomous-updates/{update_id}/admin-approval",
+        json={"approved_by": "admin", "approval_ref": "operator-review::unbound-update"},
+    )
+    assert unbound_native_approval.status_code == 400
+
+    mismatched_approval = client.post(
+        "/ops/approvals",
+        json={
+            "subject": "release-wrapper-autonomous-update",
+            "decision": "approved",
+            "approver": "operator@example.invalid",
+            "rationale": "Incorrect autonomous update binding.",
+            "metadata": {"update_id": "update::different"},
+        },
+    )
+    assert mismatched_approval.status_code == 200
+    blocked_run = client.post(
+        f"/ops/wrapper/autonomous-updates/{update_id}/run",
+        json={
+            "session_id": session_id,
+            "approval_decision_id": mismatched_approval.json()["decision_id"],
+        },
+    )
+    assert blocked_run.status_code == 400
+
+    approval = client.post(
+        "/ops/approvals",
+        json={
+            "subject": "release-wrapper-autonomous-update",
+            "decision": "approved",
+            "approver": "operator@example.invalid",
+            "rationale": "Approve a sandbox-only wrapper update lifecycle.",
+            "metadata": {"update_id": update_id},
+        },
+    )
+    assert approval.status_code == 200
+    run_response = client.post(
+        f"/ops/wrapper/autonomous-updates/{update_id}/run",
+        json={
+            "session_id": session_id,
+            "approval_decision_id": approval.json()["decision_id"],
+        },
+    )
+    assert run_response.status_code == 200
+    run = run_response.json()
+    assert run["status"] == "completed"
+    assert run["actions"]["admin_approval"]["status"] == "admin-approved"
+    assert run["actions"]["admin_approval"]["approval_ref"] == approval.json()["decision_id"]
+    assert run["actions"]["sandbox_tests"]["passed"] is True
+    assert run["actions"]["apply"]["status"] == "applied-shadow-safe-file"
+    assert run["actions"]["rollback"]["status"] == "rolled-back"
+    assert run["active_production_mutated"] is False
+
+    refreshed = client.get("/ops/wrapper/release-runtime", params={"session_id": session_id}).json()
+    latest_run = refreshed["release_readiness_evidence_runner"]["latest_run"]
+    assert latest_run["update_id"] == run["update_id"]
+    assert latest_run["status"] == "completed"
+
+    serialized = json.dumps({"runtime": refreshed, "run": run}, sort_keys=True)
+    assert session_id not in serialized
+    assert prompt not in serialized
+    assert "SECRET-STORED-UPDATE-APPROVAL" not in serialized
+    assert "operator@example.invalid" not in serialized
+    assert str(project_root) not in serialized
+
+
+def test_wrapper_autonomous_update_lifecycle_rejects_a_different_session_binding(tmp_path: Path):
+    project_root = make_project(tmp_path)
+    client = TestClient(create_app(str(project_root)))
+    proposal_session_id = "wrapper-update-owner-session"
+    other_session_id = "wrapper-update-other-session"
+
+    chat = client.post(
+        "/v1/chat/completions",
+        json={
+            "session_id": proposal_session_id,
+            "model": "nexusnet-offline",
+            "messages": [{"role": "user", "content": "Propose a safe runtime policy update."}],
+        },
+    )
+    assert chat.status_code == 200
+    owner_runtime = client.get(
+        "/ops/wrapper/release-runtime", params={"session_id": proposal_session_id}
+    ).json()
+    update_id = owner_runtime["latest_interaction"]["autonomous_update_lifecycle_update_id"]
+
+    approval = client.post(
+        "/ops/approvals",
+        json={
+            "subject": "release-wrapper-autonomous-update",
+            "decision": "approved",
+            "approver": "operator@example.invalid",
+            "rationale": "Approve only the bound session's sandbox lifecycle.",
+            "metadata": {"update_id": update_id},
+        },
+    )
+    assert approval.status_code == 200
+
+    rejected = client.post(
+        f"/ops/wrapper/autonomous-updates/{update_id}/run",
+        json={
+            "session_id": other_session_id,
+            "approval_decision_id": approval.json()["decision_id"],
+        },
+    )
+
+    assert rejected.status_code == 200
+    rejected_payload = rejected.json()
+    assert rejected_payload["status"] == "blocked-session-binding-mismatch"
+    assert rejected_payload["active_production_mutated"] is False
+    assert "actions" not in rejected_payload
+    summary = client.get("/ops/brain/autonomous-updates").json()
+    assert summary["admin_approved_count"] == 0
+    assert summary["applied_safe_file_count"] == 0
+    assert summary["rolled_back_count"] == 0
+    serialized = json.dumps(rejected_payload, sort_keys=True)
+    assert proposal_session_id not in serialized
+    assert other_session_id not in serialized
+    assert "operator@example.invalid" not in serialized
 
 
 def test_successful_chat_auto_imports_federated_packet_and_runs_readiness_evidence_from_live_use(tmp_path: Path):
@@ -3014,7 +3714,11 @@ def test_successful_chat_auto_imports_federated_packet_and_runs_readiness_eviden
     }
 
     assert inbox["import_count"] == 1
+    assert inbox["accepted_import_count"] == 1
+    assert inbox["accepted_peer_import_count"] == 0
     assert imported["status"] == "quarantined-shadow-accepted"
+    assert imported["import_provenance"] == "local-loopback-readiness"
+    assert imported["independent_peer_evidence"] is False
     assert imported["source_packet_ref"] == f"federated-packet::{runtime['latest_interaction']['federated_packet_id']}"
     assert imported["security_envelope_verified"] is True
     assert imported["assimilation_shadow_captured"] is True
@@ -3026,7 +3730,6 @@ def test_successful_chat_auto_imports_federated_packet_and_runs_readiness_eviden
     assert runtime["latest_interaction"]["federated_packet_import_status"] == "quarantined-shadow-accepted"
     runtime_growth_receipt = runtime["global_growth"]["latest_runtime_receipt"]
     growth_governance = runtime_growth_receipt["authority_evidence_tool_governance"]
-    packet_governance = runtime["latest_federated_packet"]["authority_evidence_tool_governance"]
     assert growth_governance["surface_id"] == "native-runtime-growth-capture-governance-record"
     assert growth_governance["status"] == "pass"
     assert "multi-user-runtime-growth-receipt" in growth_governance["governed_surface_ids"]
@@ -3044,7 +3747,6 @@ def test_successful_chat_auto_imports_federated_packet_and_runs_readiness_eviden
     assert growth_governance["raw_content_included"] is False
     assert growth_governance["contains_personal_data"] is False
     assert growth_governance["active_production_mutation_allowed"] is False
-    assert packet_governance["authority_decision_id"] == growth_governance["authority_decision_id"]
     assert runtime["latest_interaction"]["native_runtime_growth_governance"]["authority_decision_id"] == (
         growth_governance["authority_decision_id"]
     )
@@ -3061,13 +3763,11 @@ def test_successful_chat_auto_imports_federated_packet_and_runs_readiness_eviden
     assert import_enforcement["coverage_status"] == "covered"
     assert import_enforcement["operation_receipt_id"] == import_receipt["receipt_id"]
     assert import_enforcement["active_production_mutated"] is False
-    assert import_enforcement["governed_update_path"]["status"] == (
-        "completed-admin-approved-sandbox-applied-rolled-back"
-    )
+    assert import_enforcement["governed_update_path"]["status"] == "partial-admin-governance-recorded"
     assert import_enforcement["governed_update_path"]["readiness_run_id"]
 
     assert runner["run_count"] >= 1
-    assert runner["latest_autonomous_update_lifecycle_status"] == "completed"
+    assert runner["latest_autonomous_update_lifecycle_status"] == "pending-admin-approval"
     assert runner["latest_autonomous_update_lifecycle_run_id"] == (
         import_enforcement["governed_update_path"]["readiness_run_id"]
     )
@@ -3077,7 +3777,7 @@ def test_successful_chat_auto_imports_federated_packet_and_runs_readiness_eviden
         matrix_rows["federated_packet_import"]["whole_system_enforcement_receipt"]["receipt_id"]
         == import_enforcement["receipt_id"]
     )
-    assert matrix_rows["release_readiness_evidence_runner"]["status"] == "covered"
+    assert matrix_rows["release_readiness_evidence_runner"]["status"] == "partial"
     assert any(
         ref == f"run_id::{import_enforcement['governed_update_path']['readiness_run_id']}"
         for ref in matrix_rows["release_readiness_evidence_runner"]["evidence_refs"]
@@ -3086,14 +3786,14 @@ def test_successful_chat_auto_imports_federated_packet_and_runs_readiness_eviden
         control_panel_rows["federated_packet_import"]["operation_receipt"]["receipt_id"]
         == import_receipt["receipt_id"]
     )
-    assert control_panel_rows["release_readiness_evidence_runner"]["status"] == "covered"
-    assert status_card["release_readiness_evidence_runner"]["latest_autonomous_update_lifecycle_status"] == "completed"
-    assert lifecycle["release_readiness_evidence_runner"]["latest_autonomous_update_lifecycle_status"] == "completed"
+    assert control_panel_rows["release_readiness_evidence_runner"]["status"] == "partial"
+    assert status_card["release_readiness_evidence_runner"]["latest_autonomous_update_lifecycle_status"] == "pending-admin-approval"
+    assert lifecycle["release_readiness_evidence_runner"]["latest_autonomous_update_lifecycle_status"] == "pending-admin-approval"
 
     readiness_checks = {check["check_id"]: check for check in readiness["readiness_checks"]}
-    assert readiness_checks["federated-packet-inbox"]["status"] == "pass"
-    assert readiness_checks["peer-shadow-proposal"]["status"] == "pass"
-    assert readiness["evidence"]["peer_shadow_proposal"]["federated_packet_import_id"] == imported["import_id"]
+    assert readiness_checks["federated-packet-inbox"]["status"] == "blocked"
+    assert readiness_checks["peer-shadow-proposal"]["status"] == "blocked"
+    assert readiness["evidence"]["peer_shadow_proposal"] is None
 
     replay_client = TestClient(create_app(str(project_root)))
     replay_runtime = replay_client.get("/ops/wrapper/release-runtime", params={"session_id": session_id}).json()
@@ -3109,11 +3809,11 @@ def test_successful_chat_auto_imports_federated_packet_and_runs_readiness_eviden
         == growth_governance["eval_federation_event_id"]
     )
     assert (
-        replay_runtime["latest_federated_packet"]["authority_evidence_tool_governance"]["tool_action_plan_id"]
+        replay_runtime["latest_interaction"]["native_runtime_growth_governance"]["tool_action_plan_id"]
         == growth_governance["tool_action_plan_id"]
     )
     assert replay_rows["federated_packet_import"]["status"] == "covered"
-    assert replay_rows["release_readiness_evidence_runner"]["status"] == "covered"
+    assert replay_rows["release_readiness_evidence_runner"]["status"] == "partial"
 
     serialized = json.dumps(
         {
@@ -3132,7 +3832,7 @@ def test_successful_chat_auto_imports_federated_packet_and_runs_readiness_eviden
     assert str(project_root) not in serialized
 
 
-def test_successful_chat_auto_runs_release_supervisor_and_production_spine_lifecycle_from_live_use(tmp_path: Path):
+def test_successful_chat_records_pending_release_lifecycle_proposal_from_live_use(tmp_path: Path):
     project_root = make_project(tmp_path)
     client = TestClient(create_app(str(project_root)))
     session_id = "successful-auto-release-supervisor-user"
@@ -3156,81 +3856,41 @@ def test_successful_chat_auto_runs_release_supervisor_and_production_spine_lifec
     control_panel_runtime = visualizer["overlay_state"]["control_panel"]["release_wrapper_runtime"]
 
     production_lifecycle = runtime["production_spine_release_lifecycle"]
-    production_run = production_lifecycle["latest_run"]
-    production_rollback = production_lifecycle["latest_rollback"]
-    boot = runtime["boot_supervisor"]
     initial = runtime["initial_release_supervisor"]
     matrix = runtime["whole_system_forward_pass_enforcement_matrix"]
-    release_run_history = runtime["release_run_history"]
-    canon_receipts = runtime["canon_contract_receipts"]
-    latest_canon_receipt = canon_receipts["latest_receipt"]
     rows = {row["entrypoint_id"]: row for row in matrix["entrypoints"]}
 
-    assert production_run["status"] == "approved-shadow-release-lifecycle"
-    assert production_run["admin_approval"]["status"] == "approved"
-    assert production_run["authority_evidence_tool_governance"]["status"] == "pass"
-    assert production_run["step_counts"]["blocked"] == 0
-    assert production_run["release_mutation_allowed"] is False
-    assert production_run["active_production_mutation_allowed"] is False
-    assert production_run["raw_content_included"] is False
-    assert production_rollback["status"] == "rolled-back"
-    assert production_rollback["rollback_restored"] is True
-    assert production_rollback["active_production_mutated"] is False
-    assert production_rollback["raw_content_included"] is False
-
-    assert boot["latest_status"] == "boot-smoke-passed"
-    assert boot["runtime_state"] == "live-evidence"
-    assert boot["failed_count"] == 0
-    assert boot["raw_content_included"] is False
-    assert boot["evidence"]["release_product_path"]["entrypoint_runtime_state"] == "live-bound"
-    assert boot["evidence"]["release_product_path"]["federated_import_accepted_count"] >= 1
-    assert boot["evidence"]["release_product_path"]["admin_action_statuses"]["rollback"] == "rolled-back"
-
-    assert initial["latest_status"] == "initial-release-go"
-    assert initial["runtime_state"] in {"replayed-evidence", "live-evidence"}
-    assert initial["release_readiness"]["go_no_go"] == "go"
-    assert initial["action_statuses"]["production_spine_release_lifecycle"] == "approved-shadow-release-lifecycle"
-    assert initial["action_statuses"]["production_spine_release_lifecycle_rollback"] == "rolled-back"
-    assert initial["action_statuses"]["boot_supervisor"] == "boot-smoke-passed"
+    assert production_lifecycle["status"] == "not-run"
+    assert production_lifecycle["latest_run"] is None
+    assert production_lifecycle["latest_rollback"] is None
+    assert runtime["latest_interaction"]["domain_expert_growth_admin_replay_status"] == "pending-admin-approval"
+    assert initial["latest_status"] == "initial-release-blocked"
+    assert initial["action_statuses"]["production_spine_release_lifecycle"] == "blocked-pending-admin-approval"
+    assert initial["action_statuses"]["production_spine_release_lifecycle_rollback"] == "blocked-run-not-found"
+    assert initial["action_statuses"]["domain_expert_growth_admin_replay"] == "pending-admin-approval"
     assert initial["actions"]["native_hive_heartbeat_history"]["status"] == "fresh"
     assert initial["raw_content_included"] is False
     assert initial["active_production_mutation_allowed"] is False
     assert initial["active_production_mutated"] is False
 
     assert matrix["coverage_status"] == "partial"
-    assert rows["domain_expert_growth_admin_replay"]["status"] == "missing"
-    assert rows["domain_expert_growth_admin_replay"]["blockers"] == [
-        "domain_expert_growth_admin_replay_not_run"
-    ]
-    assert rows["boot_supervisor"]["status"] == "covered"
-    assert rows["initial_release_supervisor"]["status"] == "covered"
-    assert rows["production_spine_release_lifecycle"]["status"] == "covered"
-    assert rows["production_spine_lifecycle_rollback"]["status"] == "covered"
-    assert release_run_history["runtime_state"] == "live-evidence"
-    assert release_run_history["latest_status"] == "release-wrapper-live-product-path-partial"
-    assert release_run_history["run_count"] == 1
-    assert release_run_history["latest_run"]["run_kind"] == "release-wrapper-live-product-path"
-    assert release_run_history["latest_run"]["active_production_mutated"] is False
-    assert release_run_history["latest_run"]["raw_content_included"] is False
-    assert canon_receipts["latest_status"] == "covered"
-    assert latest_canon_receipt["gap_count"] == 0
-    assert latest_canon_receipt["coverage_status"] == "covered"
-    assert runtime["latest_interaction"]["canon_contract_coverage_status"] == "covered"
-    assert readiness["evidence"]["production_spine_release_lifecycle"]["latest_run"]["run_id"] == production_run["run_id"]
-    assert readiness["evidence"]["canon_contract_receipts"]["latest_status"] == "covered"
-    assert readiness["evidence"]["release_run_history"]["run_count"] == 1
-    assert status_card["production_spine_release_lifecycle"]["latest_run"]["run_id"] == production_run["run_id"]
-    assert status_card["canon_contract_receipts"]["latest_status"] == "covered"
-    assert status_card["release_run_history"]["run_count"] == 1
-    assert lifecycle["production_spine_release_lifecycle"]["latest_run"]["run_id"] == production_run["run_id"]
-    assert lifecycle["canon_contract_receipts"]["latest_status"] == "covered"
-    assert lifecycle["release_run_history"]["run_count"] == 1
-    assert control_panel_runtime["production_spine_release_lifecycle"]["latest_run"]["run_id"] == production_run["run_id"]
-    assert control_panel_runtime["canon_contract_receipts"]["latest_status"] == "covered"
-    assert control_panel_runtime["release_run_history"]["run_count"] == 1
-    assert status_card["boot_supervisor"]["latest_status"] == "boot-smoke-passed"
-    assert lifecycle["initial_release_supervisor"]["latest_status"] == "initial-release-go"
-    assert control_panel_runtime["initial_release_supervisor"]["latest_status"] == "initial-release-go"
+    assert {
+        "domain_expert_growth_admin_replay",
+        "production_spine_release_lifecycle",
+        "production_spine_lifecycle_rollback",
+    } <= set(matrix["missing_entrypoint_ids"])
+    assert rows["production_spine_release_lifecycle"]["status"] == "missing"
+    assert rows["production_spine_lifecycle_rollback"]["status"] == "missing"
+    assert runtime["release_run_history"]["latest_status"] == "release-wrapper-live-product-path-partial"
+    assert runtime["canon_contract_receipts"]["latest_status"] == "partial"
+    assert runtime["latest_interaction"]["canon_contract_coverage_status"] == "partial"
+    assert readiness["evidence"]["production_spine_release_lifecycle"]["latest_run"] is None
+    assert status_card["production_spine_release_lifecycle"]["latest_run"] is None
+    assert lifecycle["production_spine_release_lifecycle"]["latest_run"] is None
+    assert control_panel_runtime["production_spine_release_lifecycle"]["latest_run"] is None
+    assert status_card["boot_supervisor"]["latest_status"] == "boot-smoke-blocked"
+    assert lifecycle["initial_release_supervisor"]["latest_status"] == "initial-release-blocked"
+    assert control_panel_runtime["initial_release_supervisor"]["latest_status"] == "initial-release-blocked"
 
     replay_client = TestClient(create_app(str(project_root)))
     replay_runtime = replay_client.get("/ops/wrapper/release-runtime", params={"session_id": session_id}).json()
@@ -3238,16 +3898,14 @@ def test_successful_chat_auto_runs_release_supervisor_and_production_spine_lifec
         row["entrypoint_id"]: row
         for row in replay_runtime["whole_system_forward_pass_enforcement_matrix"]["entrypoints"]
     }
-    assert replay_runtime["production_spine_release_lifecycle"]["latest_run"]["run_id"] == production_run["run_id"]
-    assert replay_runtime["production_spine_release_lifecycle"]["latest_rollback"]["rollback_id"] == (
-        production_rollback["rollback_id"]
-    )
-    assert replay_runtime["release_run_history"]["latest_run"]["run_id"] == release_run_history["latest_run"]["run_id"]
-    assert replay_runtime["canon_contract_receipts"]["latest_status"] == "covered"
-    assert replay_runtime["boot_supervisor"]["latest_status"] == "boot-smoke-passed"
-    assert replay_runtime["initial_release_supervisor"]["latest_status"] == "initial-release-go"
-    assert replay_rows["production_spine_release_lifecycle"]["status"] == "covered"
-    assert replay_rows["production_spine_lifecycle_rollback"]["status"] == "covered"
+    assert replay_runtime["production_spine_release_lifecycle"]["latest_run"] is None
+    assert replay_runtime["production_spine_release_lifecycle"]["latest_rollback"] is None
+    assert replay_runtime["release_run_history"]["latest_status"] == "release-wrapper-live-product-path-partial"
+    assert replay_runtime["canon_contract_receipts"]["latest_status"] == "partial"
+    assert replay_runtime["boot_supervisor"]["latest_status"] == "boot-smoke-blocked"
+    assert replay_runtime["initial_release_supervisor"]["latest_status"] == "initial-release-blocked"
+    assert replay_rows["production_spine_release_lifecycle"]["status"] == "missing"
+    assert replay_rows["production_spine_lifecycle_rollback"]["status"] == "missing"
 
     serialized = json.dumps(
         {
@@ -3294,10 +3952,10 @@ def test_wrapper_chat_pending_repair_envelope_executes_through_admin_governed_re
     pending_plan = runtime_before["latest_interaction"]["release_health_automatic_repair_plan"]
     pending_history = runtime_before["release_health_heartbeat_supervisor"]["repair_history"]
 
-    assert pending_plan["status"] == "planned-admin-approval-required-heartbeat-supervisor-repair"
+    assert pending_plan["status"] == "blocked-heartbeat-supervisor-repair-pending-admin-approval"
     assert pending_plan["update_id"].startswith("update::release-wrapper-health-heartbeat-loop::")
     assert pending_plan["subsystem_repair_envelope_count"] >= 1
-    assert pending_history["latest_status"] == "planned-admin-approval-required-heartbeat-supervisor-repair"
+    assert pending_history["latest_status"] == "blocked-heartbeat-supervisor-repair-pending-admin-approval"
     assert pending_history["latest_run_id"] == pending_plan["run_id"]
 
     repair = client.post(
@@ -3307,8 +3965,10 @@ def test_wrapper_chat_pending_repair_envelope_executes_through_admin_governed_re
             "update_id": pending_plan["update_id"],
             "command": sandbox_command,
             "timeout_seconds": 30,
-            "approved_by": "admin",
-            "approval_ref": "operator-review::automatic-wrapper-interaction-repair",
+            "approval_decision_id": _stored_autonomous_update_approval(
+                client,
+                update_id=pending_plan["update_id"],
+            ),
         },
     )
 
@@ -3500,7 +4160,246 @@ def test_release_wrapper_federated_packet_outbox_exports_sanitized_replayable_pa
     wrapper_html = (project_root / "ui" / "wrapper" / "index.html").read_text(encoding="utf-8")
     assert "federated packet outbox" in control_panel_js
     assert "Federated Packet Outbox" in wrapper_html
-    assert "Wrapper packet outbox" in visualizer_js
+    assert "Harness packet outbox" in visualizer_js
+
+
+def test_release_wrapper_delivers_real_wrapper_packet_to_admin_approved_peer_and_replays_receipt(tmp_path: Path):
+    received_payloads: list[dict] = []
+
+    class _PeerImportHandler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802 - HTTP handler contract
+            body = self.rfile.read(int(self.headers.get("Content-Length") or "0"))
+            received_payloads.append(json.loads(body.decode("utf-8")))
+            response = json.dumps(
+                {
+                    "status": "quarantined-shadow-accepted",
+                    "import_id": "remote-shadow-import::accepted",
+                    "raw_content_included": False,
+                    "contains_personal_data": False,
+                }
+            ).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            return None
+
+    peer_server = ThreadingHTTPServer(("127.0.0.1", 0), _PeerImportHandler)
+    peer_thread = threading.Thread(target=peer_server.serve_forever, daemon=True)
+    peer_thread.start()
+    try:
+        project_root = make_project(tmp_path)
+        client = TestClient(create_app(str(project_root)))
+        peer_node_id = "peer-local-approved-delivery"
+        import_url = f"http://127.0.0.1:{peer_server.server_port}/ops/wrapper/federated-packets/import"
+
+        unbound_approval = client.post(
+            "/ops/approvals",
+            json={
+                "subject": "release-wrapper-federated-peer-delivery",
+                "decision": "approved",
+                "approver": "operator@example.invalid",
+                "rationale": "Wrong import URL binding must not authorize peer delivery.",
+                "metadata": {
+                    "peer_node_id": peer_node_id,
+                    "import_url": "http://127.0.0.1:9/wrong",
+                },
+            },
+        )
+        assert unbound_approval.status_code == 200
+        blocked_registration = client.post(
+            "/ops/wrapper/federated-peers",
+            json={
+                "peer_node_id": peer_node_id,
+                "import_url": import_url,
+                "approval_decision_id": unbound_approval.json()["decision_id"],
+            },
+        )
+        assert blocked_registration.status_code == 400
+
+        approval = client.post(
+            "/ops/approvals",
+            json={
+                "subject": "release-wrapper-federated-peer-delivery",
+                "decision": "approved",
+                "approver": "operator@example.invalid",
+                "rationale": "Approve a sanitized local shadow-federation peer.",
+                "metadata": {"peer_node_id": peer_node_id, "import_url": import_url},
+            },
+        )
+        assert approval.status_code == 200
+        registered = client.post(
+            "/ops/wrapper/federated-peers",
+            json={
+                "peer_node_id": peer_node_id,
+                "import_url": import_url,
+                "approval_decision_id": approval.json()["decision_id"],
+            },
+        )
+        assert registered.status_code == 200
+        registration = registered.json()
+        assert registration["status"] == "admin-approved-peer-registered"
+        assert registration["raw_content_included"] is False
+
+        prompt = "Deliver a federated packet without leaking SECRET-PEER-DELIVERY."
+        session_id = "peer-delivery-user"
+        chat = client.post(
+            "/v1/chat/completions",
+            json={
+                "session_id": session_id,
+                "model": "nexusnet-offline",
+                "messages": [{"role": "user", "content": prompt}],
+            },
+        )
+        assert chat.status_code == 200
+        assert len(received_payloads) == 1
+        delivered_payload = received_payloads[0]
+        assert delivered_payload["peer_node_id"] == peer_node_id
+        assert delivered_payload["packet"]["raw_content_included"] is False
+        assert delivered_payload["packet"]["contains_personal_data"] is False
+
+        deliveries = client.get(
+            "/ops/wrapper/federated-deliveries", params={"session_id": session_id}
+        ).json()
+        assert deliveries["status"] == "live-shadow-delivery-active"
+        assert deliveries["peer_count"] == 1
+        assert deliveries["delivery_count"] == 1
+        assert deliveries["acknowledged_delivery_count"] == 1
+        assert deliveries["latest_delivery"]["status"] == "acknowledged-shadow-accepted"
+        assert deliveries["latest_delivery"]["remote_import_ref_digest"] == (
+            "sha256:" + hashlib.sha256(b"remote-shadow-import::accepted").hexdigest()[:16]
+        )
+        assert deliveries["raw_content_included"] is False
+        assert deliveries["active_production_mutation_allowed"] is False
+
+        replayed = TestClient(create_app(str(project_root))).get(
+            "/ops/wrapper/federated-deliveries", params={"session_id": session_id}
+        ).json()
+        assert replayed["replay"]["status"] == "replayed"
+        assert replayed["delivery_count"] == 1
+        assert replayed["latest_delivery"]["status"] == "acknowledged-shadow-accepted"
+
+        serialized = json.dumps(
+            {
+                "registration": registration,
+                "deliveries": deliveries,
+                "replayed": replayed,
+                "remote": delivered_payload,
+            },
+            sort_keys=True,
+        )
+        assert prompt not in serialized
+        assert "SECRET-PEER-DELIVERY" not in serialized
+        assert session_id not in serialized
+        assert peer_node_id not in json.dumps({"registration": registration, "deliveries": deliveries})
+        assert import_url not in json.dumps({"registration": registration, "deliveries": deliveries})
+        control_panel_js = (project_root / "ui" / "control-panel" / "app.js").read_text(encoding="utf-8")
+        visualizer_js = (project_root / "ui" / "visualizer" / "app.js").read_text(encoding="utf-8")
+        assert "/ops/wrapper/federated-deliveries" in control_panel_js
+        assert "release-wrapper-federated-peer-delivery" in control_panel_js
+        assert "/ops/wrapper/federated-deliveries" in visualizer_js
+        assert "release-wrapper-federated-peer-delivery" in visualizer_js
+    finally:
+        peer_server.shutdown()
+        peer_server.server_close()
+        peer_thread.join(timeout=5)
+
+
+def test_release_wrapper_retries_pending_admin_approved_peer_delivery(tmp_path: Path):
+    response_status = {"code": 503}
+
+    class _RetryPeerImportHandler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802 - HTTP handler contract
+            self.rfile.read(int(self.headers.get("Content-Length") or "0"))
+            response = json.dumps(
+                (
+                    {"detail": "temporarily unavailable"}
+                    if response_status["code"] == 503
+                    else {
+                        "status": "quarantined-shadow-accepted",
+                        "import_id": "remote-shadow-import::retry-accepted",
+                        "raw_content_included": False,
+                        "contains_personal_data": False,
+                    }
+                )
+            ).encode("utf-8")
+            self.send_response(response_status["code"])
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            return None
+
+    peer_server = ThreadingHTTPServer(("127.0.0.1", 0), _RetryPeerImportHandler)
+    peer_thread = threading.Thread(target=peer_server.serve_forever, daemon=True)
+    peer_thread.start()
+    try:
+        project_root = make_project(tmp_path)
+        client = TestClient(create_app(str(project_root)))
+        peer_node_id = "peer-local-retry-delivery"
+        import_url = f"http://127.0.0.1:{peer_server.server_port}/ops/wrapper/federated-packets/import"
+        approval = client.post(
+            "/ops/approvals",
+            json={
+                "subject": "release-wrapper-federated-peer-delivery",
+                "decision": "approved",
+                "approver": "operator@example.invalid",
+                "rationale": "Approve retryable sanitized local peer delivery.",
+                "metadata": {"peer_node_id": peer_node_id, "import_url": import_url},
+            },
+        )
+        assert approval.status_code == 200
+        assert client.post(
+            "/ops/wrapper/federated-peers",
+            json={
+                "peer_node_id": peer_node_id,
+                "import_url": import_url,
+                "approval_decision_id": approval.json()["decision_id"],
+            },
+        ).status_code == 200
+
+        session_id = "peer-retry-user"
+        assert client.post(
+            "/v1/chat/completions",
+            json={
+                "session_id": session_id,
+                "model": "nexusnet-offline",
+                "messages": [{"role": "user", "content": "Emit retryable federation evidence."}],
+            },
+        ).status_code == 200
+        pending = client.get(
+            "/ops/wrapper/federated-deliveries", params={"session_id": session_id}
+        ).json()
+        assert pending["status"] == "pending-retry"
+        assert pending["pending_retry_count"] == 1
+        assert pending["latest_delivery"]["status"] == "pending-retry"
+        assert pending["latest_delivery"]["attempt_count"] == 1
+        assert pending["latest_delivery"]["next_retry_at"]
+
+        response_status["code"] = 200
+        restarted_client = TestClient(create_app(str(project_root)))
+        retried = restarted_client.post(
+            "/ops/wrapper/federated-deliveries/retry",
+            json={"session_id": session_id, "force": True},
+        )
+        assert retried.status_code == 200
+        retry_summary = retried.json()
+        assert retry_summary["status"] == "live-shadow-delivery-active"
+        assert retry_summary["latest_delivery"]["status"] == "acknowledged-shadow-accepted"
+        assert retry_summary["latest_delivery"]["attempt_count"] == 2
+        assert retry_summary["latest_delivery"]["remote_import_ref_digest"] == (
+            "sha256:" + hashlib.sha256(b"remote-shadow-import::retry-accepted").hexdigest()[:16]
+        )
+        assert retry_summary["active_production_mutation_allowed"] is False
+    finally:
+        peer_server.shutdown()
+        peer_server.server_close()
+        peer_thread.join(timeout=5)
 
 
 def test_release_wrapper_imports_federated_packets_as_quarantined_shadow_learning(tmp_path: Path):
@@ -3535,6 +4434,8 @@ def test_release_wrapper_imports_federated_packets_as_quarantined_shadow_learnin
 
     assert imported["surface_id"] == "release-wrapper-federated-packet-import"
     assert imported["status"] == "quarantined-shadow-accepted"
+    assert imported["import_provenance"] == "external-peer"
+    assert imported["independent_peer_evidence"] is True
     assert imported["quarantine_state"] == "shadow-only"
     assert imported["source_packet_ref"] == f"federated-packet::{packet['packet_id']}"
     assert imported["security_envelope_verified"] is True
@@ -3552,6 +4453,8 @@ def test_release_wrapper_imports_federated_packets_as_quarantined_shadow_learnin
     assert inbox["surface_id"] == "release-wrapper-federated-packet-inbox"
     assert inbox["status"] == "shadow-quarantine-active"
     assert inbox["import_count"] >= 2
+    assert inbox["accepted_peer_import_count"] == 1
+    assert inbox["latest_peer_import"]["import_id"] == imported["import_id"]
     assert inbox["latest_import"]["import_id"] == imported["import_id"]
     assert inbox["latest_import"]["source_packet_ref"] == imported["source_packet_ref"]
     assert inbox["active_production_mutation_allowed"] is False
@@ -3594,7 +4497,7 @@ def test_release_wrapper_imports_federated_packets_as_quarantined_shadow_learnin
     wrapper_html = (project_root / "ui" / "wrapper" / "index.html").read_text(encoding="utf-8")
     assert "federated packet inbox" in control_panel_js
     assert "Federated Packet Inbox" in wrapper_html
-    assert "Wrapper packet inbox" in visualizer_js
+    assert "Harness packet inbox" in visualizer_js
 
 
 def test_release_wrapper_imported_federated_packet_feeds_dream_research_proposal_shadow_only(tmp_path: Path):
@@ -3675,7 +4578,12 @@ def test_release_wrapper_imported_federated_packet_feeds_dream_research_proposal
 
     approval = client.post(
         governance["admin_approval_ref"],
-        json={"approved_by": "admin", "approval_ref": "operator-review::federated-import"},
+        json={
+            "approval_decision_id": _stored_autonomous_update_approval(
+                client,
+                update_id=governance["proposal_update_id"],
+            )
+        },
     )
     assert approval.status_code == 200
     approval_payload = approval.json()
@@ -3706,15 +4614,21 @@ def test_release_wrapper_imported_federated_packet_feeds_dream_research_proposal
     sandbox_payload = sandbox.json()
     assert sandbox_payload["status"] == "passed"
     assert sandbox_payload["sandbox"]["active_project_root_mutated"] is False
+    immune_governance_decision_id = _approved_immune_governance_decision(
+        client,
+        candidate_ref=governance["proposal_update_id"],
+        command="python -m pytest tests/test_hive_final_waves.py::test_immune_gate_attenuates_anomalies -q",
+    )
 
     applied = client.post(
         governance["apply_ref"],
         json={
             "test_refs": ["pytest tests/federated_import_apply_probe_test.py -q"],
             "test_evidence_refs": [sandbox_payload["evidence_ref"]],
+            "immune_governance_decision_id": immune_governance_decision_id,
         },
     )
-    assert applied.status_code == 200
+    assert applied.status_code == 200, applied.text
     applied_payload = applied.json()
     assert applied_payload["status"] == "applied-shadow-safe-file"
     assert applied_payload["active_production_mutated"] is False
@@ -3858,6 +4772,74 @@ def test_release_wrapper_rejects_unsafe_federated_packet_without_learning_or_pro
     assert peer_node_id not in serialized
 
 
+def test_release_wrapper_poisoning_gate_blocks_statistical_packet_tampering_before_learning(tmp_path: Path):
+    project_root = make_project(tmp_path)
+    client = TestClient(create_app(str(project_root)))
+    session_id = "federated-poisoning-gate-user"
+
+    chat = client.post(
+        "/v1/chat/completions",
+        json={
+            "session_id": session_id,
+            "model": "nexusnet-offline",
+            "messages": [{"role": "user", "content": "Emit a sanitized packet for anomaly-gate testing."}],
+        },
+    )
+    assert chat.status_code == 200
+    packet = client.get(
+        "/ops/wrapper/federated-packets", params={"session_id": session_id}
+    ).json()["latest_packet"]
+    accepted = client.post(
+        "/ops/wrapper/federated-packets/import",
+        json={
+            "session_id": session_id,
+            "peer_node_id": "peer-valid-statistical-packet",
+            "packet": packet,
+        },
+    ).json()
+    assert accepted["status"] == "quarantined-shadow-accepted"
+    assert accepted["poisoning_anomaly_gate"]["status"] == "passed-sanitized-shadow-import"
+    assert accepted["poisoning_anomaly_gate"]["passed"] is True
+
+    poisoned_packet = json.loads(json.dumps(packet))
+    poisoned_packet["learning_metadata"]["final_confidence"] = 10000.0
+    poisoned_packet["route_metadata"]["mean_resonance_score"] = 5000.0
+    poisoned_packet["security_envelope"]["poisoning_anomaly_detection"] = {
+        "result_state": "passed",
+        "detected_anomaly_count": 0,
+        "quarantine_refs": [],
+    }
+
+    rejected = client.post(
+        "/ops/wrapper/federated-packets/import",
+        json={
+            "session_id": session_id,
+            "peer_node_id": "peer-claims-clean-but-poisoned",
+            "packet": poisoned_packet,
+        },
+    ).json()
+
+    assert rejected["status"] == "quarantined-rejected"
+    gate = rejected["poisoning_anomaly_gate"]
+    assert gate["status"] == "blocked-poisoning-anomaly"
+    assert gate["passed"] is False
+    assert gate["claimed_scan_passed"] is True
+    assert "final_confidence_out_of_range" in gate["findings"]
+    assert "mean_resonance_score_out_of_range" in gate["findings"]
+    assert gate["raw_content_included"] is False
+    assert rejected["assimilation_shadow_captured"] is False
+    assert rejected["global_growth_shadow_captured"] is False
+    assert rejected["quarantine_state"] == "blocked"
+
+    queue = client.get("/ops/brain/self-improvement/queue").json()
+    assert not [
+        item
+        for item in queue["items"]
+        if item["event"]["metadata"].get("federated_packet_import_id") == rejected["import_id"]
+    ]
+
+
+
 def test_wrapper_chat_records_sanitized_ao_execution_receipt(tmp_path: Path):
     client = TestClient(create_app(str(make_project(tmp_path))))
 
@@ -3891,6 +4873,46 @@ def test_wrapper_chat_records_sanitized_ao_execution_receipt(tmp_path: Path):
     assert eval_ao["execution_count"] >= 1
     assert "Run an eval smoke gate" not in json.dumps(aos)
     assert "ao-runtime-user" not in json.dumps(aos)
+    assert "artifact_dir" not in aos["replay"]
+
+
+def test_wrapper_ao_replay_keeps_persistence_internal_and_public_reference_logical(tmp_path: Path):
+    project_root = make_project(tmp_path)
+    client = TestClient(create_app(str(project_root)))
+
+    response = client.post(
+        "/chat",
+        json={
+            "session_id": "ao-replay-user",
+            "message": "Run an eval smoke gate and retain only a sanitized AO replay receipt.",
+            "rag": False,
+        },
+    )
+
+    assert response.status_code == 200
+    before_aos = client.get("/ops/brain/aos").json()
+    trace_ref = f"trace::{response.json()['trace_id']}"
+    before_receipt = next(
+        receipt for receipt in before_aos["execution_receipts"] if receipt.get("trace_ref") == trace_ref
+    )
+    persisted_receipt_path = client.app.state.services.paths.artifacts_dir / before_receipt["artifact_ref"]
+    assert persisted_receipt_path.exists()
+
+    restarted = TestClient(create_app(str(project_root)))
+    replayed_aos = restarted.get("/ops/brain/aos").json()
+    replayed_receipt = next(
+        receipt
+        for receipt in replayed_aos["execution_receipts"]
+        if receipt.get("execution_id") == before_receipt["execution_id"]
+    )
+
+    assert replayed_aos["replay"]["status"] == "replayed"
+    assert replayed_aos["replay"]["artifact_ref"] == "aos/execution-receipts"
+    assert replayed_aos["replay"]["artifact_available"] is True
+    assert "artifact_dir" not in replayed_aos["replay"]
+    assert replayed_receipt["artifact_ref"] == before_receipt["artifact_ref"]
+    assert "artifact_path" not in replayed_receipt
+    assert "ao-replay-user" not in json.dumps(replayed_aos)
 
 
 def test_wrapper_chat_records_canonical_ao_coverage_for_live_forward_pass(tmp_path: Path):
@@ -4230,7 +5252,12 @@ def test_release_wrapper_dream_research_proposal_exposes_safe_lifecycle_refs(tmp
 
     approval = client.post(
         governance["admin_approval_ref"],
-        json={"approved_by": "admin", "approval_ref": "operator-review::dream-research-generated"},
+        json={
+            "approval_decision_id": _stored_autonomous_update_approval(
+                client,
+                update_id=governance["proposal_update_id"],
+            )
+        },
     )
     assert approval.status_code == 200
     assert approval.json()["status"] == "admin-approved"
@@ -4238,12 +5265,12 @@ def test_release_wrapper_dream_research_proposal_exposes_safe_lifecycle_refs(tmp
     assert eval_replay["status"] == "passed-shadow"
     assert eval_replay["promotion_allowed"] is True
     assert eval_replay["operator_approved"] is True
-    assert eval_replay["metadata"]["queue_id"] == latest_item["queue_id"]
     proposal_after_approval = next(
         proposal
         for proposal in client.get("/ops/brain/autonomous-updates").json()["proposals"]
         if proposal["update_id"] == governance["proposal_update_id"]
     )
+    assert proposal_after_approval["metadata"]["improvement_queue_id"] == latest_item["queue_id"]
     assert proposal_after_approval["latest_eval_replay"]["run_id"] == eval_replay["run_id"]
     eval_registry = client.get("/ops/brain/eval-registry").json()
     shadow_run = next(run for run in eval_registry["shadow_runs"] if run["run_id"] == eval_replay["run_id"])
@@ -4260,12 +5287,18 @@ def test_release_wrapper_dream_research_proposal_exposes_safe_lifecycle_refs(tmp
     assert sandbox_payload["sandbox"]["active_project_root_mutated"] is False
     assert sandbox_payload["diff_summary"]["unsafe_change_count"] == 0
     assert linked_queue_status() == "approved"
+    immune_governance_decision_id = _approved_immune_governance_decision(
+        client,
+        candidate_ref=governance["proposal_update_id"],
+        command="python -m pytest tests/test_hive_final_waves.py::test_immune_gate_attenuates_anomalies -q",
+    )
 
     applied = client.post(
         governance["apply_ref"],
         json={
             "test_refs": ["pytest tests/generated_dream_queue_probe_test.py -q"],
             "test_evidence_refs": [sandbox_payload["evidence_ref"]],
+            "immune_governance_decision_id": immune_governance_decision_id,
         },
     )
     assert applied.status_code == 200
@@ -4341,7 +5374,12 @@ def test_release_readiness_manifest_proves_live_wrapper_lifecycle_evidence(tmp_p
     governance = runtime["dream_research_queue"]["latest_item"]["governance"]
     approval = client.post(
         governance["admin_approval_ref"],
-        json={"approved_by": "admin", "approval_ref": "operator-review::release-readiness"},
+        json={
+            "approval_decision_id": _stored_autonomous_update_approval(
+                client,
+                update_id=governance["proposal_update_id"],
+            )
+        },
     )
     assert approval.status_code == 200
     sandbox_run = client.post(
@@ -4349,11 +5387,17 @@ def test_release_readiness_manifest_proves_live_wrapper_lifecycle_evidence(tmp_p
         json={"command": "pytest tests/readiness_manifest_probe_test.py -q", "timeout_seconds": 30},
     )
     assert sandbox_run.status_code == 200
+    immune_governance_decision_id = _approved_immune_governance_decision(
+        client,
+        candidate_ref=governance["proposal_update_id"],
+        command="python -m pytest tests/test_hive_final_waves.py::test_immune_gate_attenuates_anomalies -q",
+    )
     applied = client.post(
         governance["apply_ref"],
         json={
             "test_refs": ["pytest tests/readiness_manifest_probe_test.py -q"],
             "test_evidence_refs": [sandbox_run.json()["evidence_ref"]],
+            "immune_governance_decision_id": immune_governance_decision_id,
         },
     )
     assert applied.status_code == 200
@@ -4535,6 +5579,7 @@ def test_release_readiness_runner_drives_governed_evidence_path(tmp_path: Path):
         "continuous_assimilation": "covered",
         "global_growth": "covered",
         "evals_ao_artifact_gate": "covered",
+        "poisoning_anomaly_gate": "covered",
         "dream_research_queue": "covered",
     }
     import_whole_system_receipt = imported["whole_system_enforcement_receipt"]
@@ -4563,14 +5608,16 @@ def test_release_readiness_runner_drives_governed_evidence_path(tmp_path: Path):
         for ref in import_whole_system_receipt["evidence_refs"]
     )
 
+    runtime_before_run = client.get("/ops/wrapper/release-runtime", params={"session_id": session_id}).json()
+    governance = runtime_before_run["dream_research_queue"]["latest_item"]["governance"]
     response = client.post(
-        "/ops/wrapper/release-readiness/run",
+        f"/ops/wrapper/autonomous-updates/{governance['proposal_update_id']}/run",
         json={
             "session_id": session_id,
-            "command": "pytest tests/release_wrapper_readiness_runner_probe_test.py -q",
-            "timeout_seconds": 30,
-            "approved_by": "admin",
-            "approval_ref": "operator-review::release-readiness-runner",
+            "approval_decision_id": _stored_autonomous_update_approval(
+                client,
+                update_id=governance["proposal_update_id"],
+            ),
         },
     )
 
@@ -4735,6 +5782,7 @@ def test_release_readiness_runner_drives_governed_evidence_path(tmp_path: Path):
     control_panel_js = (project_root / "ui" / "control-panel" / "app.js").read_text(encoding="utf-8")
     visualizer_js = (project_root / "ui" / "visualizer" / "app.js").read_text(encoding="utf-8")
     assert "Release Harness operation receipts" in control_panel_js
+    assert "run_governed_lifecycle" in control_panel_js
     assert "operation receipt refs" in control_panel_js
     assert "federated import receipt" in control_panel_js
     assert "self-repair operation receipt" in control_panel_js
@@ -4751,6 +5799,9 @@ def test_release_readiness_runner_drives_governed_evidence_path(tmp_path: Path):
 
 def test_control_panel_evolution_projection_distinguishes_unavailable_telemetry():
     control_panel_js = (Path(__file__).parents[1] / "ui" / "control-panel" / "app.js").read_text(
+        encoding="utf-8"
+    )
+    visualizer_js = (Path(__file__).parents[1] / "ui" / "visualizer" / "app.js").read_text(
         encoding="utf-8"
     )
     assert "function renderUniversalEvolutionCard" in control_panel_js
@@ -4918,6 +5969,60 @@ process.stdout.write(JSON.stringify({ unavailable, available }));
     assert "&lt;script&gt;" in available
     assert "<script>" not in available
     assert "data-release-wrapper-action" not in available
+    assert "release-wrapper-operation-receipts" in visualizer_js
+    assert "release-wrapper-import-receipt" in visualizer_js
+
+
+def test_release_readiness_runner_requires_stored_update_approval(tmp_path: Path):
+    project_root = make_project(tmp_path)
+    sandbox_probe = project_root / "tests" / "release_readiness_stored_approval_probe_test.py"
+    sandbox_probe.parent.mkdir(parents=True, exist_ok=True)
+    sandbox_probe.write_text("def test_release_readiness_stored_approval_probe():\n    assert True\n", encoding="utf-8")
+    client = TestClient(create_app(str(project_root)))
+    session_id = "release-readiness-stored-approval-user"
+
+    chat = client.post(
+        "/v1/chat/completions",
+        json={
+            "session_id": session_id,
+            "model": "nexusnet-offline",
+            "messages": [{"role": "user", "content": "Prepare a governed release readiness repair."}],
+        },
+    )
+    assert chat.status_code == 200
+    lane = client.get("/ops/wrapper/status-card", params={"session_id": session_id}).json()["operator_action_lane"]
+    update_id = lane["proposal_update_id"]
+    command = "pytest tests/release_readiness_stored_approval_probe_test.py -q"
+
+    raw = client.post(
+        "/ops/wrapper/release-readiness/run",
+        json={
+            "session_id": session_id,
+            "update_id": update_id,
+            "command": command,
+            "approved_by": "admin",
+            "approval_ref": "operator-review::unbound-readiness",
+        },
+    )
+    assert raw.status_code == 400
+
+    run = client.post(
+        "/ops/wrapper/release-readiness/run",
+        json={
+            "session_id": session_id,
+            "update_id": update_id,
+            "command": command,
+            "approval_decision_id": _stored_autonomous_update_approval(client, update_id=update_id),
+        },
+    )
+    assert run.status_code == 200
+    payload = run.json()
+    assert payload["status"] == "completed"
+    assert payload["actions"]["admin_approval"]["status"] == "admin-approved"
+    assert payload["actions"]["sandbox_tests"]["status"] == "passed"
+    assert payload["actions"]["apply"]["status"] == "applied-shadow-safe-file"
+    assert payload["actions"]["rollback"]["status"] == "rolled-back"
+    assert payload["active_production_mutated"] is False
 
 
 def test_release_readiness_blocks_go_without_accepted_peer_federation_import(tmp_path: Path):
@@ -4940,17 +6045,23 @@ def test_release_readiness_blocks_go_without_accepted_peer_federation_import(tmp
         },
     )
     assert chat.status_code == 200
+    update_id = client.get(
+        "/ops/wrapper/status-card",
+        params={"session_id": session_id},
+    ).json()["operator_action_lane"]["proposal_update_id"]
 
-    run = client.post(
+    run_response = client.post(
         "/ops/wrapper/release-readiness/run",
         json={
             "session_id": session_id,
+            "update_id": update_id,
             "command": "pytest tests/release_wrapper_readiness_requires_peer_import_probe_test.py -q",
             "timeout_seconds": 30,
-            "approved_by": "admin",
-            "approval_ref": "operator-review::readiness-requires-peer-import",
+            "approval_decision_id": _stored_autonomous_update_approval(client, update_id=update_id),
         },
-    ).json()
+    )
+    assert run_response.status_code == 200
+    run = run_response.json()
     readiness = client.get("/ops/wrapper/release-readiness", params={"session_id": session_id}).json()
     checks = {check["check_id"]: check for check in readiness["readiness_checks"]}
 
@@ -4959,6 +6070,8 @@ def test_release_readiness_blocks_go_without_accepted_peer_federation_import(tmp
     assert checks["federated-packet-inbox"]["status"] == "blocked"
     assert checks["peer-shadow-proposal"]["status"] == "blocked"
     assert readiness["evidence"]["federated_packet_inbox"]["import_count"] == 0
+    assert readiness["evidence"]["federated_packet_inbox"]["accepted_import_count"] == 0
+    assert readiness["evidence"]["federated_packet_inbox"]["accepted_peer_import_count"] == 0
     serialized = json.dumps({"run": run, "readiness": readiness})
     assert session_id not in serialized
     assert "Readiness must require inbound peer federation" not in serialized
@@ -4995,7 +6108,12 @@ def test_release_readiness_blocks_stale_native_hive_heartbeat_history(tmp_path: 
     governance = runtime["dream_research_queue"]["latest_item"]["governance"]
     approval = client.post(
         governance["admin_approval_ref"],
-        json={"approved_by": "admin", "approval_ref": "operator-review::native-heartbeat-freshness"},
+        json={
+            "approval_decision_id": _stored_autonomous_update_approval(
+                client,
+                update_id=governance["proposal_update_id"],
+            )
+        },
     )
     assert approval.status_code == 200
     sandbox = client.post(
@@ -5003,11 +6121,17 @@ def test_release_readiness_blocks_stale_native_hive_heartbeat_history(tmp_path: 
         json={"command": "pytest tests/stale_native_hive_heartbeat_probe_test.py -q", "timeout_seconds": 30},
     )
     assert sandbox.status_code == 200
+    immune_governance_decision_id = _approved_immune_governance_decision(
+        client,
+        candidate_ref=governance["proposal_update_id"],
+        command="python -m pytest tests/test_hive_final_waves.py::test_immune_gate_attenuates_anomalies -q",
+    )
     applied = client.post(
         governance["apply_ref"],
         json={
             "test_refs": ["pytest tests/stale_native_hive_heartbeat_probe_test.py -q"],
             "test_evidence_refs": [sandbox.json()["evidence_ref"]],
+            "immune_governance_decision_id": immune_governance_decision_id,
         },
     )
     assert applied.status_code == 200
@@ -5177,7 +6301,12 @@ def test_release_wrapper_dream_research_proposal_lifecycle_replays_after_app_res
 
     approval = client.post(
         governance["admin_approval_ref"],
-        json={"approved_by": "admin", "approval_ref": "operator-review::dream-proposal-replay"},
+        json={
+            "approval_decision_id": _stored_autonomous_update_approval(
+                client,
+                update_id=governance["proposal_update_id"],
+            )
+        },
     )
     assert approval.status_code == 200
     eval_replay = approval.json()["linked_eval_replay"]
@@ -5229,7 +6358,12 @@ def test_release_wrapper_status_card_is_lightweight_control_panel_surface_after_
     governance = runtime["dream_research_queue"]["latest_item"]["governance"]
     approval = client.post(
         governance["admin_approval_ref"],
-        json={"approved_by": "admin", "approval_ref": "operator-review::release-status-card"},
+        json={
+            "approval_decision_id": _stored_autonomous_update_approval(
+                client,
+                update_id=governance["proposal_update_id"],
+            )
+        },
     )
     assert approval.status_code == 200
 
@@ -5290,33 +6424,36 @@ def test_release_wrapper_status_card_exposes_admin_action_lane_for_control_panel
     assert action_lane["sandbox_tests_ref"] == governance["sandbox_tests_ref"]
     assert action_lane["apply_ref"] == governance["apply_ref"]
     assert action_lane["rollback_ref"] == governance["rollback_ref"]
+    assert action_lane["approval_request_ref"] == "/ops/approvals"
+    assert action_lane["run_governed_lifecycle_ref"] == (
+        f"/ops/wrapper/autonomous-updates/{action_lane['proposal_update_id']}/run"
+    )
     assert action_lane["run_readiness_evidence_ref"] == "/ops/wrapper/release-readiness/run"
     assert action_lane["status_card_ref"] == "/ops/wrapper/status-card"
     assert action_lane["default_sandbox_command"].startswith("pytest tests/")
     assert action_lane["active_production_mutation_allowed"] is False
     assert action_lane["safe_file_scope"] == ["artifacts/autonomous-updates/safe-files"]
 
+    stored_approval_id = _stored_autonomous_update_approval(
+        client,
+        update_id=action_lane["proposal_update_id"],
+    )
     approval = client.post(
         action_lane["admin_approval_ref"],
-        json={"approved_by": "admin", "approval_ref": "operator-review::release-action-lane"},
+        json={"approval_decision_id": stored_approval_id},
     )
     assert approval.status_code == 200
-    sandbox_run = client.post(
-        action_lane["sandbox_tests_ref"],
-        json={"command": "pytest tests/release_wrapper_action_lane_probe_test.py -q", "timeout_seconds": 30},
-    )
-    assert sandbox_run.status_code == 200
-    assert sandbox_run.json()["status"] == "passed"
-    applied = client.post(
-        action_lane["apply_ref"],
+    lifecycle_run = client.post(
+        action_lane["run_governed_lifecycle_ref"],
         json={
-            "test_refs": ["pytest tests/release_wrapper_action_lane_probe_test.py -q"],
-            "test_evidence_refs": [sandbox_run.json()["evidence_ref"]],
+            "session_id": "release-action-lane-user",
+            "approval_decision_id": stored_approval_id,
+            "command": "pytest tests/release_wrapper_action_lane_probe_test.py -q",
+            "timeout_seconds": 30,
         },
     )
-    assert applied.status_code == 200
-    rollback = client.post(action_lane["rollback_ref"], json={"reason": "release-wrapper-action-lane-test"})
-    assert rollback.status_code == 200
+    assert lifecycle_run.status_code == 200
+    assert lifecycle_run.json()["status"] == "completed"
 
     refreshed = client.get("/ops/wrapper/status-card", params={"session_id": "release-action-lane-user"}).json()
     statuses = refreshed["operator_action_lane"]["latest_action_statuses"]
@@ -5331,6 +6468,9 @@ def test_release_wrapper_status_card_exposes_admin_action_lane_for_control_panel
     assert "release-wrapper-admin-action-lane" in app_js
     assert "data-release-wrapper-action" in app_js
     assert "runReleaseWrapperAdminAction" in app_js
+    assert "run_governed_lifecycle" in app_js
+    assert "approval_request_ref" in app_js
+    assert "stored_approval_ref" in app_js
     assert "refreshReleaseWrapperStatusCard" in app_js
     assert "default_sandbox_command" in app_js
     assert "admin_approval_ref" in app_js
@@ -5451,7 +6591,7 @@ def test_release_runtime_surfaces_in_wrapper_and_visualizer_control_panel(tmp_pa
         == "whole-system-release-boot-contract"
     )
     assert control_panel["release_wrapper_readiness"]["whole_system_boot_contract"]["status"] == "blocked"
-    assert control_panel["release_wrapper_readiness"]["whole_system_boot_contract"]["blocked_count"] == 1
+    assert control_panel["release_wrapper_readiness"]["whole_system_boot_contract"]["blocked_count"] == 3
     readiness_checks = {
         check["check_id"]: check
         for check in control_panel["release_wrapper_readiness"]["readiness_checks"]
@@ -5466,11 +6606,17 @@ def test_release_runtime_surfaces_in_wrapper_and_visualizer_control_panel(tmp_pa
         for check_id, check in readiness_checks.items()
         if check["status"] != "pass" and check.get("go_no_go_blocking") is not False
     }
-    assert {
+    assert blocking_degraded_checks >= {
         "federated-packet-inbox",
         "peer-shadow-proposal",
+        "shadow-eval-replay",
+        "artifact-bound-replay-gate",
+        "sandbox-evidence",
+        "safe-apply",
+        "rollback",
+        "self-repair-ledger",
         "whole-system-release-boot-contract",
-    } <= blocking_degraded_checks
+    }
     assert nonblocking_degraded_checks >= {
         "release-health-heartbeat",
         "release-health-heartbeat-loop",
@@ -5847,7 +6993,9 @@ def test_project_heartbeat_records_sanitized_replay_history_after_restart(tmp_pa
     assert replay["raw_content_included"] is False
     assert replay["active_production_mutation_allowed"] is False
     assert runtime["project_heartbeat"]["wrapper_replay_ref"] == replay["artifact_ref"]
-    assert runtime["project_heartbeat"]["replay_ref"] == "hive-substrate/project-heartbeats/_index.jsonl"
+    assert runtime["project_heartbeat"]["replay_ref"] == heartbeat["native_replay_ref"]
+    assert runtime["project_heartbeat"]["native_replay_ref"] == "hive-substrate/project-heartbeats/_index.jsonl"
+    assert replay["artifact_ref"] == "release-wrapper-runtime/project-heartbeats.jsonl"
     assert readiness["evidence"]["project_heartbeat_replay"]["latest_heartbeat_id"] == heartbeat["heartbeat_id"]
     assert status_card["project_heartbeat_replay"]["latest_heartbeat_id"] == heartbeat["heartbeat_id"]
     assert control_panel["release_wrapper_runtime"]["project_heartbeat_replay"]["latest_heartbeat_id"] == heartbeat[
@@ -6006,7 +7154,7 @@ def test_release_wrapper_first_run_readiness_is_sanitized_product_manifest_templ
 
     assert readiness["surface_id"] == "release-wrapper-first-run-readiness"
     assert readiness["product_surface"] == "wrapper"
-    assert readiness["product_scope"] == "whole-system"
+    assert readiness["product_scope"] == "wrapper-session"
     assert readiness["runtime_state"] == "live-bound"
     assert readiness["endpoint_refs"]["first_run_readiness"] == "/ops/wrapper/first-run-readiness"
     assert readiness["endpoint_refs"]["first_run_readiness_run"] == "/ops/wrapper/first-run-readiness/run"
@@ -6024,19 +7172,20 @@ def test_release_wrapper_first_run_readiness_is_sanitized_product_manifest_templ
     assert readiness["decision"] == "blocked-first-run-proofs-missing"
     assert "operator_approved" in readiness["missing_proof_fields"]
     assert template["endpoint"] == "/ops/brain/production-spine/first-run-readiness"
-    assert template["source"] == "production-spine-scorecard-first-run-template"
-    assert request["cycle_id"].startswith("cycle:live-wrapper:")
-    assert request["readiness_id"].startswith("first-run:cycle:live-wrapper:")
-    assert request["student_id"].startswith("student:live-wrapper:")
-    assert request["target_node_ref"] == "node:release-wrapper-live-product-use"
+    assert template["source"] == "release-wrapper-runtime-first-run-template"
+    assert request["cycle_id"].startswith("release-wrapper-first-run::")
+    assert request["readiness_id"].startswith("first-run:release-wrapper::")
+    assert request["student_id"] == "release-wrapper"
+    assert request["target_node_ref"].startswith("expert.")
     assert request["local_cache_controls_ready"] is True
     assert request["model_download_manager_ready"] is True
     assert request["buyer_launcher_ready"] is True
     assert request["buyer_safe_defaults"] is True
-    assert request["support_bundle_ready"] is True
-    assert request["project_local_signing_key_ready"] is True
-    assert request["adapter_artifact_trust_status"] == "trusted"
-    assert request["adapter_artifact_trust_clear"] is True
+    assert request["support_bundle_ready"] is False
+    assert request["crash_diagnostics_ready"] is False
+    assert request["project_local_signing_key_ready"] is False
+    assert request["adapter_artifact_trust_status"] == "not_recorded"
+    assert request["adapter_artifact_trust_clear"] is False
     assert request["operator_approved"] is False
     assert request["include_raw_private_data"] is False
     assert request["workspace_paths_redacted"] is True
@@ -6215,14 +7364,14 @@ def test_release_wrapper_first_run_readiness_uses_whole_system_production_spine_
     assert request["project_local_signing_key_ready"] is True
     assert request["key_file_path"].endswith("artifact_signing_key.enc.json")
     assert request["adapter_artifact_trust_status"] in {"not_recorded", "quarantined", "trusted"}
-    assert request["adapter_artifact_trust_clear"] is True
+    assert request["adapter_artifact_trust_clear"] is False
     assert readiness["gates"]["support_bundle_ready"] is True
     assert readiness["gates"]["crash_diagnostics_ready"] is True
     assert readiness["gates"]["project_local_signing_key_ready"] is True
     assert "support_bundle_ready" not in readiness["missing_proof_fields"]
     assert "crash_diagnostics_ready" not in readiness["missing_proof_fields"]
     assert "project_local_signing_key_ready" not in readiness["missing_proof_fields"]
-    assert "adapter_artifact_trust_clear" not in readiness["missing_proof_fields"]
+    assert "adapter_artifact_trust_clear" in readiness["missing_proof_fields"]
     assert "operator_approved" in readiness["missing_proof_fields"]
     assert readiness["decision"] == "blocked-first-run-proofs-missing"
 
@@ -6236,8 +7385,8 @@ def test_release_wrapper_first_run_readiness_uses_whole_system_production_spine_
     assert manifest["support_bundle_ready"] is True
     assert manifest["crash_diagnostics_ready"] is True
     assert manifest["project_local_signing_key_ready"] is True
-    assert manifest["adapter_artifact_trust_clear"] is True
-    assert "adapter_artifact_trust_clear" not in manifest["readiness_blockers"]
+    assert manifest["adapter_artifact_trust_clear"] is False
+    assert "adapter_artifact_trust_clear" in manifest["readiness_blockers"]
     assert "operator_approved" in manifest["readiness_blockers"]
 
     runtime = client.get("/ops/wrapper/release-runtime", params={"session_id": session_id}).json()
@@ -6442,7 +7591,7 @@ def test_release_wrapper_surfaces_production_release_manifest_rollup_in_status_s
     assert "release manifest rollup" in control_panel_js
     assert "release-manifest-rollup" in control_panel_js
     assert "active mutation blocked" in control_panel_js
-    assert "Wrapper release manifest rollup" in visualizer_js
+    assert "Harness release manifest rollup" in visualizer_js
     assert "release-wrapper-release-manifest-rollup" in visualizer_js
     assert "active mutation blocked" in visualizer_js
 
@@ -6972,15 +8121,19 @@ def test_release_wrapper_forward_pass_enforcement_matrix_tracks_product_admin_an
         json={"session_id": session_id, "peer_node_id": "forward-pass-matrix-peer", "packet": packet},
     )
     assert imported.status_code == 200
+    update_id = client.get(
+        "/ops/wrapper/status-card",
+        params={"session_id": session_id},
+    ).json()["operator_action_lane"]["proposal_update_id"]
 
     runner = client.post(
         "/ops/wrapper/release-readiness/run",
         json={
             "session_id": session_id,
+            "update_id": update_id,
             "command": "pytest tests/forward_pass_matrix_probe_test.py -q",
             "timeout_seconds": 30,
-            "approved_by": "admin",
-            "approval_ref": "operator-review::forward-pass-matrix",
+            "approval_decision_id": _stored_autonomous_update_approval(client, update_id=update_id),
         },
     )
     assert runner.status_code == 200
@@ -6998,7 +8151,11 @@ def test_release_wrapper_forward_pass_enforcement_matrix_tracks_product_admin_an
 
     assert matrix["surface_id"] == "whole-system-forward-pass-enforcement-matrix"
     assert matrix["coverage_status"] == "partial"
-    assert matrix["missing_entrypoint_ids"] == ["domain_expert_growth_admin_replay"]
+    assert matrix["missing_entrypoint_ids"] == [
+        "domain_expert_growth_admin_replay",
+        "production_spine_release_lifecycle",
+        "production_spine_lifecycle_rollback",
+    ]
     assert matrix["raw_content_included"] is False
     assert matrix["active_production_mutation_allowed"] is False
     receipt = matrix["latest_receipt"]
@@ -7073,8 +8230,8 @@ def test_release_wrapper_forward_pass_enforcement_matrix_tracks_product_admin_an
     assert rows["boot_supervisor"]["status"] == "covered"
     assert rows["boot_supervisor"]["honest_status_label"] == "covered"
     assert rows["initial_release_supervisor"]["status"] == "covered"
-    assert rows["production_spine_release_lifecycle"]["status"] == "covered"
-    assert rows["production_spine_lifecycle_rollback"]["status"] == "covered"
+    assert rows["production_spine_release_lifecycle"]["status"] == "missing"
+    assert rows["production_spine_lifecycle_rollback"]["status"] == "missing"
     assert rows["domain_expert_growth_admin_replay"]["status"] == "missing"
 
     assert readiness["evidence"]["whole_system_forward_pass_enforcement_matrix"]["coverage_status"] == "partial"
@@ -7187,7 +8344,12 @@ def test_release_wrapper_developmental_packet_feeds_governed_update_surfaces(tmp
 
     approval = client.post(
         action_lane["admin_approval_ref"],
-        json={"approved_by": "admin", "approval_ref": "operator-review::developmental-update"},
+        json={
+            "approval_decision_id": _stored_autonomous_update_approval(
+                client,
+                update_id=action_lane["proposal_update_id"],
+            )
+        },
     )
     assert approval.status_code == 200
     approval_payload = approval.json()
@@ -7206,12 +8368,18 @@ def test_release_wrapper_developmental_packet_feeds_governed_update_surfaces(tmp
     assert sandbox_payload["status"] == "passed"
     assert sandbox_payload["sandbox"]["active_project_root_mutated"] is False
     assert sandbox_payload["diff_summary"]["unsafe_change_count"] == 0
+    immune_governance_decision_id = _approved_immune_governance_decision(
+        client,
+        candidate_ref=action_lane["proposal_update_id"],
+        command="python -m pytest tests/test_hive_final_waves.py::test_immune_gate_attenuates_anomalies -q",
+    )
 
     applied = client.post(
         action_lane["apply_ref"],
         json={
             "test_refs": ["pytest tests/developmental_update_apply_probe_test.py -q"],
             "test_evidence_refs": [sandbox_payload["evidence_ref"]],
+            "immune_governance_decision_id": immune_governance_decision_id,
         },
     )
     assert applied.status_code == 200
@@ -7761,7 +8929,9 @@ class _InstantFailingProvider:
 
 def test_wrapper_provider_failure_routes_native_recovery_governance_through_auto_repair(
     tmp_path: Path,
+    monkeypatch,
 ):
+    _install_test_heartbeat_repair_approval(monkeypatch)
     project_root = make_project(tmp_path)
     sandbox_probe = project_root / "tests" / "heartbeat_supervisor_repair_auto_probe_test.py"
     sandbox_probe.parent.mkdir(parents=True, exist_ok=True)
@@ -7785,14 +8955,38 @@ def test_wrapper_provider_failure_routes_native_recovery_governance_through_auto
         },
     )
     assert configured.status_code == 200
+    lease_response = client.post(
+        "/ops/brain/execution-authority/leases/request",
+        json={
+            "capability": "model_inference",
+            "scope": {
+                "provider_id": provider.provider_id,
+                "provider_local": True,
+                "operation": "chat_completion",
+            },
+            "expires_at": "2099-01-01T00:00:00+00:00",
+            "budget": {"max_usd": 0.0, "max_minutes": 1},
+            "rollback_plan": {"strategy": "stop-dispatch-and-use-native-fallback"},
+            "approval_id": "approval::provider-failure-recovery",
+            "approval_decision": "approved",
+            "gateway_decision": "allow",
+            "product_sweep_gate_ids": ["provider-failure-recovery"],
+            "product_sweep_decision": "passed",
+            "requested_execution": True,
+            "requested_mutation": False,
+        },
+    )
+    assert lease_response.status_code == 200
+    lease_id = lease_response.json()["lease"]["lease_id"]
 
     chat = client.post(
         "/v1/chat/completions",
         json={
-            "model": provider.provider_id,
-            "messages": [{"role": "user", "content": prompt}],
-            "user": raw_session_id,
-        },
+                "model": provider.provider_id,
+                "messages": [{"role": "user", "content": prompt}],
+                "user": raw_session_id,
+                "metadata": {"execution_authority_lease_id": lease_id},
+            },
     )
     assert chat.status_code == 502
 
@@ -7808,14 +9002,14 @@ def test_wrapper_provider_failure_routes_native_recovery_governance_through_auto
     replay_record = project_heartbeat_replay["latest_record"]
     recovery_governance = project_heartbeat["failure_recovery_governance"]
 
-    assert project_heartbeat["status"] == "alive"
-    assert recovery_governance["status"] == "live-bound-idle"
-    assert recovery_governance["blocked_forward_pass"] is False
-    assert recovery_governance["self_healing_route_available"] is False
-    assert recovery_governance["admin_governance_required"] is False
-    assert recovery_governance["sandbox_eval_required"] is False
-    assert recovery_governance["rollback_required"] is False
-    assert replay_record["failure_recovery_governance"]["blocked_forward_pass"] is False
+    assert project_heartbeat["status"] == "degraded"
+    assert recovery_governance["status"] == "degraded-recovery-governed"
+    assert recovery_governance["blocked_forward_pass"] is True
+    assert recovery_governance["self_healing_route_available"] is True
+    assert recovery_governance["admin_governance_required"] is True
+    assert recovery_governance["sandbox_eval_required"] is True
+    assert recovery_governance["rollback_required"] is True
+    assert replay_record["failure_recovery_governance"]["blocked_forward_pass"] is True
 
     supervisor = runtime["release_health_heartbeat_supervisor"]
     pulse_loop = supervisor["latest_pulse"]["loop"]
@@ -7823,14 +9017,17 @@ def test_wrapper_provider_failure_routes_native_recovery_governance_through_auto
         candidate["gate_id"]: candidate
         for candidate in pulse_loop["whole_system_repair_candidates"]
     }
-    assert "native-project-heartbeat-recovery-governance" not in candidates
+    native_candidate = candidates["native-project-heartbeat-recovery-governance"]
+    assert native_candidate["status"] == "degraded-recovery-governed"
+    assert native_candidate["recovery_governance"]["blocked_forward_pass"] is True
+    assert "native-project-heartbeat-failure-recovery-governance" in native_candidate["target_surfaces"]
 
     repair_plan = latest_interaction["release_health_automatic_repair_plan"]
     envelopes = {
         envelope["gate_id"]: envelope
         for envelope in repair_plan["subsystem_repair_envelopes"]
     }
-    assert "native-project-heartbeat-recovery-governance" not in envelopes
+    native_envelope = envelopes["native-project-heartbeat-recovery-governance"]
     assert repair_plan["status"] == "completed-heartbeat-supervisor-repair"
     assert repair_plan["source_loop_id"] == pulse_loop["loop_id"]
     assert repair_plan["source_heartbeat_id"] == pulse_loop["latest_heartbeat_id"]
@@ -7842,6 +9039,13 @@ def test_wrapper_provider_failure_routes_native_recovery_governance_through_auto
     assert repair_plan["actions"]["sandbox_tests"]["status"] == "passed"
     assert repair_plan["actions"]["apply"]["status"] == "applied-shadow-safe-file"
     assert repair_plan["actions"]["rollback"]["status"] == "rolled-back"
+    assert native_envelope["honest_status_label"] == "completed-shadow-safe-file-rollback-verified"
+    assert native_envelope["recovery_governance"]["blocked_forward_pass"] is True
+    assert native_envelope["action_statuses"]["admin_approval"] == "admin-approved"
+    assert native_envelope["action_statuses"]["shadow_eval_replay"] == "passed-shadow"
+    assert native_envelope["action_statuses"]["sandbox_tests"] == "passed"
+    assert native_envelope["action_statuses"]["apply"] == "applied-shadow-safe-file"
+    assert native_envelope["action_statuses"]["rollback"] == "rolled-back"
     assert all(envelope["raw_content_included"] is False for envelope in envelopes.values())
     assert all(envelope["active_production_mutation_allowed"] is False for envelope in envelopes.values())
     assert all(envelope["active_production_mutated"] is False for envelope in envelopes.values())
@@ -7863,7 +9067,7 @@ def test_wrapper_provider_failure_routes_native_recovery_governance_through_auto
     replayed_runtime = replay_client.get("/ops/wrapper/release-runtime", params={"session_id": raw_session_id}).json()
     assert replayed_runtime["project_heartbeat_replay"]["latest_record"]["failure_recovery_governance"][
         "blocked_forward_pass"
-    ] is False
+    ] is True
     assert replayed_runtime["release_health_heartbeat_supervisor"]["repair_history"]["latest_run_id"] == (
         repair_plan["readiness_evidence_run"]["run_id"]
     )
@@ -7885,7 +9089,9 @@ def test_wrapper_provider_failure_routes_native_recovery_governance_through_auto
 
 def test_release_wrapper_live_use_executes_heartbeat_supervisor_repair_without_manual_endpoint(
     tmp_path: Path,
+    monkeypatch,
 ):
+    _install_test_heartbeat_repair_approval(monkeypatch)
     project_root = make_project(tmp_path)
     sandbox_probe = project_root / "tests" / "heartbeat_supervisor_repair_auto_probe_test.py"
     sandbox_probe.parent.mkdir(parents=True, exist_ok=True)
@@ -8047,7 +9253,7 @@ def test_release_wrapper_heartbeat_supervisor_repair_run_uses_admin_eval_sandbox
         "shadow-learning",
     }.issubset(queued_target_surfaces)
 
-    repair = client.post(
+    raw_repair = client.post(
         "/ops/wrapper/release-health-heartbeat/supervisor/repair-run",
         json={
             "session_id": raw_session_id,
@@ -8055,6 +9261,17 @@ def test_release_wrapper_heartbeat_supervisor_repair_run_uses_admin_eval_sandbox
             "timeout_seconds": 30,
             "approved_by": "admin",
             "approval_ref": "operator-review::heartbeat-supervisor-repair",
+        },
+    )
+    assert raw_repair.status_code == 400
+
+    repair = client.post(
+        "/ops/wrapper/release-health-heartbeat/supervisor/repair-run",
+        json={
+            "session_id": raw_session_id,
+            "command": sandbox_command,
+            "timeout_seconds": 30,
+            "approval_decision_id": _stored_autonomous_update_approval(client, update_id=update_id),
         },
     )
 
@@ -8076,12 +9293,42 @@ def test_release_wrapper_heartbeat_supervisor_repair_run_uses_admin_eval_sandbox
     assert actions["shadow_eval_replay"]["promotion_allowed"] is True
     assert actions["sandbox_tests"]["status"] == "passed"
     assert actions["sandbox_tests"]["passed"] is True
+    assert actions["immune_governance"]["status"] == "approved-for-governed-promotion"
+    assert actions["immune_governance"]["promotion_allowed"] is True
     assert actions["sandbox_tests"]["sandbox"]["active_project_root_mutated"] is False
     assert actions["apply"]["status"] == "applied-shadow-safe-file"
     assert actions["apply"]["active_production_mutated"] is False
     assert actions["apply"]["test_results"][0]["evidence_ref"] == actions["sandbox_tests"]["evidence_ref"]
     assert actions["rollback"]["status"] == "rolled-back"
     assert actions["rollback"]["rollback_restored"] is True
+    context_graph_lifecycle = actions["context_graph_impact_lifecycle"]
+    assert context_graph_lifecycle["status"] == "rolled-back"
+    assert context_graph_lifecycle["source_surface_id"] == "release-health-heartbeat-supervisor-repair-run"
+    assert context_graph_lifecycle["receipt_id"].startswith("ctxgraph-impact::")
+    assert context_graph_lifecycle["source_projection_id"].startswith("ctxgraph-genesis-foundation::")
+    assert context_graph_lifecycle["receipt"]["gitnexus_provider_evidence"]["provider"] == "GitNexus"
+    assert context_graph_lifecycle["receipt"]["gitnexus_provider_evidence"]["target_symbol"] == (
+        "ops_wrapper_release_health_heartbeat_supervisor_repair_run"
+    )
+    assert context_graph_lifecycle["sandbox_eval"]["status"] == "passed"
+    assert context_graph_lifecycle["sandbox_eval"]["passed"] is True
+    assert context_graph_lifecycle["sandbox_eval"]["federated_outcome_packet"]["outcome_type"] == (
+        "context_graph_impact_sandbox_eval_passed"
+    )
+    assert context_graph_lifecycle["approval"]["status"] == "admin-approved"
+    assert context_graph_lifecycle["approval"]["operator_approved"] is True
+    assert context_graph_lifecycle["application"]["status"] == "applied-shadow-safe-file"
+    assert context_graph_lifecycle["application"]["active_production_mutated"] is False
+    assert context_graph_lifecycle["application"]["federated_outcome_packet"]["outcome_type"] == (
+        "context_graph_impact_applied"
+    )
+    assert context_graph_lifecycle["rollback"]["status"] == "rolled-back"
+    assert context_graph_lifecycle["rollback"]["rollback_restored"] is True
+    assert context_graph_lifecycle["rollback"]["federated_outcome_packet"]["outcome_type"] == (
+        "context_graph_impact_rolled_back"
+    )
+    assert context_graph_lifecycle["active_production_mutated"] is False
+    assert context_graph_lifecycle["raw_content_included"] is False
     assert readiness_run["status"] == "completed-heartbeat-supervisor-repair"
     assert readiness_run["active_production_mutated"] is False
     assert repair_payload["subsystem_repair_envelope_count"] == len(subsystem_envelopes)
@@ -8169,6 +9416,26 @@ def test_release_wrapper_heartbeat_supervisor_repair_run_uses_admin_eval_sandbox
     assert control_panel_after_repair["release_wrapper_release_health_heartbeat_supervisor"]["repair_history"][
         "latest_subsystem_repair_envelopes"
     ] == subsystem_envelopes
+    context_graph_after_repair = client.get("/ops/brain/context-graph").json()
+    impact_receipts = context_graph_after_repair["nexusgraph_impact_receipts"]
+    assert impact_receipts["latest_receipt"]["receipt_id"] == context_graph_lifecycle["receipt_id"]
+    assert impact_receipts["latest_sandbox_eval_run"]["eval_run_id"] == (
+        context_graph_lifecycle["sandbox_eval"]["eval_run_id"]
+    )
+    assert impact_receipts["latest_application"]["apply_id"] == context_graph_lifecycle["application"]["apply_id"]
+    assert impact_receipts["latest_rollback"]["rollback_id"] == context_graph_lifecycle["rollback"]["rollback_id"]
+    federated_after_repair = client.get(
+        "/ops/brain/genesis-federated-outcomes",
+        params={"session_id": raw_session_id},
+    ).json()
+    assert federated_after_repair["latest_packet"]["outcome_type"] == "context_graph_impact_rolled_back"
+    assert federated_after_repair["per_user_global_learning_state"]["global_federated_packet_captured"] is True
+    assert control_panel_after_repair["context_graph_status"]["nexusgraph_impact_receipts"]["latest_rollback"][
+        "rollback_id"
+    ] == context_graph_lifecycle["rollback"]["rollback_id"]
+    assert control_panel_after_repair["genesis_federated_outcome_status"]["latest_packet"]["outcome_type"] == (
+        "context_graph_impact_rolled_back"
+    )
 
     replay_client = TestClient(create_app(str(project_root)))
     replayed_runtime = replay_client.get("/ops/wrapper/release-runtime", params={"session_id": raw_session_id}).json()
@@ -8191,6 +9458,9 @@ def test_release_wrapper_heartbeat_supervisor_repair_run_uses_admin_eval_sandbox
             "repair_history": repair_history,
             "status_card": status_card,
             "self_repair": self_repair,
+            "context_graph_lifecycle": context_graph_lifecycle,
+            "context_graph": context_graph_after_repair,
+            "federated": federated_after_repair,
         },
         sort_keys=True,
     )
@@ -8455,7 +9725,11 @@ def test_release_wrapper_boot_supervisor_manifest_replays_in_runtime_status_and_
     assert "SECRET-BOOT-CHECK" not in serialized
 
 
-def test_release_wrapper_boot_supervisor_run_generates_manifest_from_live_product_path(tmp_path: Path):
+def test_release_wrapper_boot_supervisor_run_generates_manifest_from_live_product_path(
+    tmp_path: Path,
+    monkeypatch,
+):
+    _install_test_heartbeat_repair_approval(monkeypatch)
     project_root = make_project(tmp_path)
     sandbox_probe = project_root / "tests" / "release_wrapper_boot_supervisor_run_probe_test.py"
     sandbox_probe.parent.mkdir(parents=True, exist_ok=True)
@@ -8482,22 +9756,42 @@ def test_release_wrapper_boot_supervisor_run_generates_manifest_from_live_produc
         json={"session_id": session_id, "peer_node_id": "boot-supervisor-run-peer", "packet": packet},
     ).json()
     assert imported["status"] == "quarantined-shadow-accepted"
-    runner = client.post(
-        "/ops/wrapper/release-readiness/run",
+    update_id = client.get(
+        "/ops/wrapper/status-card",
+        params={"session_id": session_id},
+    ).json()["operator_action_lane"]["proposal_update_id"]
+    update_approval_id = _stored_autonomous_update_approval(client, update_id=update_id)
+    production_approval = client.post(
+        "/ops/approvals",
         json={
-            "session_id": session_id,
-            "command": "pytest tests/release_wrapper_boot_supervisor_run_probe_test.py -q",
-            "timeout_seconds": 30,
-            "approved_by": "admin",
-            "approval_ref": "operator-review::boot-supervisor-run",
+            "subject": "release-wrapper-production-spine-release-lifecycle",
+            "decision": "approved",
+            "approver": "operator@example.invalid",
+            "rationale": "Approve the boot supervisor shadow lifecycle.",
+            "metadata": {"session_id": session_id},
         },
     )
-    assert runner.status_code == 200
-    assert runner.json()["status"] == "completed"
+    assert production_approval.status_code == 200
+    initial = client.post(
+        "/ops/wrapper/initial-release-supervisor/run",
+        json={
+            "session_id": session_id,
+            "update_id": update_id,
+            "approval_decision_id": update_approval_id,
+            "production_approval_decision_id": production_approval.json()["decision_id"],
+            "command": "pytest tests/release_wrapper_boot_supervisor_run_probe_test.py -q",
+            "timeout_seconds": 30,
+            "prompts": ["Verify the governed boot supervisor release path."],
+        },
+    )
+    assert initial.status_code == 200
+    assert initial.json()["status"] == "initial-release-governed-shadow-lifecycle-completed"
 
     before = client.get("/ops/wrapper/release-runtime", params={"session_id": session_id}).json()
-    assert before["boot_supervisor"]["latest_status"] == "boot-smoke-passed"
-    assert before["initial_release_supervisor"]["latest_status"] == "initial-release-go"
+    assert before["boot_supervisor"]["latest_status"] == "boot-smoke-blocked"
+    assert before["initial_release_supervisor"]["latest_status"] == (
+        "initial-release-governed-shadow-lifecycle-completed"
+    )
     assert before["production_spine_release_lifecycle"]["latest_run"]["status"] == (
         "approved-shadow-release-lifecycle"
     )
@@ -8596,6 +9890,244 @@ def test_release_wrapper_boot_supervisor_run_generates_manifest_from_live_produc
     assert "SECRET-BOOT-COMMAND" not in serialized
 
 
+def test_initial_release_and_product_smoke_stay_pending_without_update_approval(tmp_path: Path):
+    project_root = make_project(tmp_path)
+    client = TestClient(create_app(str(project_root)))
+    session_id = "initial-release-pending-approval-user"
+    request = {
+        "session_id": session_id,
+        "base_url": "http://127.0.0.1:0",
+        "host": "127.0.0.1",
+        "port": 0,
+        "pid": 24680,
+        "readiness_command": "pytest tests/test_release_wrapper_runtime.py::test_root_boots_to_release_wrapper_entrypoint -q",
+        "timeout_seconds": 30,
+        "approved_by": "admin",
+        "approval_ref": "operator-review::unbound-initial-release",
+        "prompts": ["Prepare a governed initial release candidate."],
+    }
+
+    initial = client.post("/ops/wrapper/initial-release-supervisor/run", json=request)
+    assert initial.status_code == 200
+    initial_manifest = initial.json()
+    assert initial_manifest["status"] == "initial-release-pending-admin-approval"
+    assert initial_manifest["pending_update_id"]
+    assert initial_manifest["governance"]["status"] == "pending-admin-approval"
+    assert initial_manifest["active_production_mutated"] is False
+
+    smoke = client.post("/ops/wrapper/release-product-smoke/run", json=request)
+    assert smoke.status_code == 200
+    smoke_manifest = smoke.json()
+    assert smoke_manifest["status"] == "release-product-smoke-pending-admin-approval"
+    assert smoke_manifest["pending_update_id"]
+    assert smoke_manifest["initial_release"]["status"] == "initial-release-pending-admin-approval"
+    assert smoke_manifest["active_production_mutated"] is False
+
+    runtime = client.get("/ops/wrapper/release-runtime", params={"session_id": session_id}).json()
+    control_panel = client.get(
+        "/ops/brain/visualizer/state", params={"session_id": session_id}
+    ).json()["overlay_state"]["control_panel"]
+    initial_summary = runtime["initial_release_supervisor"]
+    smoke_summary = runtime["release_product_smoke"]
+
+    assert initial_summary["runtime_state"] == "pending-admin-approval"
+    assert initial_summary["pending_update_id"] == smoke_manifest["pending_update_id"]
+    assert initial_summary["governance"]["execution_endpoint"] == (
+        f"/ops/wrapper/autonomous-updates/{smoke_manifest['pending_update_id']}/run"
+    )
+    assert smoke_summary["runtime_state"] == "pending-admin-approval"
+    assert smoke_summary["pending_update_id"] == smoke_manifest["pending_update_id"]
+    assert control_panel["release_wrapper_initial_release_supervisor"]["runtime_state"] == (
+        "pending-admin-approval"
+    )
+    assert control_panel["release_wrapper_release_product_smoke"]["runtime_state"] == (
+        "pending-admin-approval"
+    )
+
+
+def test_initial_release_supervisor_runs_known_update_with_stored_approval(tmp_path: Path):
+    project_root = make_project(tmp_path)
+    sandbox_probe = project_root / "tests" / "initial_release_governed_update_probe_test.py"
+    sandbox_probe.parent.mkdir(parents=True, exist_ok=True)
+    sandbox_probe.write_text("def test_initial_release_governed_update_probe():\n    assert True\n", encoding="utf-8")
+    client = TestClient(create_app(str(project_root)))
+    session_id = "initial-release-governed-update-user"
+    chat = client.post(
+        "/v1/chat/completions",
+        json={
+            "session_id": session_id,
+            "model": "nexusnet-offline",
+            "messages": [{"role": "user", "content": "Prepare a governed initial release repair."}],
+        },
+    )
+    assert chat.status_code == 200
+    update_id = client.get(
+        "/ops/wrapper/status-card", params={"session_id": session_id}
+    ).json()["operator_action_lane"]["proposal_update_id"]
+    approval_decision_id = _stored_autonomous_update_approval(client, update_id=update_id)
+
+    response = client.post(
+        "/ops/wrapper/initial-release-supervisor/run",
+        json={
+            "session_id": session_id,
+            "update_id": update_id,
+            "approval_decision_id": approval_decision_id,
+            "command": "pytest tests/initial_release_governed_update_probe_test.py -q",
+            "timeout_seconds": 30,
+            "prompts": ["Run the approved initial release repair."],
+        },
+    )
+
+    assert response.status_code == 200
+    manifest = response.json()
+    lifecycle = manifest["actions"]["autonomous_update_governance_lifecycle"]
+    assert manifest["status"] == "initial-release-governed-update-completed"
+    assert manifest["pending_update_id"] == update_id
+    assert manifest["governance"]["approval_decision_id"] == approval_decision_id
+    assert lifecycle["status"] == "completed"
+    assert lifecycle["actions"]["sandbox_tests"]["status"] == "passed"
+    assert lifecycle["actions"]["apply"]["status"] == "applied-shadow-safe-file"
+    assert lifecycle["actions"]["rollback"]["status"] == "rolled-back"
+    assert manifest["actions"]["production_spine_release_lifecycle"]["status"] == (
+        "pending-separate-production-lifecycle-approval"
+    )
+    assert manifest["active_production_mutated"] is False
+
+
+def test_initial_release_supervisor_runs_separately_approved_production_shadow_lifecycle(tmp_path: Path):
+    project_root = make_project(tmp_path)
+    sandbox_probe = project_root / "tests" / "initial_release_production_lifecycle_probe_test.py"
+    sandbox_probe.parent.mkdir(parents=True, exist_ok=True)
+    sandbox_probe.write_text("def test_initial_release_production_lifecycle_probe():\n    assert True\n", encoding="utf-8")
+    client = TestClient(create_app(str(project_root)))
+    session_id = "initial-release-production-lifecycle-user"
+    chat = client.post(
+        "/v1/chat/completions",
+        json={
+            "session_id": session_id,
+            "model": "nexusnet-offline",
+            "messages": [{"role": "user", "content": "Prepare a governed production shadow lifecycle."}],
+        },
+    )
+    assert chat.status_code == 200
+    update_id = client.get(
+        "/ops/wrapper/status-card", params={"session_id": session_id}
+    ).json()["operator_action_lane"]["proposal_update_id"]
+    update_approval_id = _stored_autonomous_update_approval(client, update_id=update_id)
+    production_approval = client.post(
+        "/ops/approvals",
+        json={
+            "subject": "release-wrapper-production-spine-release-lifecycle",
+            "decision": "approved",
+            "approver": "operator@example.invalid",
+            "rationale": "Approve the shadow production lifecycle for this governed release path.",
+            "metadata": {"session_id": session_id},
+        },
+    )
+    assert production_approval.status_code == 200
+
+    response = client.post(
+        "/ops/wrapper/initial-release-supervisor/run",
+        json={
+            "session_id": session_id,
+            "update_id": update_id,
+            "approval_decision_id": update_approval_id,
+            "production_approval_decision_id": production_approval.json()["decision_id"],
+            "command": "pytest tests/initial_release_production_lifecycle_probe_test.py -q",
+            "timeout_seconds": 30,
+            "prompts": ["Run the separately approved production shadow lifecycle."],
+        },
+    )
+
+    assert response.status_code == 200, response.json()
+    manifest = response.json()
+    lifecycle = manifest["actions"]["production_spine_release_lifecycle"]
+    rollback = manifest["actions"]["production_spine_release_lifecycle_rollback"]
+    assert manifest["status"] == "initial-release-governed-shadow-lifecycle-completed"
+    assert lifecycle["status"] == "approved-shadow-release-lifecycle"
+    assert rollback["status"] == "rolled-back"
+    assert manifest["active_production_mutated"] is False
+
+
+def test_release_product_smoke_records_known_governed_update_without_production_release(tmp_path: Path):
+    project_root = make_project(tmp_path)
+    sandbox_probe = project_root / "tests" / "product_smoke_governed_update_probe_test.py"
+    sandbox_probe.parent.mkdir(parents=True, exist_ok=True)
+    sandbox_probe.write_text("def test_product_smoke_governed_update_probe():\n    assert True\n", encoding="utf-8")
+    client = TestClient(create_app(str(project_root)))
+    session_id = "product-smoke-governed-update-user"
+    chat = client.post(
+        "/v1/chat/completions",
+        json={
+            "session_id": session_id,
+            "model": "nexusnet-offline",
+            "messages": [{"role": "user", "content": "Prepare a governed product smoke repair."}],
+        },
+    )
+    assert chat.status_code == 200
+    update_id = client.get(
+        "/ops/wrapper/status-card", params={"session_id": session_id}
+    ).json()["operator_action_lane"]["proposal_update_id"]
+    approval_decision_id = _stored_autonomous_update_approval(client, update_id=update_id)
+    production_approval = client.post(
+        "/ops/approvals",
+        json={
+            "subject": "release-wrapper-production-spine-release-lifecycle",
+            "decision": "approved",
+            "approver": "operator@example.invalid",
+            "rationale": "Approve the product smoke shadow lifecycle.",
+            "metadata": {"session_id": session_id},
+        },
+    )
+    assert production_approval.status_code == 200
+
+    response = client.post(
+        "/ops/wrapper/release-product-smoke/run",
+        json={
+            "session_id": session_id,
+            "update_id": update_id,
+            "approval_decision_id": approval_decision_id,
+            "production_approval_decision_id": production_approval.json()["decision_id"],
+            "command": "pytest tests/product_smoke_governed_update_probe_test.py -q",
+            "timeout_seconds": 30,
+            "prompts": ["Run the approved product smoke repair."],
+        },
+    )
+
+    assert response.status_code == 200, response.json()
+    manifest = response.json()
+    lifecycle = manifest["governed_update_lifecycle"]
+    assert manifest["status"] == "release-product-smoke-governed-shadow-lifecycle-completed"
+    assert manifest["pending_update_id"] == update_id
+    assert manifest["governance"]["approval_decision_id"] == approval_decision_id
+    assert lifecycle["status"] == "completed"
+    assert lifecycle["actions"]["sandbox_tests"]["status"] == "passed"
+    assert lifecycle["actions"]["rollback"]["status"] == "rolled-back"
+    assert manifest["production_lifecycle"]["status"] == "approved-shadow-release-lifecycle"
+    assert manifest["production_rollback"]["status"] == "rolled-back"
+    assert manifest["active_production_mutated"] is False
+
+    runtime = client.get("/ops/wrapper/release-runtime", params={"session_id": session_id}).json()
+    control_panel = client.get(
+        "/ops/brain/visualizer/state", params={"session_id": session_id}
+    ).json()["overlay_state"]["control_panel"]
+    initial_summary = runtime["initial_release_supervisor"]
+    smoke_summary = runtime["release_product_smoke"]
+
+    assert initial_summary["runtime_state"] == "governed-shadow-lifecycle-completed"
+    assert initial_summary["governed_update_lifecycle"]["action_statuses"]["rollback"] == "rolled-back"
+    assert smoke_summary["runtime_state"] == "governed-shadow-lifecycle-completed"
+    assert smoke_summary["governed_update_lifecycle"]["action_statuses"]["sandbox_tests"] == "passed"
+    assert smoke_summary["production_lifecycle"]["status"] == "approved-shadow-release-lifecycle"
+    assert smoke_summary["production_rollback"]["status"] == "rolled-back"
+    assert control_panel["release_wrapper_initial_release_supervisor"]["runtime_state"] == (
+        "governed-shadow-lifecycle-completed"
+    )
+    assert control_panel["release_wrapper_release_product_smoke"]["runtime_state"] == (
+        "governed-shadow-lifecycle-completed"
+    )
+
+
 def test_initial_release_supervisor_runs_whole_project_release_path(tmp_path: Path):
     project_root = make_project(tmp_path)
     sandbox_probe = project_root / "tests" / "initial_release_supervisor_probe_test.py"
@@ -8651,104 +10183,28 @@ def test_initial_release_supervisor_runs_whole_project_release_path(tmp_path: Pa
     actions = manifest["actions"]
 
     assert manifest["surface_id"] == "release-wrapper-initial-release-supervisor"
-    assert manifest["status"] == "initial-release-go"
+    assert manifest["status"] == "initial-release-pending-admin-approval"
+    assert manifest["honest_status_label"] == "initial-release-pending-admin-approval"
     assert manifest["product_scope"] == "whole-system"
     assert manifest["raw_content_included"] is False
     assert manifest["active_production_mutation_allowed"] is False
-    assert manifest["release_readiness"]["go_no_go"] == "go"
-    assert manifest["boot_supervisor"]["status"] == "boot-smoke-passed"
-    assert manifest["boot_supervisor"]["failed_count"] == 0
+    assert manifest["active_production_mutated"] is False
+    assert manifest["pending_update_id"]
+    assert manifest["governance"]["status"] == "pending-admin-approval"
+    assert manifest["governance"]["update_id"] == manifest["pending_update_id"]
+    assert manifest["governance"]["execution_endpoint"] == (
+        f"/ops/wrapper/autonomous-updates/{manifest['pending_update_id']}/run"
+    )
     assert actions["wrapper_interactions"]["status"] == "recorded"
     assert actions["wrapper_interactions"]["interaction_count"] == 3
-    assert actions["federated_packet_import"]["status"] == "quarantined-shadow-accepted"
-    assert actions["domain_expert_growth_admin_replay"]["status"] == "recorded"
-    assert actions["release_readiness_runner"]["status"] == "completed"
-    assert actions["release_health_heartbeat_supervisor"]["status"] == "enabled"
-    assert actions["release_health_heartbeat_supervisor"]["pulse_count"] >= 1
-    assert actions["release_health_heartbeat_supervisor"]["latest_pulse_id"]
-    heartbeat_repair = actions["release_health_heartbeat_supervisor_repair"]
-    assert heartbeat_repair["status"] == "completed"
-    assert heartbeat_repair["source_pulse_id"] == actions["release_health_heartbeat_supervisor"]["latest_pulse_id"]
-    assert heartbeat_repair["readiness_evidence_status"] == "completed-heartbeat-supervisor-repair"
-    assert heartbeat_repair["active_production_mutated"] is False
-    assert heartbeat_repair["raw_content_included"] is False
-    assert heartbeat_repair["active_production_mutation_allowed"] is False
-    assert heartbeat_repair["action_statuses"]["admin_approval"] == "admin-approved"
-    assert heartbeat_repair["action_statuses"]["shadow_eval_replay"] == "passed-shadow"
-    assert heartbeat_repair["action_statuses"]["sandbox_tests"] == "passed"
-    assert heartbeat_repair["action_statuses"]["apply"] == "applied-shadow-safe-file"
-    assert heartbeat_repair["action_statuses"]["rollback"] == "rolled-back"
-    assert manifest["action_statuses"]["release_health_heartbeat_supervisor_repair"] == "completed"
-    assert actions["production_spine_release_lifecycle"]["status"] == "approved-shadow-release-lifecycle"
-    assert actions["production_spine_release_lifecycle"]["step_counts"]["blocked"] == 0
-    assert actions["production_spine_release_lifecycle_rollback"]["status"] == "rolled-back"
-    assert actions["boot_supervisor"]["status"] == "boot-smoke-passed"
-    assert actions["native_hive_heartbeat_history"]["status"] == "fresh"
-    assert actions["native_hive_heartbeat_history"]["latest_fresh"] is True
-    assert actions["native_hive_heartbeat_history"]["artifact_ref"] == (
-        "release-wrapper-runtime/native-hive-heartbeats.jsonl"
+    assert actions["autonomous_update_proposal"]["update_id"] == manifest["pending_update_id"]
+    assert actions["release_health_heartbeat_supervisor_repair"]["status"] == "pending-admin-approval"
+    assert actions["release_readiness_runner"]["status"] == "pending-admin-approval"
+    assert actions["production_spine_release_lifecycle"]["status"] == (
+        "pending-separate-production-lifecycle-approval"
     )
-    assert actions["native_hive_heartbeat_history"]["raw_content_included"] is False
-    assert Path(manifest["artifact_path"]).exists()
 
-    readiness = client.get("/ops/wrapper/release-readiness", params={"session_id": session_id}).json()
-    status_card = client.get("/ops/wrapper/status-card", params={"session_id": session_id}).json()
-    runtime = client.get("/ops/wrapper/release-runtime", params={"session_id": session_id}).json()
-    lifecycle = client.get("/ops/wrapper/session-lifecycle", params={"session_id": session_id}).json()
-    visualizer = client.get("/ops/brain/visualizer/state", params={"session_id": session_id}).json()
-    control_panel = visualizer["overlay_state"]["control_panel"]
-    matrix = runtime["whole_system_forward_pass_enforcement_matrix"]
-    rows = {row["entrypoint_id"]: row for row in matrix["entrypoints"]}
-    readiness_checks = {check["check_id"]: check for check in readiness["readiness_checks"]}
-    handoff = runtime["domain_teacher_eval_handoff"]
-
-    assert readiness["go_no_go"] == "go"
-    assert handoff["latest_admin_eval_replay_status"] == "passed-shadow"
-    assert handoff["latest_admin_promotion_decision"] in {"approved", "shadow"}
-    assert handoff["latest_sandbox_takeover_evidence_status"] == "recorded"
-    assert handoff["latest_teacher_evidence_bundle_id"]
-    assert handoff["latest_takeover_scorecard_id"]
-    assert handoff["latest_growth_archive_candidate_id"]
-    assert readiness_checks["domain-expert-growth-sandbox-takeover-evidence"]["status"] == "pass"
-    assert readiness_checks["domain-expert-growth-sandbox-takeover-evidence"]["promotion_decision"] in {
-        "approved",
-        "shadow",
-    }
-    assert status_card["operator_action_lane"]["run_initial_release_supervisor_ref"] == (
-        "/ops/wrapper/initial-release-supervisor/run"
-    )
-    assert (
-        status_card["operator_action_lane"]["latest_action_statuses"][
-            "release_health_heartbeat_supervisor_repair"
-        ]
-        == "completed-heartbeat-supervisor-repair"
-    )
-    assert matrix["coverage_status"] == "covered"
-    assert rows["boot_supervisor"]["status"] == "covered"
-    assert rows["boot_supervisor"]["honest_status_label"] == "covered"
-    assert rows["initial_release_supervisor"]["status"] == "covered"
-    assert rows["initial_release_supervisor"]["honest_status_label"] == "covered"
-    assert rows["production_spine_release_lifecycle"]["status"] == "covered"
-    assert rows["production_spine_release_lifecycle"]["honest_status_label"] == "covered"
-    assert rows["production_spine_lifecycle_rollback"]["status"] == "covered"
-    assert rows["production_spine_lifecycle_rollback"]["honest_status_label"] == "covered"
-    assert readiness_checks["whole-system-forward-pass-enforcement-matrix"]["coverage_status"] == "covered"
-    assert status_card["whole_system_forward_pass_enforcement_matrix"]["coverage_status"] == "covered"
-    assert lifecycle["whole_system_forward_pass_enforcement_matrix"]["coverage_status"] == "covered"
-    assert control_panel["release_wrapper_forward_pass_enforcement_matrix"]["coverage_status"] == "covered"
-    assert runtime["initial_release_supervisor"]["action_statuses"]["native_hive_heartbeat_history"] == "fresh"
-    assert runtime["initial_release_supervisor"]["action_statuses"][
-        "release_health_heartbeat_supervisor_repair"
-    ] == "completed"
-    assert runtime["initial_release_supervisor"]["actions"][
-        "release_health_heartbeat_supervisor_repair"
-    ]["action_statuses"]["rollback"] == "rolled-back"
-    assert runtime["native_hive_heartbeat"]["heartbeat_history"]["latest_fresh"] is True
-
-    control_panel_js = (project_root / "ui" / "control-panel" / "app.js").read_text(encoding="utf-8")
     serialized = json.dumps(manifest, sort_keys=True)
-    assert "initial-release-supervisor" in control_panel_js
-    assert "Run Health Repair" in control_panel_js
     assert session_id not in serialized
     assert "initial-release-admin" not in serialized
 
@@ -8781,94 +10237,30 @@ def test_release_product_smoke_runner_records_sanitized_initial_release_gate_art
 
     assert response.status_code == 200
     smoke = response.json()
-    checks = {check["check_id"]: check for check in smoke["checks"]}
 
     assert smoke["schema_version"] == "nexusnet-release-wrapper-product-smoke-v1"
     assert smoke["surface_id"] == "release-wrapper-product-smoke"
-    assert smoke["status"] == "release-product-smoke-passed"
-    assert smoke["product_surface"] == "wrapper"
-    assert smoke["product_scope"] == "whole-system"
+    assert smoke["status"] == "release-product-smoke-pending-admin-approval"
+    assert smoke["honest_status_label"] == "release-product-smoke-pending-admin-approval"
     assert smoke["session_ref_digest"].startswith("sha256:")
     assert smoke["raw_content_included"] is False
     assert smoke["active_production_mutation_allowed"] is False
     assert smoke["active_production_mutated"] is False
     assert smoke["artifact_ref"] == "artifacts/release-wrapper-runtime/release-product-smoke.json"
     assert smoke["artifact_path_digest"].startswith("sha256:")
-    assert (project_root / "artifacts" / "release-wrapper-runtime" / "release-product-smoke.json").exists()
-    assert {
-        "initial-release-supervisor",
-        "release-runtime",
-        "release-readiness",
-        "status-card",
-        "session-lifecycle",
-        "control-panel",
-        "forward-pass-matrix",
-        "native-hive-heartbeat-history",
-        "canon-contract-receipts",
-    }.issubset(checks)
-    assert all(check["status"] == "pass" for check in checks.values())
-
-    evidence = smoke["evidence"]
-    assert evidence["initial_release_supervisor"]["latest_status"] == "initial-release-go"
-    assert evidence["initial_release_supervisor"]["runtime_state"] == "replayed-evidence"
-    assert evidence["runtime"]["runtime_state"] == "live-bound"
-    assert evidence["runtime"]["matrix_coverage_status"] == "covered"
-    assert evidence["runtime"]["native_hive_heartbeat_freshness_status"] == "fresh"
-    assert evidence["runtime"]["native_hive_heartbeat_history_artifact_ref"] == (
-        "release-wrapper-runtime/native-hive-heartbeats.jsonl"
+    assert (
+        project_root / "runtime" / "artifacts" / "release-wrapper-runtime" / "release-product-smoke.json"
+    ).exists()
+    assert smoke["pending_update_id"]
+    assert smoke["initial_release"]["status"] == "initial-release-pending-admin-approval"
+    assert smoke["initial_release"]["pending_update_id"] == smoke["pending_update_id"]
+    assert smoke["governance"]["status"] == "pending-admin-approval"
+    assert smoke["governance"]["update_id"] == smoke["pending_update_id"]
+    assert smoke["governance"]["execution_endpoint"] == (
+        f"/ops/wrapper/autonomous-updates/{smoke['pending_update_id']}/run"
     )
-    assert evidence["release_readiness"]["go_no_go"] == "go"
-    assert evidence["release_readiness"]["blocked_check_count"] == 0
-    assert evidence["status_card"]["product_surface"] == "wrapper"
-    assert evidence["session_lifecycle"]["runtime_state"] == "live-bound"
-    assert evidence["control_panel"]["matrix_coverage_status"] == "covered"
-    assert evidence["control_panel"]["product_smoke_status"] == "release-product-smoke-passed"
-    assert evidence["canon_contract_receipts"]["surface_id"] == "whole-project-canon-contract-receipts"
-    assert evidence["canon_contract_receipts"]["receipt_count"] >= 1
-    assert evidence["canon_contract_receipts"]["latest_status"] == "covered"
-    assert evidence["canon_contract_receipts"]["latest_receipt"]["gap_count"] == 0
-    assert evidence["canon_contract_receipts"]["raw_content_included"] is False
-    assert evidence["canon_contract_receipts"]["active_production_mutation_allowed"] is False
 
-    runtime = client.get("/ops/wrapper/release-runtime", params={"session_id": session_id}).json()
-    readiness = client.get("/ops/wrapper/release-readiness", params={"session_id": session_id}).json()
-    status_card = client.get("/ops/wrapper/status-card", params={"session_id": session_id}).json()
-    lifecycle = client.get("/ops/wrapper/session-lifecycle", params={"session_id": session_id}).json()
-    visualizer = client.get("/ops/brain/visualizer/state", params={"session_id": session_id}).json()
-    control_panel = visualizer["overlay_state"]["control_panel"]
-    readiness_checks = {check["check_id"]: check for check in readiness["readiness_checks"]}
-
-    assert runtime["canon_contract_ledger"]["coverage_status"] == "covered"
-    assert runtime["canon_contract_ledger"]["partial_count"] == 0
-    assert runtime["canon_contract_receipts"]["latest_status"] == "covered"
-    assert runtime["canon_contract_receipts"]["latest_receipt"]["gap_count"] == 0
-    assert runtime["release_product_smoke"]["latest_status"] == "release-product-smoke-passed"
-    assert readiness["evidence"]["release_product_smoke"]["latest_status"] == "release-product-smoke-passed"
-    assert readiness_checks["release-product-smoke"]["status"] == "pass"
-    assert readiness_checks["canon-contract-receipt"]["status"] == "pass"
-    assert status_card["release_product_smoke"]["latest_status"] == "release-product-smoke-passed"
-    assert status_card["endpoint_refs"]["release_product_smoke_run"] == "/ops/wrapper/release-product-smoke/run"
-    assert status_card["operator_action_lane"]["run_release_product_smoke_ref"] == "/ops/wrapper/release-product-smoke/run"
-    assert lifecycle["release_product_smoke"]["latest_status"] == "release-product-smoke-passed"
-    assert lifecycle["endpoint_refs"]["release_product_smoke_run"] == "/ops/wrapper/release-product-smoke/run"
-    assert control_panel["release_wrapper_release_product_smoke"]["latest_status"] == "release-product-smoke-passed"
-
-    control_panel_js = (project_root / "ui" / "control-panel" / "app.js").read_text(encoding="utf-8")
-    visualizer_js = (project_root / "ui" / "visualizer" / "app.js").read_text(encoding="utf-8")
-    assert "Run Product Smoke" in control_panel_js
-    assert "release product smoke" in visualizer_js
-
-    serialized = json.dumps(
-        {
-            "smoke": smoke,
-            "runtime": runtime["release_product_smoke"],
-            "readiness": readiness["evidence"]["release_product_smoke"],
-            "status_card": status_card["release_product_smoke"],
-            "lifecycle": lifecycle["release_product_smoke"],
-            "control_panel": control_panel["release_wrapper_release_product_smoke"],
-        },
-        sort_keys=True,
-    )
+    serialized = json.dumps(smoke, sort_keys=True)
     assert session_id not in serialized
     assert raw_prompt not in serialized
     assert "SECRET-PRODUCT-SMOKE" not in serialized
@@ -8889,19 +10281,37 @@ def test_release_product_smoke_records_sanitized_release_run_history_and_replays
 
     latest_smoke: dict[str, object] = {}
     for index in range(2):
+        smoke_request = {
+            "session_id": session_id,
+            "base_url": "http://127.0.0.1:0",
+            "host": "127.0.0.1",
+            "port": 0,
+            "pid": 24680 + index,
+            "readiness_command": "pytest tests/release_run_history_probe_test.py -q",
+            "timeout_seconds": 30,
+            "prompts": [raw_prompt],
+        }
+        pending = client.post("/ops/wrapper/release-product-smoke/run", json=smoke_request)
+        assert pending.status_code == 200
+        update_id = pending.json()["pending_update_id"]
+        production_approval = client.post(
+            "/ops/approvals",
+            json={
+                "subject": "release-wrapper-production-spine-release-lifecycle",
+                "decision": "approved",
+                "approver": f"release-run-history-admin-{index}@example.invalid",
+                "rationale": "Approve the release-run history shadow lifecycle.",
+                "metadata": {"session_id": session_id},
+            },
+        )
+        assert production_approval.status_code == 200
         response = client.post(
             "/ops/wrapper/release-product-smoke/run",
             json={
-                "session_id": session_id,
-                "base_url": "http://127.0.0.1:0",
-                "host": "127.0.0.1",
-                "port": 0,
-                "pid": 24680 + index,
-                "readiness_command": "pytest tests/release_run_history_probe_test.py -q",
-                "timeout_seconds": 30,
-                "approved_by": f"release-run-history-admin-{index}@example.invalid",
-                "approval_ref": f"operator-review::release-run-history::{index}",
-                "prompts": [raw_prompt],
+                **smoke_request,
+                "update_id": update_id,
+                "approval_decision_id": _stored_autonomous_update_approval(client, update_id=update_id),
+                "production_approval_decision_id": production_approval.json()["decision_id"],
             },
         )
         assert response.status_code == 200
@@ -8937,7 +10347,7 @@ def test_release_product_smoke_records_sanitized_release_run_history_and_replays
     _assert_whole_project_canon_contract_ledger(canon_ledger, project_root)
     assert history["schema_version"] == "nexusnet-release-wrapper-release-run-history-v1"
     assert history["surface_id"] == "release-wrapper-release-run-history"
-    assert history["latest_status"] == "release-product-smoke-passed"
+    assert history["latest_status"] == "release-product-smoke-governed-shadow-lifecycle-completed"
     product_smoke_runs = [run for run in history["runs"] if run["run_kind"] == "release-product-smoke"]
     live_product_path_runs = [
         run for run in history["runs"] if run["run_kind"] == "release-wrapper-live-product-path"
@@ -8950,7 +10360,7 @@ def test_release_product_smoke_records_sanitized_release_run_history_and_replays
     assert history["manifest_ref"] == "artifacts/release-wrapper-runtime/release-run-history.jsonl"
     assert latest_run["run_kind"] == "release-product-smoke"
     assert latest_run["product_scope"] == "whole-system"
-    assert latest_run["status"] == "release-product-smoke-passed"
+    assert latest_run["status"] == "release-product-smoke-governed-shadow-lifecycle-completed"
     assert latest_run["run_sequence"] == latest_smoke["release_run"]["run_sequence"]
     assert latest_run["raw_content_included"] is False
     assert latest_run["active_production_mutation_allowed"] is False
@@ -8966,13 +10376,17 @@ def test_release_product_smoke_records_sanitized_release_run_history_and_replays
 
     assert readiness_checks["canon-contract-ledger"]["status"] == "pass"
     _assert_whole_project_canon_contract_ledger(readiness["evidence"]["canon_contract_ledger"], project_root)
-    assert readiness["evidence"]["release_run_history"]["latest_status"] == "release-product-smoke-passed"
+    assert readiness["evidence"]["release_run_history"]["latest_status"] == (
+        "release-product-smoke-governed-shadow-lifecycle-completed"
+    )
     assert readiness["evidence"]["release_run_history"]["run_count"] == history["run_count"]
     assert status_card["canon_contract_ledger"]["source_manifest"]["ingested_source_count"] == len(CANON_CONTRACT_SOURCE_REFS)
     assert status_card["release_run_history"]["run_count"] == history["run_count"]
     assert status_card["endpoint_refs"]["release_run_history"] == "/ops/wrapper/release-runtime"
     assert lifecycle["canon_contract_ledger"]["contract_count"] == canon_ledger["contract_count"]
-    assert lifecycle["release_run_history"]["latest_status"] == "release-product-smoke-passed"
+    assert lifecycle["release_run_history"]["latest_status"] == (
+        "release-product-smoke-governed-shadow-lifecycle-completed"
+    )
     assert control_panel["release_wrapper_canon_contract_ledger"]["source_manifest"]["ingested_source_count"] == len(
         CANON_CONTRACT_SOURCE_REFS
     )
@@ -9268,7 +10682,12 @@ def test_release_wrapper_session_lifecycle_proves_live_use_and_admin_update_path
     action_lane = lifecycle["operator_action_lane"]
     approval = client.post(
         action_lane["admin_approval_ref"],
-        json={"approved_by": "admin", "approval_ref": "operator-review::release-session-lifecycle"},
+        json={
+            "approval_decision_id": _stored_autonomous_update_approval(
+                client,
+                update_id=action_lane["proposal_update_id"],
+            )
+        },
     )
     assert approval.status_code == 200
     sandbox = client.post(
@@ -9276,11 +10695,20 @@ def test_release_wrapper_session_lifecycle_proves_live_use_and_admin_update_path
         json={"command": "pytest tests/release_wrapper_session_lifecycle_probe_test.py -q", "timeout_seconds": 30},
     )
     assert sandbox.status_code == 200
+    immune_governance_decision_id = _approved_immune_governance_decision(
+        client,
+        candidate_ref=action_lane["proposal_update_id"],
+        command=(
+            "python -m pytest "
+            "tests/test_hive_final_waves.py::test_immune_gate_attenuates_anomalies -q"
+        ),
+    )
     apply = client.post(
         action_lane["apply_ref"],
         json={
             "test_refs": ["pytest tests/release_wrapper_session_lifecycle_probe_test.py -q"],
             "test_evidence_refs": [sandbox.json()["evidence_ref"]],
+            "immune_governance_decision_id": immune_governance_decision_id,
         },
     )
     assert apply.status_code == 200
@@ -9296,6 +10724,7 @@ def test_release_wrapper_session_lifecycle_proves_live_use_and_admin_update_path
     assert step_statuses["safe-apply"] == "pass"
     assert step_statuses["rollback"] == "pass"
     assert lifecycle["readiness"]["go_no_go"] == "go"
+    assert lifecycle["admin_actions"]["proposal_update_id"] == action_lane["proposal_update_id"]
     statuses = lifecycle["admin_actions"]["latest_action_statuses"]
     assert statuses["admin_approval"] == "admin-approved"
     assert statuses["shadow_eval_replay"] == "passed-shadow"
@@ -9367,9 +10796,29 @@ def test_release_wrapper_self_repair_ledger_records_admin_path_and_replays_by_se
         if action["update_id"] == proposal_update_id
     )
 
+    second_lifecycle = client.get("/ops/wrapper/session-lifecycle", params={"session_id": session_b}).json()
+    second_action_lane = second_lifecycle["operator_action_lane"]
+    second_proposal_update_id = second_action_lane["proposal_update_id"]
+    assert second_proposal_update_id
+    second_approval = client.post(
+        second_action_lane["admin_approval_ref"],
+        json={
+            "approval_decision_id": _stored_autonomous_update_approval(
+                client,
+                update_id=second_proposal_update_id,
+            )
+        },
+    )
+    assert second_approval.status_code == 200
+
     approval = client.post(
         action_lane["admin_approval_ref"],
-        json={"approved_by": "admin", "approval_ref": "operator-review::release-self-repair-ledger"},
+        json={
+            "approval_decision_id": _stored_autonomous_update_approval(
+                client,
+                update_id=proposal_update_id,
+            )
+        },
     )
     assert approval.status_code == 200
     sandbox = client.post(
@@ -9378,11 +10827,20 @@ def test_release_wrapper_self_repair_ledger_records_admin_path_and_replays_by_se
     )
     assert sandbox.status_code == 200
     assert sandbox.json()["status"] == "passed"
+    immune_governance_decision_id = _approved_immune_governance_decision(
+        client,
+        candidate_ref=proposal_update_id,
+        command=(
+            "python -m pytest "
+            "tests/test_hive_final_waves.py::test_immune_gate_attenuates_anomalies -q"
+        ),
+    )
     applied = client.post(
         action_lane["apply_ref"],
         json={
             "test_refs": ["pytest tests/release_wrapper_self_repair_ledger_probe_test.py -q"],
             "test_evidence_refs": [sandbox.json()["evidence_ref"]],
+            "immune_governance_decision_id": immune_governance_decision_id,
         },
     )
     assert applied.status_code == 200
@@ -9445,6 +10903,7 @@ def test_release_wrapper_self_repair_ledger_records_admin_path_and_replays_by_se
         assert all(receipt["active_production_mutation_allowed"] is False for receipt in receipts)
         assert "artifact_path" not in json.dumps(receipts)
         authority_decision = action["authority_decision"]
+        assert authority_decision["action_id"].startswith("release-wrapper-self-repair::")
         assert authority_decision["actor_ref"] == "release-wrapper-self-repair"
         assert authority_decision["effect_type"] == "filesystem_write"
         assert authority_decision["status"] == "allowed-shadow"
@@ -9463,6 +10922,7 @@ def test_release_wrapper_self_repair_ledger_records_admin_path_and_replays_by_se
     assert session_b_ledger["repair_count"] > 0
     assert all(action["session_ref_digest"] == digest_b for action in session_b_ledger["actions"])
     assert proposal_update_id not in {action["update_id"] for action in session_b_ledger["actions"]}
+    assert second_proposal_update_id in {action["update_id"] for action in session_b_ledger["actions"]}
     visualizer = client.get("/ops/brain/visualizer/state", params={"session_id": session_a}).json()
     visualizer_ledger = visualizer["overlay_state"]["control_panel"]["release_wrapper_self_repair_ledger"]
     assert visualizer_ledger["surface_id"] == "release-wrapper-self-repair-ledger"
@@ -9527,9 +10987,13 @@ def test_release_wrapper_safe_apply_requires_ao_guard_receipts(tmp_path: Path):
     assert chat.status_code == 200
     lifecycle = client.get("/ops/wrapper/session-lifecycle", params={"session_id": session_id}).json()
     action_lane = lifecycle["operator_action_lane"]
+    stored_approval_id = _stored_autonomous_update_approval(
+        client,
+        update_id=action_lane["proposal_update_id"],
+    )
     approval = client.post(
         action_lane["admin_approval_ref"],
-        json={"approved_by": "admin", "approval_ref": "operator-review::guard-required"},
+        json={"approval_decision_id": stored_approval_id},
     )
     assert approval.status_code == 200
     sandbox = client.post(
@@ -9555,15 +11019,17 @@ def test_release_wrapper_safe_apply_requires_ao_guard_receipts(tmp_path: Path):
     assert rejected.status_code == 400
     assert "AO guard receipts required before safe apply" in rejected.json()["detail"]
 
-    applied = client.post(
-        action_lane["apply_ref"],
+    lifecycle_run = client.post(
+        action_lane["run_governed_lifecycle_ref"],
         json={
-            "test_refs": ["pytest tests/release_wrapper_guard_required_probe_test.py -q"],
-            "test_evidence_refs": [sandbox.json()["evidence_ref"]],
+            "session_id": session_id,
+            "approval_decision_id": stored_approval_id,
+            "command": "pytest tests/release_wrapper_guard_required_probe_test.py -q",
+            "timeout_seconds": 30,
         },
     )
-    assert applied.status_code == 200
-    payload = applied.json()
+    assert lifecycle_run.status_code == 200
+    payload = lifecycle_run.json()["actions"]["apply"]
     assert payload["release_wrapper_ao_guard"]["passed"] is True
     assert set(payload["release_wrapper_ao_guard"]["required_aos"]) == {"AdminAO", "GovernanceAO", "SecurityAO", "EvalsAO"}
     assert {receipt["ao_name"] for receipt in payload["release_wrapper_ao_guard"]["receipts"]} >= {
@@ -9727,9 +11193,20 @@ def test_autonomous_update_admin_approval_safe_apply_and_rollback(tmp_path: Path
     )
     assert proposed.status_code == 200
 
+    stored_approval = client.post(
+        "/ops/approvals",
+        json={
+            "subject": "release-wrapper-autonomous-update",
+            "decision": "approved",
+            "approver": "admin@example.invalid",
+            "rationale": "Approve the sandbox-only safe wrapper policy update.",
+            "metadata": {"update_id": "update::safe-wrapper-policy"},
+        },
+    )
+    assert stored_approval.status_code == 200
     approval = client.post(
         "/ops/brain/autonomous-updates/update::safe-wrapper-policy/admin-approval",
-        json={"approved_by": "admin", "approval_ref": "operator-review::release-wrapper"},
+        json={"approval_decision_id": stored_approval.json()["decision_id"]},
     )
     assert approval.status_code == 200
     assert approval.json()["status"] == "admin-approved"
@@ -9759,11 +11236,14 @@ def test_autonomous_update_admin_approval_safe_apply_and_rollback(tmp_path: Path
     assert sandbox_payload["sandbox"]["sandbox_root_digest"] != sandbox_payload["sandbox"]["active_project_root_digest"]
     assert sandbox_payload["diff_summary"]["unsafe_change_count"] == 0
     assert sandbox_payload["diff_summary"]["changed_file_count"] >= 0
-    assert Path(sandbox_payload["pre_manifest_path"]).exists()
-    assert Path(sandbox_payload["post_manifest_path"]).exists()
-    assert Path(sandbox_payload["diff_path"]).exists()
+    assert sandbox_payload["diagnostic_artifact_available"] is True
+    assert "pre_manifest_path" not in sandbox_payload
+    assert "post_manifest_path" not in sandbox_payload
+    assert "diff_path" not in sandbox_payload
+    assert "stdout_tail" not in sandbox_payload
+    assert "stderr_tail" not in sandbox_payload
     assert sandbox_payload["evidence_ref"].startswith("sandbox-test::")
-    assert Path(sandbox_payload["artifact_path"]).exists()
+    assert "artifact_path" not in sandbox_payload
 
     rejected_apply = client.post(
         "/ops/brain/autonomous-updates/update::safe-wrapper-policy/apply",
@@ -9780,12 +11260,41 @@ def test_autonomous_update_admin_approval_safe_apply_and_rollback(tmp_path: Path
     )
     assert rejected_apply.status_code == 400
     assert "sandbox test evidence" in rejected_apply.json()["detail"]
+    immune_evaluation = client.post(
+        "/ops/brain/genesis-immune-governance/candidates/evaluate",
+        json={
+            "candidate_ref": "update::safe-wrapper-policy",
+            "candidate_kind": "autonomous-update-safe-apply",
+            "command": "python -m pytest tests/test_hive_final_waves.py::test_immune_gate_attenuates_anomalies -q",
+            "baseline_ref": "baseline::safe-wrapper-policy",
+            "rollback_proof_ref": "rollback-proof::safe-wrapper-policy",
+            "artifact_trust_ref": "artifact-trust::safe-wrapper-policy",
+            "eval_case_refs": ["eval-case::safe-wrapper-policy"],
+            "regression_suite_ref": "regression-suite::autonomous-update-safe-apply",
+            "judge_policy": {
+                "human_review_required": True,
+                "domain_check_required": True,
+                "calibrated_judge_refs": ["judge::autonomous-update-held-out"],
+            },
+        },
+    ).json()
+    immune_decision = client.post(
+        f"/ops/brain/genesis-immune-governance/candidates/{immune_evaluation['candidate_id']}/decide",
+        json={
+            "decision": "approve",
+            "approved_by": "autonomous-update-immune-admin",
+            "human_review_ref": "human-review::safe-wrapper-policy",
+            "domain_check_ref": "domain-check::safe-wrapper-policy",
+            "governance_ref": "governance::safe-wrapper-policy",
+        },
+    ).json()
 
     applied = client.post(
         "/ops/brain/autonomous-updates/update::safe-wrapper-policy/apply",
         json={
             "test_refs": ["pytest tests/sandbox_probe_test.py -q"],
             "test_evidence_refs": [sandbox_payload["evidence_ref"]],
+            "immune_governance_decision_id": immune_decision["decision_id"],
         },
     )
     assert applied.status_code == 200
@@ -9852,6 +11361,15 @@ def test_release_wrapper_safe_apply_requires_passed_shadow_eval_replay(tmp_path:
         },
     )
     assert proposed.status_code == 200
+    stored_approval = _stored_autonomous_update_approval(
+        client,
+        update_id="update::release-wrapper-missing-eval-replay",
+    )
+    approval = client.post(
+        "/ops/brain/autonomous-updates/update::release-wrapper-missing-eval-replay/admin-approval",
+        json={"approval_decision_id": stored_approval},
+    )
+    assert approval.status_code == 200
 
     sandbox_run = client.post(
         "/ops/brain/autonomous-updates/update::release-wrapper-missing-eval-replay/sandbox-tests",
@@ -9902,7 +11420,12 @@ def test_autonomous_update_sandbox_rejects_out_of_scope_file_mutation(tmp_path: 
     assert proposed.status_code == 200
     approval = client.post(
         "/ops/brain/autonomous-updates/update::unsafe-sandbox-mutation/admin-approval",
-        json={"approved_by": "admin", "approval_ref": "operator-review::unsafe-mutation"},
+        json={
+            "approval_decision_id": _stored_autonomous_update_approval(
+                client,
+                update_id="update::unsafe-sandbox-mutation",
+            )
+        },
     )
     assert approval.status_code == 200
 
@@ -9917,7 +11440,8 @@ def test_autonomous_update_sandbox_rejects_out_of_scope_file_mutation(tmp_path: 
     assert sandbox_payload["passed"] is False
     assert sandbox_payload["returncode"] == 0
     assert sandbox_payload["diff_summary"]["unsafe_change_count"] == 1
-    assert sandbox_payload["diff_summary"]["unsafe_changes"][0]["path"] == "unsafe_mutation.txt"
+    assert "unsafe_changes" not in sandbox_payload["diff_summary"]
+    assert sandbox_payload["diagnostic_artifact_available"] is True
     assert sandbox_payload["sandbox"]["active_project_root_mutated"] is False
     assert not (project_root / "unsafe_mutation.txt").exists()
 

@@ -83,6 +83,66 @@ def test_harness_model_router_blocks_recommendation_from_upstream_aitune_gate():
     assert decision["policy_scan"]["summary"]["allow_merge"] is False
 
 
+def test_harness_model_router_composes_deduplicated_prompt_overlays():
+    router = HarnessModelRouter.default()
+
+    overlay = router.compose_prompt(
+        base_prompt="You are NexusNet.",
+        provider_overlay="Use the provider response format.",
+        model_family_overlay="Use concise tool calls.",
+        local_model_overlay="Use concise tool calls.",
+    )
+
+    assert overlay["prompt"] == (
+        "You are NexusNet.\n\nUse the provider response format.\n\nUse concise tool calls."
+    )
+    assert overlay["applied_layers"] == ["base", "provider", "model_family"]
+    assert overlay["deduplicated_layers"] == ["local_model"]
+
+
+def test_harness_model_router_blocks_incompatible_or_conflicting_prompt_overlays():
+    router = HarnessModelRouter.default()
+
+    incompatible = router.compose_prompt(
+        base_prompt="You are NexusNet.",
+        provider_id="anthropic",
+        model_family="claude",
+        provider_overlay={
+            "overlay_id": "openai-format",
+            "content": "Use OpenAI response formatting.",
+            "applies_to": {"provider_id": "openai"},
+        },
+    )
+
+    assert incompatible["decision"] == "blocked"
+    assert incompatible["prompt"] == "You are NexusNet."
+    assert incompatible["applied_layers"] == ["base"]
+    assert incompatible["compatibility_receipt"]["incompatible_overlay_ids"] == ["openai-format"]
+
+    conflicting = router.compose_prompt(
+        base_prompt="You are NexusNet.",
+        provider_id="openai",
+        model_family="gpt",
+        provider_overlay={
+            "overlay_id": "provider-format",
+            "content": "Return JSON.",
+            "priority": 10,
+            "insert_after": "base",
+        },
+        model_family_overlay={
+            "overlay_id": "family-format",
+            "content": "Return XML.",
+            "priority": 10,
+            "insert_after": "base",
+        },
+    )
+
+    assert conflicting["decision"] == "blocked"
+    assert conflicting["prompt"] == "You are NexusNet."
+    assert conflicting["conflict_receipt"]["conflict_count"] == 1
+    assert conflicting["conflict_receipt"]["conflicts"][0]["conflict_type"] == "same_insert_slot_and_priority"
+
+
 def test_harness_routing_api_blackbox_and_control_panel_surface(tmp_path):
     project_root = make_project(tmp_path)
     client = TestClient(create_app(str(project_root)))
@@ -103,6 +163,18 @@ def test_harness_routing_api_blackbox_and_control_panel_surface(tmp_path):
     )
     assert recommendation.status_code == 200
     assert recommendation.json()["selected_route"]["role"] == "independent_reviewer"
+
+    composed = client.post(
+        "/ops/brain/harness-routing/compose-prompt",
+        json={
+            "base_prompt": "You are NexusNet.",
+            "provider_overlay": "Use provider formatting.",
+            "model_family_overlay": "Use concise tool calls.",
+        },
+    )
+    assert composed.status_code == 200
+    assert composed.json()["prompt"].endswith("Use concise tool calls.")
+    assert composed.json()["raw_prompt_persisted"] is False
 
     blocked = client.post(
         "/ops/brain/harness-routing/recommend",

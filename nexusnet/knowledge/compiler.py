@@ -41,9 +41,17 @@ class KnowledgeArtifactCompiler:
         normalized = request if isinstance(request, KnowledgeCompileRequest) else KnowledgeCompileRequest.model_validate(request)
         resolved_sources, source_ref_exclusions = _resolve_source_refs(normalized.source_refs, self.source_root)
         normalized_sources = [*normalized.sources, *resolved_sources]
-        allowed_sources, excluded_sources = _filter_sources(normalized, normalized_sources)
-        excluded_sources = [*excluded_sources, *source_ref_exclusions]
-        source_ref_security_gate = _source_ref_security_gate(normalized.source_refs, resolved_sources, source_ref_exclusions)
+        admitted_sources, genesis_source_exclusions, genesis_memory_admission_gate = (
+            _filter_sources_by_genesis_memory_admission(self, normalized_sources)
+        )
+        allowed_sources, excluded_sources = _filter_sources(normalized, admitted_sources)
+        excluded_sources = [*excluded_sources, *source_ref_exclusions, *genesis_source_exclusions]
+        blocked_source_ref_records = [*source_ref_exclusions, *genesis_source_exclusions]
+        source_ref_security_gate = _source_ref_security_gate(
+            normalized.source_refs,
+            resolved_sources,
+            blocked_source_ref_records,
+        )
         blocked_source_refs = source_ref_security_gate["blocked_source_refs"]
         source_payloads = [source.model_dump(mode="json") for source in allowed_sources]
         source_digests = [
@@ -84,9 +92,10 @@ class KnowledgeArtifactCompiler:
             "governance": {
                 **normalized.governance,
                 "rbac_scope": normalized.scope.get("rbac_scope", []),
-                "status": "candidate",
+                "status": "blocked" if genesis_source_exclusions else "candidate",
                 "permission_filtered_source_count": len(excluded_sources),
                 "blocked_source_ref_count": len(blocked_source_refs),
+                "genesis_memory_admission_gate": genesis_memory_admission_gate,
                 "mutation_allowed": False,
                 "pinecone_runtime_dependency": False,
                 "promotion_boundary": "candidate-until-code-backed-tests-control-panel-replay",
@@ -115,16 +124,19 @@ class KnowledgeArtifactCompiler:
                     "blocked_source_ref_count": len(blocked_source_refs),
                     "mutation_allowed": False,
                 },
+                "genesis_memory_admission_gate": genesis_memory_admission_gate,
             },
             "fallback_policy": {
                 "raw_retrieval_available": True,
                 "raw_retrieval_boundary": "fallback-lane-only",
             },
         }
+        artifact_status = "blocked" if genesis_source_exclusions else "candidate"
         digest = sha256_ref(_stable_artifact_hash_payload(core_payload)).removeprefix("sha256:")
         artifact_payload = {
             "artifact_id": f"kac://{_slug(normalized.task_family)}/{digest[:16]}",
             **core_payload,
+            "status": artifact_status,
             "artifact_hash": f"sha256:{digest}",
         }
         artifact_trust_preview = _artifact_trust_preview(artifact_payload)
@@ -324,6 +336,9 @@ class KnowledgeArtifactCompiler:
                 "conflict_notes": selected.get("conflict_objects", []) if normalized.provenance.get("include_conflict_notes", True) else [],
                 "source_ref_security_gate": source_ref_security_gate,
                 "blocked_source_refs": selected.get("blocked_source_refs", []),
+                "genesis_memory_admission_gate": (
+                    (selected.get("control_panel_replay") or {}).get("genesis_memory_admission_gate") or {}
+                ),
                 "artifact_trust_preview": artifact_trust_preview,
                 "raw_retrieval_fallback": {"enabled": False, "reason": "compiled artifact satisfied KRC"},
                 "budget": normalized.budget,
@@ -417,6 +432,93 @@ def _filter_sources(request: KnowledgeCompileRequest, sources: list[Any] | None 
             continue
         allowed.append(source)
     return allowed, excluded
+
+
+def _filter_sources_by_genesis_memory_admission(
+    compiler: KnowledgeArtifactCompiler,
+    sources: list[Any],
+) -> tuple[list[Any], list[dict[str, Any]], dict[str, Any]]:
+    admission = getattr(compiler, "genesis_memory_admission", None)
+    record_manual_ingress = getattr(admission, "record_manual_ingress", None)
+    if not callable(record_manual_ingress):
+        return sources, [], _genesis_memory_admission_gate(decisions=[], blocked=[])
+
+    allowed = []
+    blocked = []
+    decisions = []
+    for source in sources:
+        metadata = dict(getattr(source, "metadata", {}) or {})
+        decision = record_manual_ingress(
+            session_id=_knowledge_source_session_id(source),
+            ingress_route="knowledge-artifact-source-ingest",
+            content=str(getattr(source, "text", "") or ""),
+            metadata=_knowledge_source_admission_metadata(source),
+        )
+        decisions.append(decision)
+        if decision.get("memory_write_allowed") is True:
+            allowed.append(source)
+            continue
+        blocked.append(
+            {
+                "source_ref": str(getattr(source, "source_ref", "knowledge-source")),
+                "reason": "genesis_memory_admission_blocked",
+                "source_ref_gate": "blocked_by_genesis_memory_admission",
+                "decision_id": decision.get("decision_id"),
+                "content_ref": decision.get("content_ref"),
+                "privacy_class": decision.get("privacy_class"),
+                "consent_status": decision.get("consent_status"),
+                "rights_license_status": decision.get("rights_license_status"),
+                "memory_write_allowed": False,
+                "retrieval_truth_allowed": decision.get("retrieval_truth_allowed") is True,
+                "training_allowed": decision.get("training_allowed") is True,
+                "raw_content_included": False,
+                "metadata_key_count": len(metadata),
+            }
+        )
+    return allowed, blocked, _genesis_memory_admission_gate(decisions=decisions, blocked=blocked)
+
+
+def _knowledge_source_session_id(source: Any) -> str | None:
+    metadata = dict(getattr(source, "metadata", {}) or {})
+    session_id = metadata.get("session_id") or metadata.get("session_ref")
+    return str(session_id) if session_id else None
+
+
+def _knowledge_source_admission_metadata(source: Any) -> dict[str, Any]:
+    metadata = dict(getattr(source, "metadata", {}) or {})
+    return {
+        "source_kind": metadata.get("source_kind") or "knowledge-artifact-source",
+        "privacy_class": metadata.get("privacy_class") or getattr(source, "privacy_class", "unspecified"),
+        "consent_status": metadata.get("consent_status") or "not-declared",
+        "rights_license_status": metadata.get("rights_license_status")
+        or metadata.get("license_status")
+        or getattr(source, "license_state", "not-declared"),
+    }
+
+
+def _genesis_memory_admission_gate(
+    *,
+    decisions: list[dict[str, Any]],
+    blocked: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "surface_id": "genesis-memory-admission-gate",
+        "ingress_route": "knowledge-artifact-source-ingest",
+        "decision_count": len(decisions),
+        "blocked_count": len(blocked),
+        "allowed_count": len(decisions) - len(blocked),
+        "decision_refs": [
+            decision.get("decision_id")
+            for decision in decisions
+            if decision.get("decision_id")
+        ],
+        "blocked_source_refs": blocked,
+        "memory_write_allowed": not blocked,
+        "retrieval_truth_allowed": False,
+        "training_allowed": not blocked
+        and any(decision.get("training_allowed") is True for decision in decisions),
+        "raw_content_included": False,
+    }
 
 
 def _resolve_source_refs(source_refs: list[str], source_root: Path) -> tuple[list[Any], list[dict[str, Any]]]:

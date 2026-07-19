@@ -24,6 +24,15 @@ def native_project_heartbeat_record(
     heartbeat: dict[str, Any],
     recorded_at: str,
 ) -> dict[str, Any]:
+    source_brain_generate_status = _normalized_brain_generate_status(
+        heartbeat.get("source_brain_generate_status")
+    )
+    source_runtime_degraded = source_brain_generate_status in {
+        "blocked",
+        "error",
+        "failed",
+        "runtime-unavailable",
+    }
     lanes = [
         compact_project_heartbeat_lane_for_native_record(lane)
         for lane in (heartbeat.get("lanes") if isinstance(heartbeat.get("lanes"), list) else [])
@@ -47,6 +56,8 @@ def native_project_heartbeat_record(
         "recorded_at": recorded_at,
         "source_run_id": heartbeat.get("source_run_id"),
         "source_trace_ref": heartbeat.get("source_trace_ref"),
+        "source_brain_generate_status": source_brain_generate_status,
+        "source_runtime_degraded": source_runtime_degraded,
         "session_id": None,
         "session_ref_digest": heartbeat.get("session_ref_digest"),
         "lane_count": int(heartbeat.get("lane_count") or len(lanes)),
@@ -183,6 +194,23 @@ def dedupe_strings(values: list[str]) -> list[str]:
             seen.add(text)
             result.append(text)
     return result
+
+
+def _normalized_brain_generate_status(value: Any) -> str:
+    status = str(value or "unknown").strip().lower()
+    if status not in {
+        "blocked",
+        "completed",
+        "covered",
+        "error",
+        "failed",
+        "ok",
+        "runtime-unavailable",
+        "unknown",
+        "warning",
+    }:
+        return "unknown"
+    return status
 
 
 def _contains_unsafe_ref_marker(value: str) -> bool:

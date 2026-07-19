@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Iterable
@@ -29,6 +30,16 @@ class MemoryService:
     def append_messages(self, session_id: str, messages: Iterable[Message]) -> list[MemoryRecord]:
         saved = []
         for message in messages:
+            gate = getattr(self, "genesis_memory_admission", None)
+            if gate is not None and hasattr(gate, "record_manual_ingress"):
+                decision = gate.record_manual_ingress(
+                    session_id=session_id,
+                    ingress_route="manual-memory-append",
+                    content=message.content,
+                    metadata={"source_kind": "manual-memory-message", "role": message.role},
+                )
+                if decision.get("memory_write_allowed") is not True:
+                    continue
             record = MemoryRecord(
                 session_id=session_id,
                 plane="working",
@@ -66,6 +77,68 @@ class MemoryService:
         self._update_analytics(session_id)
         return record
 
+    def activate_genesis_memory(
+        self,
+        *,
+        memory_id: str,
+        memory_ref: str,
+        session_ref_digest: str,
+        source_ref: str,
+        content: str,
+        content_ref: str,
+    ) -> dict:
+        record = MemoryRecord(
+            memory_id=memory_id,
+            session_id=session_ref_digest,
+            plane="semantic",
+            role="NexusBrain",
+            content={
+                "fact": content,
+                "source": source_ref,
+                "genesis_memory_id": memory_id,
+                "genesis_memory_ref": memory_ref,
+                "content_ref": content_ref,
+            },
+            tags=["canon", "genesis-layer7", "source-grounded"],
+            score=MemoryScore(relevance=1.0, freshness=1.0, importance=0.9, recurrence=0.0),
+        )
+        self.store.add_memory_record(record.model_dump(mode="json"))
+        self._update_analytics(session_ref_digest)
+        state_ref = self._write_genesis_runtime_state(
+            memory_id=memory_id,
+            state="active",
+            runtime_ref=f"semantic-memory::{memory_id}",
+        )
+        return {
+            "surface_id": "genesis-memory-semantic-activation",
+            "status": "active",
+            "memory_id": memory_id,
+            "state_ref": state_ref,
+            "raw_content_included": False,
+        }
+
+    def deactivate_genesis_memory(
+        self,
+        *,
+        memory_id: str,
+        session_ref_digest: str,
+        reason_ref: str,
+    ) -> dict:
+        state_ref = self._write_genesis_runtime_state(
+            memory_id=memory_id,
+            state="revoked",
+            reason_ref=reason_ref,
+        )
+        self._update_analytics(session_ref_digest)
+        return {
+            "surface_id": "genesis-memory-semantic-deactivation",
+            "status": "revoked",
+            "memory_id": memory_id,
+            "state_ref": state_ref,
+            "reason_ref": reason_ref,
+            "raw_content_included": False,
+        }
+
     def record_procedural(self, session_id: str, pattern: str, rationale: str) -> MemoryRecord:
         record = MemoryRecord(
             session_id=session_id,
@@ -81,7 +154,11 @@ class MemoryService:
     def query(self, request: MemoryQuery) -> list[MemoryRecord]:
         self._migrate_legacy_session(request.session_id)
         records = self.store.list_memory_records(request.session_id, request.plane, request.limit)
-        return [MemoryRecord.model_validate(record) for record in records]
+        return [
+            MemoryRecord.model_validate(record)
+            for record in records
+            if self._genesis_record_active(record)
+        ]
 
     def session_view(self, session_id: str) -> dict:
         records = self.query(MemoryQuery(session_id=session_id, limit=500))
@@ -101,7 +178,11 @@ class MemoryService:
         return messages
 
     def _update_analytics(self, session_id: str) -> dict:
-        records = self.store.list_memory_records(session_id, limit=1000)
+        records = [
+            record
+            for record in self.store.list_memory_records(session_id, limit=1000)
+            if self._genesis_record_active(record)
+        ]
         counts = {plane: 0 for plane in self.DEFAULT_PLANES}
         last_updated = None
         for record in records:
@@ -133,3 +214,51 @@ class MemoryService:
                 records.append(Message(role=payload.get("role", "user"), content=text))
         if records:
             self.append_messages(session_id, records)
+
+    def _write_genesis_runtime_state(
+        self,
+        *,
+        memory_id: str,
+        state: str,
+        runtime_ref: str | None = None,
+        reason_ref: str | None = None,
+    ) -> str:
+        key = hashlib.sha256(memory_id.encode("utf-8")).hexdigest()[:24]
+        relative_ref = f"genesis/memory-foundation/runtime/memory/{key}.json"
+        path = self.paths.artifacts_dir / relative_ref
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "memory_id": memory_id,
+                    "state": state,
+                    "runtime_ref": runtime_ref,
+                    "reason_ref": reason_ref,
+                    "raw_content_included": False,
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        return relative_ref
+
+    def _genesis_record_active(self, record: dict) -> bool:
+        content = record.get("content") if isinstance(record.get("content"), dict) else {}
+        memory_id = str(content.get("genesis_memory_id") or "")
+        if not memory_id:
+            return True
+        key = hashlib.sha256(memory_id.encode("utf-8")).hexdigest()[:24]
+        path = (
+            self.paths.artifacts_dir
+            / "genesis"
+            / "memory-foundation"
+            / "runtime"
+            / "memory"
+            / f"{key}.json"
+        )
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False
+        return payload.get("state") == "active"

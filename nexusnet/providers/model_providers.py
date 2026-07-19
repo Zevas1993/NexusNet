@@ -12,7 +12,9 @@ safely rather than breaking.
 """
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+import hashlib
+import time
+from typing import Any, Callable, Protocol, runtime_checkable
 
 Message = dict[str, str]
 
@@ -94,6 +96,10 @@ class ProviderRegistry:
 
     def __init__(self) -> None:
         self._providers: dict[str, WrapperProvider] = {}
+        self.execution_authority: Any | None = None
+        self.execution_observer: Callable[[dict[str, Any]], dict[str, Any]] | None = None
+        self._dispatch_count = 0
+        self._circuits: dict[str, dict[str, Any]] = {}
 
     def register(self, provider: WrapperProvider) -> None:
         self._providers[provider.provider_id] = provider
@@ -121,6 +127,10 @@ class ProviderRegistry:
             )
             for provider in self._providers.values()
         ]
+        for provider in providers:
+            provider["circuit"] = self._circuit_projection(
+                self._circuit_for(str(provider["provider_id"]))
+            )
         status_counts: dict[str, int] = {}
         for provider in providers:
             status = str(provider["status"])
@@ -156,13 +166,274 @@ class ProviderRegistry:
     def cloud_providers(self) -> list[str]:
         return sorted(p.provider_id for p in self._providers.values() if not p.is_local)
 
-    def complete(self, provider_id: str, messages: list[Message]) -> dict[str, Any]:
+    def inference_scope(self, provider_id: str) -> dict[str, Any]:
+        provider = self.get(provider_id)
+        if provider is None:
+            raise ValueError(f"unknown provider {provider_id}")
+        return {
+            "provider_id": provider_id,
+            "provider_local": bool(provider.is_local),
+            "operation": "chat_completion",
+        }
+
+    def complete(
+        self,
+        provider_id: str,
+        messages: list[Message],
+        *,
+        authority_lease_id: str | None = None,
+        session_id: str | None = None,
+        correlation_ref: str | None = None,
+    ) -> dict[str, Any]:
         p = self.get(provider_id)
         if p is None:
             return {"ok": False, "error": f"unknown provider {provider_id}", "text": ""}
+        circuit = self._circuit_for(provider_id)
+        if circuit["state"] == "open" and time.monotonic() < circuit["open_until"]:
+            return {
+                "ok": False,
+                "error": "provider circuit is open",
+                "text": "",
+                "model": provider_id,
+                "local": bool(p.is_local),
+                "provider_id": provider_id,
+                "provider_circuit": self._circuit_projection(circuit),
+            }
+        if circuit["state"] == "open":
+            circuit.update({"state": "half-open", "consecutive_failures": 0, "open_until": 0.0})
+        authority = self._inference_authority(
+            provider_id=provider_id,
+            provider=p,
+            authority_lease_id=authority_lease_id,
+        )
+        if not authority["execution_allowed"]:
+            authority["shared_event_spine"] = self._observe_inference_outcome(
+                event_type="genesis.execution_authority.provider_inference.blocked",
+                provider_ref=str(authority["provider_ref"]),
+                authority=authority,
+                session_id=session_id,
+                correlation_ref=correlation_ref,
+            )
+            return {
+                "ok": False,
+                "error": "provider inference blocked by execution authority",
+                "text": "",
+                "model": provider_id,
+                "local": bool(p.is_local),
+                "provider_id": provider_id,
+                "provider_authority": authority,
+            }
         out = p.complete(messages)
+        error_family = "none"
+        retry_count = 0
+        if not out.get("ok"):
+            error_family = _provider_error_family(str(out.get("error") or ""))
+            if error_family == "transient":
+                retry_count = 1
+                out = p.complete(messages)
+        if out.get("ok"):
+            self._record_provider_success(circuit)
+        else:
+            if error_family == "none":
+                error_family = _provider_error_family(str(out.get("error") or ""))
+            self._record_provider_failure(circuit, error_family)
+        authority["shared_event_spine"] = self._observe_inference_outcome(
+            event_type=(
+                "genesis.execution_authority.provider_inference.executed"
+                if out.get("ok")
+                else "genesis.execution_authority.provider_inference.failed"
+            ),
+            provider_ref=str(authority["provider_ref"]),
+            authority=authority,
+            session_id=session_id,
+            correlation_ref=correlation_ref,
+        )
         out["provider_id"] = provider_id
+        out["provider_authority"] = authority
+        out["provider_circuit"] = self._circuit_projection(
+            circuit,
+            error_family=error_family,
+            retry_count=retry_count,
+        )
         return out
+
+    def _circuit_for(self, provider_id: str) -> dict[str, Any]:
+        return self._circuits.setdefault(
+            provider_id,
+            {
+                "state": "closed",
+                "consecutive_failures": 0,
+                "open_until": 0.0,
+                "last_error_family": "none",
+            },
+        )
+
+    def _record_provider_success(self, circuit: dict[str, Any]) -> None:
+        circuit.update(
+            {
+                "state": "closed",
+                "consecutive_failures": 0,
+                "open_until": 0.0,
+                "last_error_family": "none",
+            }
+        )
+
+    def _record_provider_failure(self, circuit: dict[str, Any], error_family: str) -> None:
+        circuit["consecutive_failures"] += 1
+        circuit["last_error_family"] = error_family
+        threshold = 1 if error_family in {"context_length", "non_retryable"} else 2
+        if circuit["consecutive_failures"] >= threshold:
+            cooldown_seconds = 60.0 if error_family == "quota" else 15.0
+            circuit.update({"state": "open", "open_until": time.monotonic() + cooldown_seconds})
+
+    def _circuit_projection(
+        self,
+        circuit: dict[str, Any],
+        *,
+        error_family: str | None = None,
+        retry_count: int = 0,
+    ) -> dict[str, Any]:
+        return {
+            "state": circuit["state"],
+            "error_family": error_family or circuit["last_error_family"],
+            "retry_count": retry_count,
+            "consecutive_failures": circuit["consecutive_failures"],
+            "cooldown_active": circuit["state"] == "open",
+            "fallback_suggestion": "operator-or-router-select-next-healthy-provider",
+            "automatic_provider_substitution": False,
+        }
+
+    def _observe_inference_outcome(
+        self,
+        *,
+        event_type: str,
+        provider_ref: str,
+        authority: dict[str, Any],
+        session_id: str | None,
+        correlation_ref: str | None,
+    ) -> dict[str, Any]:
+        self._dispatch_count += 1
+        correlation_seed = "|".join(
+            [
+                str(correlation_ref or "provider-registry"),
+                str(authority.get("lease_id") or "none"),
+                event_type,
+                str(self._dispatch_count),
+            ]
+        )
+        envelope = {
+            "event_type": event_type,
+            "source_surface_id": "provider-registry-inference",
+            "correlation_ref": (
+                "provider-inference::"
+                f"{hashlib.sha256(correlation_seed.encode('utf-8')).hexdigest()[:24]}"
+            ),
+            "session_ref_digest": _privacy_digest(session_id) if session_id else None,
+            "artifact_refs": [
+                provider_ref,
+                f"execution-authority-lease::{authority.get('lease_id') or 'none'}",
+                "capability::model-inference",
+            ],
+            "planes": ["authority", "isolation", "model", "event", "evidence"],
+        }
+        if self.execution_observer is None:
+            return {
+                "status": "not-configured-event-spine",
+                "event_type": event_type,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        try:
+            projection = self.execution_observer(envelope)
+        except Exception as exc:  # pragma: no cover - dispatch must survive telemetry failure
+            return {
+                "status": "degraded-event-spine",
+                "event_type": event_type,
+                "blocker_digest": (
+                    "sha256:"
+                    f"{hashlib.sha256(type(exc).__name__.encode('utf-8')).hexdigest()[:16]}"
+                ),
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        return {
+            key: projection.get(key)
+            for key in (
+                "event_ref",
+                "blackboard_snapshot_ref",
+                "plane_trace_ref",
+                "event_type",
+                "source_surface_id",
+                "raw_content_included",
+                "active_production_mutation_allowed",
+                "active_production_mutated",
+            )
+        }
+
+    def _inference_authority(
+        self,
+        *,
+        provider_id: str,
+        provider: WrapperProvider,
+        authority_lease_id: str | None,
+    ) -> dict[str, Any]:
+        provider_ref = f"provider::{hashlib.sha256(provider_id.encode('utf-8')).hexdigest()}"
+        base = {
+            "surface_id": "provider-registry-inference-authority",
+            "capability": "model_inference",
+            "provider_ref": provider_ref,
+            "required": not isinstance(provider, EchoProvider),
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "active_production_mutated": False,
+        }
+        if isinstance(provider, EchoProvider):
+            return {
+                **base,
+                "status": "native-contained",
+                "execution_allowed": True,
+                "reason": "native-no-network-provider",
+            }
+        if self.execution_authority is None:
+            return {
+                **base,
+                "status": "blocked-authority",
+                "execution_allowed": False,
+                "reason": "execution_authority_not_bound",
+            }
+        lease_id = str(authority_lease_id or "")
+        if not lease_id:
+            return {
+                **base,
+                "status": "blocked-authority",
+                "execution_allowed": False,
+                "reason": "execution_authority_lease_required",
+            }
+        try:
+            result = self.execution_authority.evaluate(
+                lease_id=lease_id,
+                capability="model_inference",
+                scope=self.inference_scope(provider_id),
+            )
+        except KeyError:
+            return {
+                **base,
+                "lease_id": lease_id,
+                "status": "blocked-authority",
+                "execution_allowed": False,
+                "reason": "execution_authority_lease_not_found",
+            }
+        decision = result.get("decision") if isinstance(result.get("decision"), dict) else {}
+        return {
+            **base,
+            "lease_id": decision.get("lease_id"),
+            "status": "allowed" if decision.get("execution_allowed") else "blocked-authority",
+            "execution_allowed": bool(decision.get("execution_allowed")),
+            "reason": str(decision.get("reason") or "authority-decision-missing"),
+            "scope_hash": decision.get("scope_hash"),
+        }
 
 
 def default_provider_registry(*, openrouter_key: str = "", requesty_key: str = "") -> ProviderRegistry:
@@ -176,6 +447,17 @@ def default_provider_registry(*, openrouter_key: str = "", requesty_key: str = "
     reg.register(lmstudio())
     reg.register(vllm("local-gpu-model"))
     return reg
+
+
+def _provider_error_family(error: str) -> str:
+    normalized = error.lower()
+    if any(marker in normalized for marker in ("429", "quota", "rate limit", "rate_limit")):
+        return "quota"
+    if any(marker in normalized for marker in ("context length", "context_length", "too many tokens", "maximum context")):
+        return "context_length"
+    if any(marker in normalized for marker in ("timeout", "timed out", "connection", "temporarily", "503", "502")):
+        return "transient"
+    return "non_retryable"
 
 
 def _provider_readiness(
@@ -211,3 +493,7 @@ def _provider_readiness(
         "raw_content_included": False,
         "active_production_mutation_allowed": False,
     }
+
+
+def _privacy_digest(value: str | None) -> str:
+    return "sha256:" + hashlib.sha256(str(value or "").encode("utf-8")).hexdigest()[:16]

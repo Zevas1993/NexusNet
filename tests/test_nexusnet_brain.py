@@ -183,17 +183,17 @@ def test_nexusnet_brain_generate_routes_blocked_native_growth_into_dream_researc
     assert bridge["surface_id"] == "native-hive-runtime-growth-dream-research-bridge"
     assert bridge["status"] == "queued"
     assert bridge["runtime_growth_receipt_id"] == native_hive["runtime_growth_receipt_id"]
-    assert bridge["governance_lifecycle_status"] == "completed"
+    assert bridge["governance_lifecycle_status"] == "pending-admin-approval"
     assert bridge["governance_lifecycle_run_id"]
     assert bridge["governance_lifecycle_update_id"]
     assert bridge["governance_lifecycle_action_statuses"] == {
-        "proposal": "rolled-back",
-        "admin_approval": "admin-approved",
-        "shadow_eval_replay": "passed-shadow",
-        "sandbox_tests": "passed",
-        "apply": "applied-shadow-safe-file",
-        "rollback": "rolled-back",
-        "readiness_runner": "completed",
+        "proposal": "proposed",
+        "admin_approval": "pending-admin-approval",
+        "shadow_eval_replay": None,
+        "sandbox_tests": None,
+        "apply": None,
+        "rollback": None,
+        "readiness_runner": "pending-admin-approval",
     }
     assert bridge["raw_content_included"] is False
 
@@ -206,7 +206,7 @@ def test_nexusnet_brain_generate_routes_blocked_native_growth_into_dream_researc
     ]
     assert len(native_items) == 1
     item = native_items[0]
-    assert item["status"] == "reverted"
+    assert item["status"] == "proposed"
     assert item["event"]["metadata"]["source"] == "native-hive-runtime-growth"
     assert item["event"]["metadata"]["hive_run_id"] == native_hive["hive_run_id"]
     assert item["event"]["metadata"]["raw_content_included"] is False
@@ -233,15 +233,23 @@ def test_nexusnet_brain_generate_routes_blocked_native_growth_into_dream_researc
     assert proposal["metadata"]["direct_nexusbrain_generate"] is True
 
     runner = runtime["release_readiness_evidence_runner"]
-    assert runner["latest_autonomous_update_lifecycle_status"] == "completed"
+    assert runner["latest_autonomous_update_lifecycle_status"] == "pending-admin-approval"
     assert runner["latest_autonomous_update_lifecycle_run_id"] == bridge["governance_lifecycle_run_id"]
     assert runner["latest_autonomous_update_lifecycle_update_id"] == bridge["governance_lifecycle_update_id"]
 
     native_governance = runtime["native_runtime_growth_governance"]
-    assert native_governance["status"] == "rolled-back"
+    assert native_governance["status"] == "proposed"
     assert native_governance["runtime_growth_receipt_id"] == native_hive["runtime_growth_receipt_id"]
     assert native_governance["direct_nexusbrain_generate"] is True
-    assert native_governance["latest_action_statuses"] == bridge["governance_lifecycle_action_statuses"]
+    assert native_governance["latest_action_statuses"] == {
+        "proposal": "proposed",
+        "admin_approval": "pending-admin-approval",
+        "shadow_eval_replay": "not-run",
+        "sandbox_tests": "not-run",
+        "apply": "not-applied",
+        "rollback": "not-rolled-back",
+        "readiness_runner": "pending-admin-approval",
+    }
 
     serialized = json.dumps({"bridge": bridge, "queue": queue, "runtime": runtime, "proposal": proposal}, sort_keys=True)
     assert prompt not in serialized
@@ -279,7 +287,7 @@ def test_nexusnet_brain_direct_native_growth_replays_into_visualizer_after_resta
 
     native_hive = result.inference_trace.metrics["native_hive_forward_pass"]
     bridge = native_hive["runtime_growth_dream_research"]
-    assert bridge["governance_lifecycle_status"] == "completed"
+    assert bridge["governance_lifecycle_status"] == "pending-admin-approval"
 
     restarted_client = TestClient(create_app(str(project_root)))
     restarted_runtime = restarted_client.get(
@@ -287,11 +295,19 @@ def test_nexusnet_brain_direct_native_growth_replays_into_visualizer_after_resta
         params={"session_id": session_id},
     ).json()
     restarted_governance = restarted_runtime["native_runtime_growth_governance"]
-    assert restarted_governance["status"] == "rolled-back"
+    assert restarted_governance["status"] == "proposed"
     assert restarted_governance["direct_nexusbrain_generate"] is True
     assert restarted_governance["latest_runner_run_id"] == bridge["governance_lifecycle_run_id"]
     assert restarted_governance["runtime_growth_receipt_id"] == native_hive["runtime_growth_receipt_id"]
-    assert restarted_governance["latest_action_statuses"] == bridge["governance_lifecycle_action_statuses"]
+    assert restarted_governance["latest_action_statuses"] == {
+        "proposal": "proposed",
+        "admin_approval": "pending-admin-approval",
+        "shadow_eval_replay": "not-run",
+        "sandbox_tests": "not-run",
+        "apply": "not-applied",
+        "rollback": "not-rolled-back",
+        "readiness_runner": "pending-admin-approval",
+    }
     assert restarted_governance["raw_content_included"] is False
 
     visualizer = restarted_client.get(
@@ -304,7 +320,7 @@ def test_nexusnet_brain_direct_native_growth_replays_into_visualizer_after_resta
     direct_status = control_panel["direct_nexusbrain_native_growth_governance"]
     assert visual_governance["direct_nexusbrain_generate"] is True
     assert direct_status["surface_id"] == "direct-nexusbrain-native-growth-governance"
-    assert direct_status["status"] == "rolled-back"
+    assert direct_status["status"] == "proposed"
     assert direct_status["honest_status_label"] == "direct-nexusbrain-native-growth-governance-replayed"
     assert direct_status["latest_runner_run_id"] == bridge["governance_lifecycle_run_id"]
     assert direct_status["runtime_growth_receipt_id"] == native_hive["runtime_growth_receipt_id"]

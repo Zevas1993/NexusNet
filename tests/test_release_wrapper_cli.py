@@ -203,11 +203,12 @@ class _FakeHttpClient:
                     "surface_id": "release-wrapper-status-card",
                     "honest_status_label": "go",
                     "operator_action_lane": {
+                        "proposal_update_id": "update::release-wrapper-boot",
                         "latest_action_statuses": {
-                            "admin_approval": "admin-approved",
-                            "sandbox_tests": "passed",
-                            "apply": "applied-shadow-safe-file",
-                            "rollback": "rolled-back",
+                            "admin_approval": "pending-admin-approval",
+                            "sandbox_tests": "not-run",
+                            "apply": "not-applied",
+                            "rollback": "not-rolled-back",
                         }
                     },
                     "self_repair_ledger": {
@@ -225,6 +226,16 @@ class _FakeHttpClient:
 
     def post(self, url: str, **kwargs):
         self.calls.append(("POST", url, kwargs))
+        if url.endswith("/ops/approvals"):
+            payload = kwargs["json"]
+            assert payload["decision"] == "approved"
+            if payload["subject"] == "release-wrapper-autonomous-update":
+                assert payload["metadata"]["update_id"] == "update::release-wrapper-boot"
+                return _FakeResponse({"decision_id": "approval::release-wrapper-boot"})
+            if payload["subject"] == "release-wrapper-production-spine-release-lifecycle":
+                assert payload["metadata"]["session_id"] == "release-wrapper-boot-raw-session"
+                return _FakeResponse({"decision_id": "approval::release-wrapper-production-boot"})
+            raise AssertionError(f"unexpected approval subject {payload['subject']}")
         if url.endswith("/v1/chat/completions"):
             payload = kwargs["json"]
             self.chat_session_id = payload["session_id"]
@@ -239,6 +250,9 @@ class _FakeHttpClient:
                 }
             )
         if url.endswith("/ops/wrapper/release-readiness/run"):
+            payload = kwargs["json"]
+            assert payload["update_id"] == "update::release-wrapper-boot"
+            assert payload["approval_decision_id"] == "approval::release-wrapper-boot"
             return _FakeResponse(
                 {
                     "surface_id": "release-wrapper-readiness-evidence-run",
@@ -255,12 +269,26 @@ class _FakeHttpClient:
                 }
             )
         if url.endswith("/ops/wrapper/release-product-smoke/run"):
+            payload = kwargs["json"]
+            assert kwargs["timeout"] == 270
+            assert payload["update_id"] == "update::release-wrapper-boot"
+            assert payload["approval_decision_id"] == "approval::release-wrapper-boot"
+            assert payload["production_approval_decision_id"] == "approval::release-wrapper-production-boot"
             return _FakeResponse(
                 {
                     "schema_version": "nexusnet-release-wrapper-product-smoke-v1",
                     "surface_id": "release-wrapper-product-smoke",
                     "manifest_id": "release-product-smoke::boot",
-                    "status": "release-product-smoke-passed",
+                    "status": "release-product-smoke-governed-shadow-lifecycle-completed",
+                    "governed_update_lifecycle": {
+                        "status": "completed",
+                        "actions": {
+                            "admin_approval": {"status": "admin-approved"},
+                            "sandbox_tests": {"status": "passed"},
+                            "apply": {"status": "applied-shadow-safe-file"},
+                            "rollback": {"status": "rolled-back"},
+                        },
+                    },
                     "product_surface": "wrapper",
                     "product_scope": "whole-system",
                     "artifact_ref": "artifacts/release-wrapper-runtime/release-product-smoke.json",
@@ -406,7 +434,9 @@ def test_release_wrapper_cli_boot_supervisor_starts_api_smokes_runtime_and_write
     }
     assert manifest["evidence"]["release_readiness_evidence_runner"]["latest_status"] == "completed"
     assert manifest["evidence"]["release_readiness"]["go_no_go"] == "go"
-    assert manifest["evidence"]["release_product_smoke"]["latest_status"] == "release-product-smoke-passed"
+    assert manifest["evidence"]["release_product_smoke"]["latest_status"] == (
+        "release-product-smoke-governed-shadow-lifecycle-completed"
+    )
     assert manifest["evidence"]["release_product_smoke"]["failed_count"] == 0
     assert manifest["evidence"]["release_product_smoke"]["raw_content_included"] is False
     assert manifest["evidence"]["release_product_path"] == {

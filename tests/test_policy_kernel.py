@@ -82,6 +82,18 @@ def test_policy_kernel_waivers_require_auditable_metadata_and_expiry():
     assert report.findings[0].waiver_ref == "waiver::code_change_requires_tests::code::docs-only"
 
 
+def test_policy_kernel_plan_mode_write_jail_allows_only_plan_artifacts():
+    kernel = PolicyKernel.default()
+
+    allowed = kernel.authorize_plan_write("docs/superpowers/plans/runtime-improvement.md")
+    blocked = kernel.authorize_plan_write("nexusnet/runtime/unsafe_change.py")
+
+    assert allowed["allowed"] is True
+    assert allowed["reason"] == "plan_artifact_allowlist"
+    assert blocked["allowed"] is False
+    assert blocked["reason"] == "plan_mode_repo_write_blocked"
+
+
 def test_policy_kernel_api_exposes_rules_scan_and_canon_scorecard(tmp_path):
     project_root = make_project(tmp_path)
     client = TestClient(create_app(str(project_root)))
@@ -92,6 +104,14 @@ def test_policy_kernel_api_exposes_rules_scan_and_canon_scorecard(tmp_path):
     assert rules_payload["status_label"] == "LOCKED CANON"
     assert rules_payload["rule_count"] >= 6
     assert "policy_scan" in rules_payload["operator_actions"]
+
+    plan_write_response = client.post(
+        "/ops/brain/policy/plan-write",
+        json={"target_path": "nexusnet/runtime/unsafe_change.py"},
+    )
+    assert plan_write_response.status_code == 200
+    assert plan_write_response.json()["allowed"] is False
+    assert plan_write_response.json()["reason"] == "plan_mode_repo_write_blocked"
 
     scan_response = client.post(
         "/ops/brain/policy/scan",

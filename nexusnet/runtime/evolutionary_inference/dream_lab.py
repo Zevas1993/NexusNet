@@ -10,6 +10,15 @@ from .promotion import PlanPromotionController
 from .schemas import CapacityGate, DreamCycleEvidence, ExecutionPlan, PlanEvidence, WorkloadProfile
 
 
+DREAM_LAB_ASSIMILATION_TARGET_IDS = (
+    "nanochat-constrained-hardware-reference",
+)
+"""Source-backed target for reproducible constrained-hardware experiments.
+
+See docs/assimilation/videos/2026-07-14/11-nanochat-constrained-hardware-reference-spec.md.
+"""
+
+
 class InferenceDreamLab:
     def __init__(
         self,

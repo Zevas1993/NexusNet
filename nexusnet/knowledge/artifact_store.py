@@ -19,10 +19,11 @@ class KnowledgeArtifactStore:
         self._memory_query_events: list[dict[str, Any]] = []
 
     def save(self, artifact: dict[str, Any]) -> dict[str, Any]:
+        artifact = _public_artifact_payload(artifact)
         self._memory_artifacts[artifact["artifact_id"]] = artifact
         if self.artifacts_dir is not None and self.index_path is not None:
             path = self.artifacts_dir / f"{_safe_filename(artifact['artifact_id'])}.json"
-            artifact = {**artifact, "artifact_path": str(path)}
+            artifact = _public_artifact_payload(artifact)
             self._memory_artifacts[artifact["artifact_id"]] = artifact
             path.write_text(json.dumps(artifact, indent=2, sort_keys=True), encoding="utf-8")
             self.index_path.parent.mkdir(parents=True, exist_ok=True)
@@ -33,7 +34,7 @@ class KnowledgeArtifactStore:
                         "artifact_hash": artifact["artifact_hash"],
                         "task_family": artifact["task_family"],
                         "status": artifact["status"],
-                        "artifact_path": str(path),
+                        "artifact_storage_ref": artifact["artifact_storage_ref"],
                         "source_ref_gate": {
                             "allowed": (artifact.get("source_ref_security_gate") or {}).get("allowed", True),
                             "requested_count": (artifact.get("source_ref_security_gate") or {}).get("requested_count", 0),
@@ -70,11 +71,12 @@ class KnowledgeArtifactStore:
             artifact = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             return None
+        artifact = _public_artifact_payload(artifact)
         self._memory_artifacts[artifact_id] = artifact
         return artifact
 
     def list(self, *, limit: int = 50, task_family: str | None = None) -> list[dict[str, Any]]:
-        artifacts = list(self._memory_artifacts.values())
+        artifacts = [_public_artifact_payload(artifact) for artifact in self._memory_artifacts.values()]
         seen = {artifact.get("artifact_id") for artifact in artifacts}
         if self.artifacts_dir is not None:
             for path in self.artifacts_dir.glob("*.json"):
@@ -82,6 +84,7 @@ class KnowledgeArtifactStore:
                     artifact = json.loads(path.read_text(encoding="utf-8"))
                 except json.JSONDecodeError:
                     continue
+                artifact = _public_artifact_payload(artifact)
                 if artifact.get("artifact_id") not in seen:
                     artifacts.append(artifact)
                     seen.add(artifact.get("artifact_id"))
@@ -135,6 +138,18 @@ def _safe_filename(artifact_id: str) -> str:
         .replace(":", "_")
         .replace("\\", "_")
     )
+
+
+def _artifact_storage_ref(artifact_id: str) -> str:
+    return f"knowledge/artifacts/{_safe_filename(artifact_id)}.json"
+
+
+def _public_artifact_payload(artifact: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(artifact)
+    payload.pop("artifact_path", None)
+    artifact_id = str(payload.get("artifact_id") or "kac://unknown")
+    payload.setdefault("artifact_storage_ref", _artifact_storage_ref(artifact_id))
+    return payload
 
 
 def _sha256(payload: dict[str, Any]) -> str:

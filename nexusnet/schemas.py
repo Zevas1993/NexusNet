@@ -233,6 +233,7 @@ class ModelAttachRequest(BaseModel):
     model_hint: str | None = None
     teacher_id: str | None = None
     attach_role: Literal["teacher", "specialist", "student"] = "teacher"
+    usage_intent: Literal["inference-reference", "teacher-or-distillation"] = "inference-reference"
     set_active: bool = True
 
 

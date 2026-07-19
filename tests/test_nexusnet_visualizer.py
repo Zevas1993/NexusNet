@@ -180,7 +180,7 @@ def test_visualizer_endpoint_and_static_ui_are_available(tmp_path: Path):
 
     wrapper_ui = client.get("/ui/wrapper/")
     assert wrapper_ui.status_code == 200
-    assert "NexusNet Wrapper Surface" in wrapper_ui.text
+    assert "NexusNet Harness Surface" in wrapper_ui.text
 
     control_panel_ui = client.get("/ui/control-panel/")
     assert control_panel_ui.status_code == 200

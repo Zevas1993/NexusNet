@@ -168,13 +168,14 @@ def test_core_summary_and_wrapper_surface_absorb_teacher_dream_and_foundry_evide
     assert core.status_code == 200
     evidence = core.json()["evidence_feeds"]
 
-    assert evidence["teacher_evidence"]["bundle_count"] >= 1
-    assert evidence["teacher_evidence"]["latest_bundle_id"]
+    assert native_takeover_candidate.startswith("promcand_")
+    assert evidence["teacher_evidence"]["bundle_count"] == 0
+    assert evidence["teacher_evidence"]["latest_bundle_id"] is None
     assert evidence["dreaming"]["artifact_count"] >= 1
     assert evidence["dreaming"]["latest_dream_id"]
-    assert evidence["foundry"]["lineage_artifact_count"] >= 1
-    assert evidence["foundry"]["latest_distillation_artifact_id"]
-    assert native_takeover_candidate in evidence["foundry"]["native_takeover_candidate_ids"]
+    assert evidence["foundry"]["lineage_artifact_count"] == 0
+    assert evidence["foundry"]["latest_distillation_artifact_id"] is None
+    assert native_takeover_candidate not in evidence["foundry"]["native_takeover_candidate_ids"]
 
     wrapper = client.get("/ops/brain/wrapper-surface", params={"session_id": "core-evidence"})
     assert wrapper.status_code == 200

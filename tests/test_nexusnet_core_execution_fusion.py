@@ -91,18 +91,14 @@ def test_evidence_driven_policy_promotes_native_planner_and_internal_expert_harn
     native_execution = core_execution["native_execution"]
     promotion_linkage = core_execution["promotion_linkage"]
 
-    assert policy["proposed_execution_mode"] in {"native_challenger_shadow", "native_planner_live", "native_live_guarded"}
-    assert policy["execution_mode"] in {"native_shadow", "native_challenger_shadow", "native_planner_live", "native_live_guarded"}
-    assert policy["governed_action"] in {
-        "allow_native_shadow",
-        "allow_native_challenger_shadow",
-        "allow_native_live_guarded",
-        "keep_teacher_fallback",
-        "require_more_evidence",
-    }
+    assert native_candidate_id.startswith("promcand_")
+    assert policy["proposed_execution_mode"] == "teacher_fallback"
+    assert policy["execution_mode"] == "teacher_fallback"
+    assert policy["governed_action"] == "require_more_evidence"
     assert policy["dream_influence"]["consider_challenger"] is True
-    assert policy["takeover_readiness"]["native_takeover_candidate_id"] == native_candidate_id
-    assert native_execution["enabled"] is True
+    assert policy["takeover_readiness"]["native_takeover_candidate_id"] is None
+    assert "teacher_evidence_anchor_missing" in policy["fallback_triggers"]
+    assert native_execution["enabled"] is False
     assert native_execution["output_count"] >= 1
     assert native_execution["disagreement_count"] >= 1
     assert native_execution["teacher_fallback_path"] == "teacher-attached-model"
@@ -115,25 +111,11 @@ def test_evidence_driven_policy_promotes_native_planner_and_internal_expert_harn
         "teacher-fallback-only",
     }
     assert native_execution["native_candidate"]["confidence"] >= 0.0
-    assert promotion_linkage["candidate_id"] == native_candidate_id
-    assert promotion_linkage["governed_action"] in {
-        "allow_native_shadow",
-        "allow_native_challenger_shadow",
-        "allow_native_live_guarded",
-        "keep_teacher_fallback",
-        "require_more_evidence",
-        "hold_for_alignment",
-        "rollback_to_teacher",
-    }
-    assert promotion_linkage["execution_action"] in {
-        "keep_in_shadow",
-        "promote_challenger_shadow",
-        "allow_guarded_live",
-        "fall_back_to_teacher",
-        "require_more_evidence",
-    }
+    assert promotion_linkage["candidate_id"] is None
+    assert promotion_linkage["governed_action"] == "require_more_evidence"
+    assert promotion_linkage["execution_action"] == "require_more_evidence"
     assert core_execution["model_attachment"]["execution_mode"] == policy["execution_mode"]
-    assert core_execution["model_attachment"]["evidence_refs"]["native_takeover_candidate_id"] == native_candidate_id
+    assert core_execution["model_attachment"]["evidence_refs"]["native_takeover_candidate_id"] is None
     assert core_execution["model_attachment"]["promotion_action"] == promotion_linkage["execution_action"]
     assert core_execution["model_attachment"]["native_candidate_id"] == native_execution["native_candidate"]["candidate_id"]
     assert promotion_linkage["behavior_loop"]["next_step"] in {
@@ -153,6 +135,7 @@ def test_evidence_driven_policy_promotes_native_planner_and_internal_expert_harn
         "guarded-live-supported",
         "guarded-live-blocked",
         "teacher-fallback",
+        "teacher-anchor-required",
         "alignment-hold",
     }
 

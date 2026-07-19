@@ -13,13 +13,16 @@ from .contracts import (
     SimulationRecord,
 )
 from .growth_archive import GrowthArchive
+from .global_workspace import GlobalWorkspaceRouter
 from .kernel import DevelopmentalCortexKernel
 from .promotion_tribunal import PromotionTribunal
 from .reference_frames import ReferenceFrameStore
+from .semantic_pointers import SemanticPointerMemory
 from .service import DevelopmentalCortexService
 from .simulator import DreamingSimulator
 
 __all__ = [
+    "AdvancedDevelopmentalRuntime",
     "AssimilationSourceLedger",
     "CausalInterventionLab",
     "CausalInterventionRecord",
@@ -31,11 +34,14 @@ __all__ = [
     "FrameType",
     "GrowthArchive",
     "GrowthArchiveCandidate",
+    "GlobalWorkspaceRouter",
     "NexusBodySchemaBuilder",
     "NexusBodySchemaSnapshot",
     "PromotionTribunal",
     "PromotionTribunalDecision",
     "ReferenceFrameRecord",
     "ReferenceFrameStore",
+    "SemanticPointerMemory",
     "SimulationRecord",
 ]
+from .advanced import AdvancedDevelopmentalRuntime

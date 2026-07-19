@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from nexus.api.app import create_app
@@ -10,7 +11,69 @@ from nexusnet.core.autonomous_updates import AutonomousUpdateController, Autonom
 from tests.test_nexus_phase1_foundation import make_project
 
 
-def test_autonomous_update_controller_approves_shadow_when_all_gates_have_evidence():
+def _stored_update_approval(update_id: str) -> dict:
+    return {
+        "status": "approved",
+        "approval_ref": f"approval::{update_id}",
+        "approval_subject": "release-wrapper-autonomous-update",
+        "decision": "approved",
+        "approved_update_id": update_id,
+        "approver_digest": "sha256:test-approver",
+        "rationale_digest": "sha256:test-rationale",
+        "metadata_digest": "sha256:test-metadata",
+    }
+
+
+def test_autonomous_update_summary_reuses_persisted_proposals_until_controller_write(tmp_path: Path, monkeypatch):
+    artifacts_dir = tmp_path / "runtime" / "artifacts"
+    proposals_dir = artifacts_dir / "autonomous-updates" / "proposals"
+    proposals_dir.mkdir(parents=True)
+    for index in range(2):
+        (proposals_dir / f"persisted-{index}.json").write_text(
+            json.dumps(
+                {
+                    "update_id": f"update::persisted-{index}",
+                    "created_at": f"2026-07-13T00:00:0{index}+00:00",
+                    "status": "proposal",
+                    "promotion_state": "proposal",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    controller = AutonomousUpdateController(artifacts_dir=artifacts_dir)
+    original_read_text = Path.read_text
+    proposal_reads: list[Path] = []
+
+    def counted_read_text(path: Path, *args, **kwargs):
+        if path.parent == controller.proposals_dir:
+            proposal_reads.append(path)
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", counted_read_text)
+
+    first_summary = controller.summary()
+    first_read_count = len(proposal_reads)
+    second_summary = controller.summary()
+
+    assert first_read_count == 2
+    assert len(proposal_reads) == first_read_count
+    assert first_summary["proposal_count"] == second_summary["proposal_count"] == 2
+
+    controller.propose(
+        {
+            "update_id": "update::cache-invalidation",
+            "update_type": "prompt_policy",
+            "target_ref": "safe-artifact::cache-invalidation",
+        }
+    )
+    refreshed_summary = controller.summary()
+
+    assert len(proposal_reads) > first_read_count
+    assert refreshed_summary["latest_proposal"]["update_id"] == "update::cache-invalidation"
+
+
+def test_autonomous_update_controller_rejects_proposal_supplied_operator_approval():
     controller = AutonomousUpdateController()
 
     proposal = controller.propose(
@@ -31,12 +94,15 @@ def test_autonomous_update_controller_approves_shadow_when_all_gates_have_eviden
 
     assert proposal["status_label"] == "LOCKED CANON"
     assert proposal["authority"] == "NexusBrain"
-    assert proposal["status"] == "shadow-approved"
-    assert proposal["promotion_state"] == "shadow-ready"
+    assert proposal["status"] == "blocked"
+    assert proposal["promotion_state"] == "blocked-by-policy"
     assert proposal["requested_state"] == "shadow"
-    assert proposal["gate_summary"]["all_required_gates_present"] is True
+    assert proposal["operator_approved"] is False
+    assert proposal["gate_summary"]["operator_approval"] is False
     assert proposal["policy_scan"]["summary"]["allow_merge"] is True
-    assert proposal["update_findings"] == []
+    assert "autonomous_update_requires_operator_approval" in {
+        finding["rule_id"] for finding in proposal["update_findings"]
+    }
     assert {
         "eval_gate",
         "artifact_trust_gate",
@@ -45,6 +111,12 @@ def test_autonomous_update_controller_approves_shadow_when_all_gates_have_eviden
         "operator_approval",
         "sandbox",
     }.issubset(set(proposal["required_controls"]))
+    with pytest.raises(ValueError, match="stored admin approval"):
+        controller.approve(
+            proposal["update_id"],
+            approved_by="admin",
+            approval_ref="operator-review::untrusted",
+        )
 
 
 def test_autonomous_update_controller_blocks_promotion_without_required_gates():
@@ -142,7 +214,7 @@ def test_autonomous_update_apply_safe_requires_release_wrapper_ao_guard(tmp_path
             "monitoring_plan": "direct-safe-apply-regression-watch",
         }
     )
-    controller.approve(update_id, approved_by="admin", approval_ref="operator-review::direct-apply-guard")
+    controller.approve(update_id, approval_evidence=_stored_update_approval(update_id))
     evidence = controller.run_sandbox_tests(
         update_id,
         command="pytest tests/direct_apply_guard_probe_test.py -q",
@@ -220,7 +292,7 @@ def test_autonomous_update_apply_safe_rejects_unbound_artifact_eval_replay(tmp_p
             },
         }
     )
-    controller.approve(update_id, approved_by="admin", approval_ref="operator-review::artifact-bound")
+    controller.approve(update_id, approval_evidence=_stored_update_approval(update_id))
     evidence = controller.run_sandbox_tests(
         update_id,
         command="pytest tests/artifact_replay_probe_test.py -q",
@@ -277,23 +349,29 @@ def test_autonomous_update_api_blackbox_and_control_panel_surface(tmp_path):
         },
     )
     assert response.status_code == 200
-    assert response.json()["status"] == "shadow-approved"
+    assert response.json()["status"] == "blocked"
+    assert response.json()["operator_approved"] is False
 
     summary = client.get("/ops/brain/autonomous-updates")
     assert summary.status_code == 200
-    assert summary.json()["proposal_count"] == 1
+    assert summary.json()["proposal_count"] >= 1
+    assert any(
+        proposal["update_id"] == "update::api-runtime-shadow"
+        for proposal in summary.json()["proposals"]
+    )
 
     scorecard = client.get("/ops/brain/canon/autonomous-updates")
     assert scorecard.status_code == 200
     scorecard_payload = scorecard.json()
-    assert scorecard_payload["runtime_state"] == "live-bound"
+    assert scorecard_payload["runtime_state"] == "degraded"
+    assert scorecard_payload["blocked_count"] >= 1
     assert scorecard_payload["operator_actions"]["propose"]["endpoint"] == "/ops/brain/autonomous-updates/proposals"
     assert "shadow_promote_monitor_rollback" in scorecard_payload["required_controls"]
 
     visualizer = client.get("/ops/brain/visualizer/state", params={"session_id": "autonomous-update-cockpit"})
     assert visualizer.status_code == 200
     control_panel = visualizer.json()["overlay_state"]["control_panel"]
-    assert control_panel["autonomous_update_scorecard"]["proposal_count"] == 1
+    assert control_panel["autonomous_update_scorecard"]["proposal_count"] >= 1
 
     blackbox = client.get("/ops/brain/canon/blackbox", params={"session_id": "autonomous-update-cockpit"}).json()
     assert blackbox["scorecard_refs"]["autonomous_updates"] == "/ops/brain/canon/autonomous-updates"
@@ -355,8 +433,7 @@ def test_autonomous_update_sandbox_copy_excludes_heavy_local_state(tmp_path: Pat
     )
     controller.approve(
         "update::sandbox-copy-ignore-heavy-state",
-        approved_by="admin",
-        approval_ref="operator-review::sandbox-copy-policy",
+        approval_evidence=_stored_update_approval("update::sandbox-copy-ignore-heavy-state"),
     )
 
     evidence = controller.run_sandbox_tests(
@@ -387,3 +464,113 @@ def test_autonomous_update_sandbox_copy_excludes_heavy_local_state(tmp_path: Pat
     assert "large-unneeded-tree/blob.bin" not in manifest_paths
     assert "nexus/memory/__init__.py" in manifest_paths
     assert "research/interpretability/guardrail_analysis.py" in manifest_paths
+
+
+def test_autonomous_update_sandbox_cleanses_ambient_credential_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    project_root = make_project(tmp_path)
+    probe = project_root / "tests" / "sandbox_environment_probe_test.py"
+    probe.parent.mkdir(parents=True, exist_ok=True)
+    probe.write_text(
+        "import os\n\n"
+        "def test_sandbox_environment_is_credential_free():\n"
+        "    assert os.environ.get('NEXUSNET_TEST_AMBIENT_SECRET') is None\n"
+        "    assert os.environ.get('AWS_SECRET_ACCESS_KEY') is None\n"
+        "    assert os.environ.get('NEXUSNET_AUTONOMOUS_SANDBOX') == '1'\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("NEXUSNET_TEST_AMBIENT_SECRET", "not-for-sandbox")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "not-for-sandbox")
+    controller = AutonomousUpdateController(artifacts_dir=project_root / "runtime" / "artifacts")
+    update_id = "update::sandbox-credential-environment"
+    controller.propose(
+        {
+            "update_id": update_id,
+            "update_type": "prompt_policy",
+            "target_ref": "safe-artifact::sandbox-credential-environment",
+            "requested_state": "proposal",
+            "eval_refs": ["pytest::tests/sandbox_environment_probe_test.py"],
+            "artifact_trust_refs": ["signed-manifest::sandbox-credential-environment"],
+            "rollback_plan": "restore-previous-sandbox-environment-policy",
+            "monitoring_plan": "sandbox-environment-regression-watch",
+        }
+    )
+    controller.approve(update_id, approval_evidence=_stored_update_approval(update_id))
+
+    evidence = controller.run_sandbox_tests(
+        update_id,
+        command="pytest tests/sandbox_environment_probe_test.py -q",
+        project_root=project_root,
+        timeout_seconds=30,
+    )
+
+    assert evidence["status"] == "passed"
+    assert evidence["sandbox"]["environment_policy"] == "credential-cleansed-minimal-child-environment"
+    assert evidence["sandbox"]["ambient_credential_environment_inherited"] is False
+    assert evidence["sandbox"]["network_policy"] == "not-required-no-os-level-network-enforcement"
+
+
+def test_sandbox_environment_boundary_is_visible_in_operator_surfaces():
+    project_root = Path(__file__).resolve().parents[1]
+    control_panel_js = (project_root / "ui" / "control-panel" / "app.js").read_text(encoding="utf-8")
+    visualizer_js = (project_root / "ui" / "visualizer" / "app.js").read_text(encoding="utf-8")
+
+    assert "sandbox environment policy" in control_panel_js
+    assert "sandbox network boundary" in control_panel_js
+    assert "Harness sandbox environment" in visualizer_js
+    assert "Harness sandbox network" in visualizer_js
+
+
+def test_autonomous_update_public_surfaces_redact_sandbox_diagnostics(tmp_path: Path):
+    project_root = make_project(tmp_path)
+    probe = project_root / "tests" / "sandbox_public_diagnostics_probe_test.py"
+    probe.parent.mkdir(parents=True, exist_ok=True)
+    probe.write_text(
+        "def test_sandbox_public_diagnostics_probe():\n"
+        "    raise AssertionError('SANDBOX-DIAGNOSTIC-SECRET')\n",
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(str(project_root)))
+    controller = client.app.state.services.brain_autonomous_updates
+    update_id = "update::sandbox-public-diagnostics"
+    controller.propose(
+        {
+            "update_id": update_id,
+            "update_type": "prompt_policy",
+            "target_ref": "safe-artifact::sandbox-public-diagnostics",
+            "requested_state": "proposal",
+            "eval_refs": ["pytest::tests/sandbox_public_diagnostics_probe_test.py"],
+            "artifact_trust_refs": ["signed-manifest::sandbox-public-diagnostics"],
+            "rollback_plan": "restore-previous-sandbox-public-diagnostics-policy",
+            "monitoring_plan": "sandbox-public-diagnostics-regression-watch",
+        }
+    )
+    controller.approve(update_id, approval_evidence=_stored_update_approval(update_id))
+    evidence = controller.run_sandbox_tests(
+        update_id,
+        command="pytest tests/sandbox_public_diagnostics_probe_test.py -q",
+        project_root=project_root,
+        timeout_seconds=30,
+    )
+    assert evidence["status"] == "failed"
+    assert "SANDBOX-DIAGNOSTIC-SECRET" in json.dumps(evidence)
+
+    summary_response = client.get("/ops/brain/autonomous-updates")
+    scorecard_response = client.get("/ops/brain/canon/autonomous-updates")
+
+    assert summary_response.status_code == 200
+    assert scorecard_response.status_code == 200
+    for payload in (summary_response.json(), scorecard_response.json()):
+        serialized = json.dumps(payload, sort_keys=True)
+        assert "SANDBOX-DIAGNOSTIC-SECRET" not in serialized
+        assert str(project_root) not in serialized
+        assert "stdout_tail" not in serialized
+        assert "stderr_tail" not in serialized
+        assert "pre_manifest_path" not in serialized
+        assert "post_manifest_path" not in serialized
+        assert "diff_path" not in serialized
+        assert payload["latest_sandbox_test_evidence"]["evidence_ref"] == evidence["evidence_ref"]
+        assert payload["latest_sandbox_test_evidence"]["status"] == "failed"
+        assert payload["latest_sandbox_test_evidence"]["diagnostic_artifact_available"] is True

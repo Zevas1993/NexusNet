@@ -15,12 +15,14 @@ class ModelIngestionService:
         telemetry: Any | None = None,
         adapter_cache: dict[str, BaseModelAdapter] | None = None,
         attachment_cache: dict[str, dict[str, Any]] | None = None,
+        model_attach_harness: Any | None = None,
     ):
         self.model_registry = model_registry
         self.runtime_registry = runtime_registry
         self.telemetry = telemetry
         self.adapter_cache = adapter_cache if adapter_cache is not None else {}
         self.attachment_cache = attachment_cache if attachment_cache is not None else {}
+        self.model_attach_harness = model_attach_harness
 
     def attach(
         self,
@@ -48,8 +50,30 @@ class ModelIngestionService:
         promotion_decision_id: str | None = None,
         startup_log_path: str | None = None,
         compatibility_provenance: dict[str, Any] | None = None,
+        trace_id: str | None = None,
+        runtime_ladder: list[str] | None = None,
+        usage_intent: str = "inference",
+        teacher_rights_attestation: dict[str, Any] | None = None,
     ) -> tuple[BaseModelAdapter, dict[str, Any]]:
-        return attach_base_model(
+        registration = self.model_registry.resolve_model(model_hint)
+        selected_runtime_name = runtime_name or registration.runtime_name
+        layer11_contract: dict[str, Any] = {}
+        if self.model_attach_harness is not None:
+            runtime_backend = self.runtime_registry.get_adapter(selected_runtime_name)
+            layer11_contract = self.model_attach_harness.authorize_attach(
+                trace_id=trace_id or f"bootstrap::{registration.model_id}",
+                registration=registration,
+                runtime_name=selected_runtime_name,
+                requested_role=role,
+                runtime_ladder=list(runtime_ladder or [selected_runtime_name]),
+                runtime_profile=runtime_backend.profile(),
+                hardware_posture=hardware_profile,
+                runtime_decision=runtime_decision,
+                compatibility_provenance=compatibility_provenance,
+                usage_intent=usage_intent,
+                teacher_rights_attestation=teacher_rights_attestation,
+            )
+        adapter, record = attach_base_model(
             model_hint=model_hint,
             role=role,
             runtime_name=runtime_name,
@@ -79,6 +103,14 @@ class ModelIngestionService:
             startup_log_path=startup_log_path,
             compatibility_provenance=compatibility_provenance,
         )
+        if layer11_contract:
+            record = {
+                **record,
+                "layer11_attach_contract": layer11_contract,
+                "effective_usage": layer11_contract["model_provider_contract"]["effective_usage"],
+            }
+            self.attachment_cache[record["adapter_key"]] = dict(record)
+        return adapter, record
 
     def attachments(self) -> list[dict[str, Any]]:
         return sorted(self.attachment_cache.values(), key=lambda item: (item.get("attached_at") or "", item.get("adapter_key") or ""))

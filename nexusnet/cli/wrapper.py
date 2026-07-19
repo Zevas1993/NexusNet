@@ -304,16 +304,69 @@ def _run_release_wrapper_smoke(
     )
     runtime = _json_get(http_client, _session_url(base_url, "/ops/wrapper/release-runtime", session_id), timeout=request_timeout)
 
+    approval_status_card = _json_get(
+        http_client,
+        _session_url(base_url, "/ops/wrapper/status-card", session_id),
+        timeout=request_timeout,
+    )
+    operator_action_lane = (
+        approval_status_card.get("operator_action_lane")
+        if isinstance(approval_status_card.get("operator_action_lane"), dict)
+        else {}
+    )
+    proposal_update_id = str(operator_action_lane.get("proposal_update_id") or "").strip()
+    if not proposal_update_id:
+        checks.append(
+            _check(
+                "readiness-approval",
+                "fail",
+                "/ops/wrapper/status-card",
+                "Readiness proposal did not expose an update id for stored approval",
+            )
+        )
+        raise RuntimeError("release readiness proposal update id is unavailable")
+    approval = _json_post(
+        http_client,
+        f"{base_url}/ops/approvals",
+        timeout=request_timeout,
+        json={
+            "subject": "release-wrapper-autonomous-update",
+            "decision": "approved",
+            "approver": "release-wrapper-boot-supervisor@example.invalid",
+            "rationale": "Approve the operator-invoked boot smoke sandbox lifecycle.",
+            "metadata": {"update_id": proposal_update_id},
+        },
+    )
+    approval_decision_id = str(approval.get("decision_id") or "").strip()
+    if not approval_decision_id:
+        checks.append(
+            _check(
+                "readiness-approval",
+                "fail",
+                "/ops/approvals",
+                "Stored readiness approval did not return a decision id",
+            )
+        )
+        raise RuntimeError("release readiness stored approval was not created")
+    checks.append(
+        _check(
+            "readiness-approval",
+            "pass",
+            "/ops/approvals",
+            "Stored approval is bound to the readiness proposal update id",
+        )
+    )
+
     runner = _json_post(
         http_client,
         f"{base_url}/ops/wrapper/release-readiness/run",
         timeout=max(request_timeout, readiness_timeout),
         json={
             "session_id": session_id,
+            "update_id": proposal_update_id,
             "command": readiness_command,
             "timeout_seconds": readiness_timeout,
-            "approved_by": "admin",
-            "approval_ref": "operator-review::release-wrapper-boot-supervisor",
+            "approval_decision_id": approval_decision_id,
         },
     )
     if runner.get("status") != "completed" or runner.get("active_production_mutated") is not False:
@@ -329,21 +382,58 @@ def _run_release_wrapper_smoke(
 
     status_card = _json_get(http_client, _session_url(base_url, "/ops/wrapper/status-card", session_id), timeout=request_timeout)
     checks.append(_check("status-card", "pass", "/ops/wrapper/status-card", "Status card fetched after boot smoke"))
+    production_approval = _json_post(
+        http_client,
+        f"{base_url}/ops/approvals",
+        timeout=request_timeout,
+        json={
+            "subject": "release-wrapper-production-spine-release-lifecycle",
+            "decision": "approved",
+            "approver": "release-wrapper-boot-supervisor@example.invalid",
+            "rationale": "Approve the operator-invoked product smoke shadow lifecycle.",
+            "metadata": {"session_id": session_id},
+        },
+    )
+    production_approval_decision_id = str(production_approval.get("decision_id") or "").strip()
+    if not production_approval_decision_id:
+        checks.append(
+            _check(
+                "product-smoke-approval",
+                "fail",
+                "/ops/approvals",
+                "Stored product smoke shadow-lifecycle approval did not return a decision id",
+            )
+        )
+        raise RuntimeError("release product smoke stored approval was not created")
+    checks.append(
+        _check(
+            "product-smoke-approval",
+            "pass",
+            "/ops/approvals",
+            "Stored approval is bound to the product smoke shadow lifecycle",
+        )
+    )
     product_smoke = _json_post(
         http_client,
         f"{base_url}/ops/wrapper/release-product-smoke/run",
-        timeout=max(request_timeout, readiness_timeout),
+        timeout=max(request_timeout, readiness_timeout * 3),
         json={
             "session_id": session_id,
             "base_url": base_url,
             "readiness_command": readiness_command,
             "timeout_seconds": readiness_timeout,
-            "approved_by": "release-wrapper-live-smoke-admin@example.invalid",
-            "approval_ref": "operator-review::release-wrapper-live-product-smoke",
+            "update_id": proposal_update_id,
+            "approval_decision_id": approval_decision_id,
+            "production_approval_decision_id": production_approval_decision_id,
         },
     )
+    successful_product_smoke_statuses = {
+        "release-product-smoke-passed",
+        "release-product-smoke-governed-update-completed",
+        "release-product-smoke-governed-shadow-lifecycle-completed",
+    }
     if (
-        product_smoke.get("status") != "release-product-smoke-passed"
+        product_smoke.get("status") not in successful_product_smoke_statuses
         or int(product_smoke.get("failed_count") or 0) != 0
         or product_smoke.get("raw_content_included") is not False
         or product_smoke.get("active_production_mutated") is not False
@@ -368,7 +458,11 @@ def _run_release_wrapper_smoke(
     runtime = _json_get(http_client, _session_url(base_url, "/ops/wrapper/release-runtime", session_id), timeout=request_timeout)
     readiness = _json_get(http_client, _session_url(base_url, "/ops/wrapper/release-readiness", session_id), timeout=request_timeout)
     status_card = _json_get(http_client, _session_url(base_url, "/ops/wrapper/status-card", session_id), timeout=request_timeout)
-    product_path = _release_product_path_evidence(runtime=runtime, status_card=status_card)
+    product_path = _release_product_path_evidence(
+        runtime=runtime,
+        status_card=status_card,
+        product_smoke=product_smoke,
+    )
     if not _release_product_path_is_evidenced(product_path):
         checks.append(
             _check(
@@ -661,7 +755,12 @@ def _release_product_smoke_evidence(smoke: Any) -> dict[str, Any]:
     payload = smoke if isinstance(smoke, dict) else {}
     failed_count = _int_value(payload.get("failed_count"))
     latest_status = str(payload.get("status") or "not-run")
-    runtime_state = "live-evidence" if latest_status == "release-product-smoke-passed" and failed_count == 0 else "degraded-evidence"
+    successful_statuses = {
+        "release-product-smoke-passed",
+        "release-product-smoke-governed-update-completed",
+        "release-product-smoke-governed-shadow-lifecycle-completed",
+    }
+    runtime_state = "live-evidence" if latest_status in successful_statuses and failed_count == 0 else "degraded-evidence"
     return {
         "surface_id": str(payload.get("surface_id") or "release-wrapper-product-smoke"),
         "latest_status": latest_status,
@@ -692,7 +791,12 @@ def _check(check_id: str, status: str, endpoint: str, detail: str, *, blocker: s
     return record
 
 
-def _release_product_path_evidence(*, runtime: dict[str, Any], status_card: dict[str, Any]) -> dict[str, Any]:
+def _release_product_path_evidence(
+    *,
+    runtime: dict[str, Any],
+    status_card: dict[str, Any],
+    product_smoke: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     entrypoint = _dict_value(runtime, "entrypoint")
     global_growth = _dict_value(runtime, "global_growth")
     federated_packet_inbox = _dict_value(runtime, "federated_packet_inbox")
@@ -718,6 +822,14 @@ def _release_product_path_evidence(*, runtime: dict[str, Any], status_card: dict
         or _dict_value(status_runtime, "admin_action_lane")
     )
     action_statuses = _dict_value(action_lane, "latest_action_statuses")
+    governed_lifecycle = _dict_value(product_smoke or {}, "governed_update_lifecycle")
+    governed_actions = _dict_value(governed_lifecycle, "actions")
+    governed_action_statuses = {
+        action: str(_dict_value(governed_actions, action).get("status") or "")
+        for action in ("admin_approval", "sandbox_tests", "apply", "rollback")
+    }
+    if all(governed_action_statuses.values()):
+        action_statuses = governed_action_statuses
     return {
         "entrypoint_runtime_state": str(entrypoint.get("runtime_state") or "unknown"),
         "global_growth_users": _int_value(global_growth.get("users")),

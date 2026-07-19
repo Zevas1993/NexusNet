@@ -38,6 +38,28 @@ def test_catalog_target_carries_parsed_spec_fields():
     assert target["spec_sha256"].startswith("sha256:")
 
 
+def test_every_catalog_target_is_bound_to_the_live_governed_assimilation_spine():
+    catalog = AssimilationTargetCatalog()
+    targets = catalog.summary()["targets"]
+
+    assert len(targets) == 144
+    for target in targets:
+        contract = target["implementation_contract"]
+        assert contract["authority"] == "NexusBrain"
+        assert contract["execution_mode"] == "evidence-only"
+        assert contract["production_mutation_allowed"] is False
+        assert contract["promotion_requires_target_evidence"] is True
+        assert contract["source_integrity_ref"] == target["spec_sha256"]
+        assert contract["target_spec_ref"] == target["spec_path"]
+        assert {
+            "/ops/brain/canon/developmental-cortex",
+            "/ops/brain/canon/authority-spine",
+            "/ops/brain/canon/evidence-store",
+            "/ops/brain/canon/tool-action-harness",
+            "/ops/brain/canon/runtime-decision-ledger",
+        } == set(contract["governed_surfaces"])
+
+
 def test_catalog_priority_breakdown_matches_specs():
     catalog = AssimilationTargetCatalog()
     breakdown = catalog.summary()["priority_counts"]

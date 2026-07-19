@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import os
 import re
 from pathlib import Path
+import shutil
+import subprocess
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -34,13 +38,377 @@ class SandboxAgentFactoryRunRequest(BaseModel):
 
 
 class SandboxAgentFactory:
-    def __init__(self, *, artifacts_dir: Path | str | None = None) -> None:
+    MAX_OUTPUT_CHARS = 65_536
+
+    def __init__(
+        self,
+        *,
+        artifacts_dir: Path | str | None = None,
+        allowed_workspace_root: Path | str | None = None,
+    ) -> None:
         self.artifacts_dir = Path(artifacts_dir) if artifacts_dir is not None else None
+        self.allowed_workspace_root = Path(allowed_workspace_root or artifacts_dir or Path.cwd()).resolve()
         self.runs_dir = self.artifacts_dir / "agents" / "sandbox-factory" / "runs" if self.artifacts_dir else None
         if self.runs_dir is not None:
             self.runs_dir.mkdir(parents=True, exist_ok=True)
         self.policy_kernel = PolicyKernel.default()
         self.codegraph_gate = CodegraphGate(artifacts_dir=self.artifacts_dir)
+
+    def execute_local(
+        self,
+        *,
+        run_id: str,
+        workspace: Path | str,
+        command: list[str],
+        timeout_seconds: int = 120,
+    ) -> dict[str, Any]:
+        if not command or not all(isinstance(item, str) and item for item in command):
+            raise ValueError("command must be a non-empty argument list")
+        if timeout_seconds < 1 or timeout_seconds > 3600:
+            raise ValueError("timeout_seconds must be between 1 and 3600")
+        run_path = self._artifact_path(run_id)
+        if run_path is None or not run_path.exists():
+            raise KeyError(f"unknown sandbox factory run: {run_id}")
+        run = json.loads(run_path.read_text(encoding="utf-8"))
+        if run.get("lifecycle_state") != "planned":
+            raise PermissionError("sandbox factory run is not eligible for local execution")
+        if (run.get("manifest") or {}).get("sandbox_provider") != "local-devcontainer":
+            raise PermissionError("local execution requires the local-devcontainer provider")
+        resolved_workspace = Path(workspace).resolve()
+        if not resolved_workspace.is_dir() or not resolved_workspace.is_relative_to(self.allowed_workspace_root):
+            raise PermissionError("workspace is outside allowed root")
+        execution_id = new_id("sandbox_execution")
+        started_at = utcnow().isoformat()
+        environment = {
+            key: value
+            for key, value in os.environ.items()
+            if key.upper() in {"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "PYTHONPATH"}
+        }
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=resolved_workspace,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                check=False,
+                shell=False,
+            )
+            state = "completed" if completed.returncode == 0 else "failed"
+            return_code = completed.returncode
+            stdout = completed.stdout[: self.MAX_OUTPUT_CHARS]
+            stderr = completed.stderr[: self.MAX_OUTPUT_CHARS]
+        except subprocess.TimeoutExpired as exc:
+            state = "timed_out"
+            return_code = None
+            stdout = str(exc.stdout or "")[: self.MAX_OUTPUT_CHARS]
+            stderr = str(exc.stderr or "")[: self.MAX_OUTPUT_CHARS]
+        evidence_dir = self.runs_dir / "executions" if self.runs_dir else self.allowed_workspace_root / ".nexusnet-executions"
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        evidence_path = evidence_dir / f"{execution_id}.json"
+        evidence = {
+            "execution_id": execution_id,
+            "run_id": run_id,
+            "state": state,
+            "return_code": return_code,
+            "stdout": stdout,
+            "stderr": stderr,
+            "workspace": str(resolved_workspace),
+            "command_executable": command[0],
+            "command_argument_count": len(command) - 1,
+            "timeout_seconds": timeout_seconds,
+            "started_at": started_at,
+            "finished_at": utcnow().isoformat(),
+            "execution_boundary": "local-dev-execution-not-container-isolation",
+        }
+        evidence_path.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+        evidence["evidence_path"] = str(evidence_path)
+        return evidence
+
+    def execute_container(
+        self,
+        *,
+        run_id: str,
+        workspace: Path | str,
+        image: str,
+        command: list[str],
+        timeout_seconds: int = 600,
+    ) -> dict[str, Any]:
+        if timeout_seconds < 1 or timeout_seconds > 3600:
+            raise ValueError("timeout_seconds must be between 1 and 3600")
+        run_path = self._artifact_path(run_id)
+        if run_path is None or not run_path.exists():
+            raise KeyError(f"unknown sandbox factory run: {run_id}")
+        run = json.loads(run_path.read_text(encoding="utf-8"))
+        if run.get("lifecycle_state") != "planned":
+            raise PermissionError("sandbox factory run is not eligible for container execution")
+        runtime = str((run.get("manifest") or {}).get("sandbox_provider") or "")
+        if runtime not in {"docker", "podman"}:
+            raise PermissionError("container execution requires docker or podman provider")
+        if shutil.which(runtime) is None:
+            raise RuntimeError(f"container runtime executable is unavailable: {runtime}")
+        resolved_workspace = Path(workspace).resolve()
+        if not resolved_workspace.is_dir() or not resolved_workspace.is_relative_to(self.allowed_workspace_root):
+            raise PermissionError("workspace is outside allowed root")
+        runtime_command = _container_command(
+            runtime=runtime,
+            workspace=resolved_workspace,
+            image=image,
+            command=command,
+        )
+        execution_id = new_id("sandbox_container_execution")
+        started_at = utcnow().isoformat()
+        try:
+            completed = subprocess.run(
+                runtime_command,
+                cwd=resolved_workspace,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                check=False,
+                shell=False,
+            )
+            state = "completed" if completed.returncode == 0 else "failed"
+            return_code = completed.returncode
+            stdout = completed.stdout[: self.MAX_OUTPUT_CHARS]
+            stderr = completed.stderr[: self.MAX_OUTPUT_CHARS]
+        except subprocess.TimeoutExpired as exc:
+            state = "timed_out"
+            return_code = None
+            stdout = str(exc.stdout or "")[: self.MAX_OUTPUT_CHARS]
+            stderr = str(exc.stderr or "")[: self.MAX_OUTPUT_CHARS]
+        evidence_dir = self.runs_dir / "executions" if self.runs_dir else self.allowed_workspace_root / ".nexusnet-executions"
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        evidence_path = evidence_dir / f"{execution_id}.json"
+        evidence = {
+            "execution_id": execution_id,
+            "run_id": run_id,
+            "state": state,
+            "return_code": return_code,
+            "stdout": stdout,
+            "stderr": stderr,
+            "workspace": str(resolved_workspace),
+            "runtime": runtime,
+            "image": image,
+            "command_executable": command[0] if command else "",
+            "command_argument_count": max(0, len(command) - 1),
+            "timeout_seconds": timeout_seconds,
+            "started_at": started_at,
+            "finished_at": utcnow().isoformat(),
+            "execution_boundary": "container-isolated",
+            "network_mode": "none",
+            "root_filesystem": "read-only",
+        }
+        evidence_path.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+        evidence["evidence_path"] = str(evidence_path)
+        return evidence
+
+    def create_worktree(
+        self,
+        *,
+        run_id: str,
+        repo_root: Path | str,
+        task_id: str,
+    ) -> dict[str, Any]:
+        run_path = self._artifact_path(run_id)
+        if run_path is None or not run_path.exists():
+            raise KeyError(f"unknown sandbox factory run: {run_id}")
+        run = json.loads(run_path.read_text(encoding="utf-8"))
+        if run.get("lifecycle_state") != "planned":
+            raise PermissionError("sandbox factory run is not eligible for worktree creation")
+        manifest = run.get("manifest") or {}
+        if task_id not in (manifest.get("task_ids") or []):
+            raise PermissionError(f"task is not declared by sandbox run: {task_id}")
+
+        resolved_repo = Path(repo_root).resolve()
+        if not resolved_repo.is_dir() or not resolved_repo.is_relative_to(self.allowed_workspace_root):
+            raise PermissionError("repository is outside allowed root")
+        top_level = _run_git(resolved_repo, ["rev-parse", "--show-toplevel"])
+        if top_level.returncode != 0 or Path(top_level.stdout.strip()).resolve() != resolved_repo:
+            raise ValueError("repo_root must be the root of a Git repository")
+
+        existing = next(
+            (item for item in run.get("worktrees") or [] if item.get("task_id") == task_id),
+            None,
+        )
+        if existing is not None and Path(str(existing.get("worktree_path") or "")).is_dir():
+            return existing
+
+        base_ref = str(manifest.get("target_branch") or "main")
+        base = _run_git(resolved_repo, ["rev-parse", "--verify", f"{base_ref}^{{commit}}"])
+        if base.returncode != 0:
+            raise ValueError(f"target branch does not resolve to a commit: {base_ref}")
+        if self.runs_dir is None:
+            raise RuntimeError("worktree creation requires an artifact directory")
+        worktree_key = hashlib.sha256(f"{run_id}\0{task_id}".encode("utf-8")).hexdigest()[:12]
+        worktree_path = (
+            self.allowed_workspace_root
+            / ".nexusnet-wt"
+            / _slug(run_id)[-8:]
+            / worktree_key
+        ).resolve()
+        if not worktree_path.is_relative_to(self.allowed_workspace_root):
+            raise PermissionError("worktree destination is outside allowed root")
+        worktree_path.parent.mkdir(parents=True, exist_ok=True)
+        branch = f"codex/sandbox-agent/{worktree_key}"
+        created = _run_git(
+            resolved_repo,
+            ["worktree", "add", "-b", branch, str(worktree_path), base_ref],
+        )
+        if created.returncode != 0:
+            raise RuntimeError(f"git worktree add failed: {created.stderr.strip()[:1024]}")
+        record = {
+            "worktree_id": new_id("sandbox_worktree"),
+            "run_id": run_id,
+            "task_id": task_id,
+            "repo_root": str(resolved_repo),
+            "worktree_path": str(worktree_path),
+            "branch": branch,
+            "base_ref": base_ref,
+            "base_commit": base.stdout.strip(),
+            "created_at": utcnow().isoformat(),
+            "state": "ready",
+        }
+        run.setdefault("worktrees", []).append(record)
+        self._persist(run_path, run)
+        return record
+
+    def evaluate_merge_gate(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+        review_approved: bool,
+        rollback_ref: str,
+        check_commands: dict[str, list[str]],
+        timeout_seconds: int = 600,
+    ) -> dict[str, Any]:
+        if timeout_seconds < 1 or timeout_seconds > 3600:
+            raise ValueError("timeout_seconds must be between 1 and 3600")
+        run_path = self._artifact_path(run_id)
+        if run_path is None or not run_path.exists():
+            raise KeyError(f"unknown sandbox factory run: {run_id}")
+        run = json.loads(run_path.read_text(encoding="utf-8"))
+        worktree = next(
+            (item for item in run.get("worktrees") or [] if item.get("task_id") == task_id),
+            None,
+        )
+        if worktree is None:
+            raise KeyError(f"sandbox worktree not found for task: {task_id}")
+        worktree_path = Path(worktree["worktree_path"]).resolve()
+        if not worktree_path.is_dir() or not worktree_path.is_relative_to(self.allowed_workspace_root):
+            raise PermissionError("sandbox worktree is unavailable or outside allowed root")
+
+        required_checks = list((run.get("manifest") or {}).get("required_checks") or [])
+        unknown_checks = sorted(set(check_commands) - set(required_checks))
+        if unknown_checks:
+            raise ValueError(f"undeclared merge checks: {', '.join(unknown_checks)}")
+        for check_id, command in check_commands.items():
+            if not command or not all(isinstance(item, str) and item for item in command):
+                raise ValueError(f"merge check {check_id!r} must be a non-empty argument list")
+
+        environment = {
+            key: value
+            for key, value in os.environ.items()
+            if key.upper() in {"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "PYTHONPATH"}
+        }
+        check_receipts: list[dict[str, Any]] = []
+        for check_id in required_checks:
+            command = check_commands.get(check_id)
+            if command is None:
+                check_receipts.append(
+                    {
+                        "check_id": check_id,
+                        "state": "missing",
+                        "return_code": None,
+                        "stdout": "",
+                        "stderr": "required check command was not supplied",
+                    }
+                )
+                continue
+            try:
+                completed = subprocess.run(
+                    command,
+                    cwd=worktree_path,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout_seconds,
+                    check=False,
+                    shell=False,
+                )
+                check_receipts.append(
+                    {
+                        "check_id": check_id,
+                        "state": "passed" if completed.returncode == 0 else "failed",
+                        "return_code": completed.returncode,
+                        "stdout": completed.stdout[: self.MAX_OUTPUT_CHARS],
+                        "stderr": completed.stderr[: self.MAX_OUTPUT_CHARS],
+                    }
+                )
+            except subprocess.TimeoutExpired as exc:
+                check_receipts.append(
+                    {
+                        "check_id": check_id,
+                        "state": "timed_out",
+                        "return_code": None,
+                        "stdout": str(exc.stdout or "")[: self.MAX_OUTPUT_CHARS],
+                        "stderr": str(exc.stderr or "")[: self.MAX_OUTPUT_CHARS],
+                    }
+                )
+
+        status = _run_git(worktree_path, ["status", "--porcelain"])
+        ahead = _run_git(
+            worktree_path,
+            ["rev-list", "--count", f"{worktree['base_commit']}..HEAD"],
+        )
+        rollback = _run_git(worktree_path, ["rev-parse", "--verify", f"{rollback_ref}^{{commit}}"])
+        worktree_clean = status.returncode == 0 and not status.stdout.strip()
+        commits_ahead = int(ahead.stdout.strip()) if ahead.returncode == 0 and ahead.stdout.strip().isdigit() else 0
+        rollback_commit = rollback.stdout.strip() if rollback.returncode == 0 else None
+        policy_summary = (run.get("policy_scan") or {}).get("summary") or {}
+        policy_clean = bool(policy_summary.get("allow_merge")) and int(
+            policy_summary.get("active_hard_fail_count") or 0
+        ) == 0
+        checks_passed = len(check_receipts) == len(required_checks) and all(
+            receipt["state"] == "passed" for receipt in check_receipts
+        )
+        merge_ready = bool(
+            review_approved
+            and policy_clean
+            and checks_passed
+            and worktree_clean
+            and commits_ahead > 0
+            and rollback_commit
+        )
+        gate_id = new_id("sandbox_merge_gate")
+        evidence_dir = self.runs_dir / "merge-gates" if self.runs_dir else worktree_path / ".nexusnet-merge-gates"
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        evidence_path = evidence_dir / f"{gate_id}.json"
+        receipt = {
+            "gate_id": gate_id,
+            "run_id": run_id,
+            "task_id": task_id,
+            "decision": "merge_ready" if merge_ready else "blocked",
+            "review_approved": review_approved,
+            "policy_clean": policy_clean,
+            "checks_passed": checks_passed,
+            "worktree_clean": worktree_clean,
+            "commits_ahead": commits_ahead,
+            "rollback_ref": rollback_ref,
+            "rollback_commit": rollback_commit,
+            "branch": worktree["branch"],
+            "check_receipts": check_receipts,
+            "evaluated_at": utcnow().isoformat(),
+        }
+        evidence_path.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
+        receipt["evidence_path"] = str(evidence_path)
+        run.setdefault("merge_gates", []).append(receipt)
+        run["lifecycle_state"] = "merge-ready" if merge_ready else "blocked-merge-gate"
+        run["runtime_state"] = "live-bound" if merge_ready else "degraded"
+        self._persist(run_path, run)
+        return receipt
 
     def start(self, request: SandboxAgentFactoryRunRequest | dict[str, Any]) -> dict[str, Any]:
         normalized = (
@@ -444,6 +812,22 @@ def _operator_actions() -> dict[str, dict[str, Any]]:
     return {
         "inspect": {"method": "GET", "endpoint": "/ops/brain/sandbox-agent-factory"},
         "create_run": {"method": "POST", "endpoint": "/ops/brain/sandbox-agent-factory/runs"},
+        "execute_local": {
+            "method": "POST",
+            "endpoint": "/ops/brain/sandbox-agent-factory/runs/{run_id}/execute-local",
+        },
+        "execute_container": {
+            "method": "POST",
+            "endpoint": "/ops/brain/sandbox-agent-factory/runs/{run_id}/execute-container",
+        },
+        "create_worktree": {
+            "method": "POST",
+            "endpoint": "/ops/brain/sandbox-agent-factory/runs/{run_id}/worktrees",
+        },
+        "evaluate_merge_gate": {
+            "method": "POST",
+            "endpoint": "/ops/brain/sandbox-agent-factory/runs/{run_id}/merge-gates",
+        },
         "scorecard": {"method": "GET", "endpoint": "/ops/brain/canon/sandbox-agent-factory"},
     }
 
@@ -451,3 +835,55 @@ def _operator_actions() -> dict[str, dict[str, Any]]:
 def _slug(value: str) -> str:
     slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-").lower()
     return slug or "task"
+
+
+def _run_git(cwd: Path, arguments: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *arguments],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+        shell=False,
+    )
+
+
+def _container_command(
+    *,
+    runtime: str,
+    workspace: Path,
+    image: str,
+    command: list[str],
+) -> list[str]:
+    if runtime not in {"docker", "podman"}:
+        raise ValueError("container runtime must be docker or podman")
+    if not image.strip() or not command:
+        raise ValueError("container image and command are required")
+    mount = f"type=bind,source={workspace},target=/workspace"
+    return [
+        runtime,
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--read-only",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--pids-limit",
+        "128",
+        "--memory",
+        "2g",
+        "--cpus",
+        "2",
+        "--tmpfs",
+        "/tmp:rw,noexec,nosuid,size=64m",
+        "--mount",
+        mount,
+        "--workdir",
+        "/workspace",
+        image,
+        *command,
+    ]

@@ -5,6 +5,7 @@ from typing import Literal
 
 
 AdmissionState = Literal["admitted", "blocked"]
+GPUAccelerationMode = Literal["off", "on", "auto"]
 
 
 @dataclass(frozen=True)
@@ -75,3 +76,20 @@ class MoEResidencyPlan:
     cold_store_bytes: int
     expert_bytes: int
     expert_count: int
+    dense_residency_tier: Literal["gpu", "ram"] | None = None
+    gpu_mode: GPUAccelerationMode = "auto"
+    gpu_acceleration_enabled: bool = False
+    expert_device: str | None = None
+    hardware_profile_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.gpu_mode not in {"off", "on", "auto"}:
+            raise ValueError("gpu_mode is invalid")
+        if self.dense_residency_tier not in {"gpu", "ram", None}:
+            raise ValueError("dense_residency_tier is invalid")
+        if self.gpu_mode == "off" and self.gpu_acceleration_enabled:
+            raise ValueError("gpu acceleration cannot be enabled when gpu_mode is off")
+        if self.gpu_acceleration_enabled and not self.expert_device:
+            raise ValueError("enabled gpu acceleration requires expert_device")
+        if not self.gpu_acceleration_enabled and self.expert_device is not None:
+            raise ValueError("disabled gpu acceleration cannot select expert_device")

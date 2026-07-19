@@ -122,6 +122,7 @@ def test_operator_chat_executes_with_verified_evolutionary_plan_without_raw_prom
             "tensor_groups": [
                 {"group_id": "weights", "bytes": 2_000_000, "dtype": "int8", "layout": "row-major"}
             ],
+            "state_and_kv_contract": {"kind": "paged-kv", "bytes_per_token": 1024},
         }
     )
 
@@ -132,8 +133,14 @@ def test_operator_chat_executes_with_verified_evolutionary_plan_without_raw_prom
     selection = result.runtime_selection["evolutionary_inference"]
     assert selection["plan_id"]
     assert selection["verified"] is True
+    assert selection["fit_required"] is True
+    assert selection["execution_fit_receipt"]["plan_id"] == selection["plan_id"]
+    assert selection["execution_fit_receipts"][result.runtime_name]["runtime_name"] == result.runtime_name
+    assert result.runtime_selection["runtime_control_receipt"]["plan_id"] == selection["plan_id"]
     assert "raw private prompt sentinel" not in str(selection)
+    assert "raw private prompt sentinel" not in str(result.runtime_selection["runtime_control_receipt"])
     assert any(step.name == "evolutionary_inference_plan" for step in result.trace.steps)
+    assert any(step.name == "evolutionary_inference_execution" for step in result.trace.steps)
 
 
 def test_governance_and_alias_routing(tmp_path: Path):
@@ -176,7 +183,7 @@ def test_retrieval_query_endpoint_and_manifest(tmp_path: Path):
     project_root = make_project(tmp_path)
     app = create_app(str(project_root))
     client = TestClient(app)
-    client.post(
+    ingest = client.post(
         "/retrieval/ingest",
         json={
             "documents": [
@@ -184,13 +191,21 @@ def test_retrieval_query_endpoint_and_manifest(tmp_path: Path):
                     "source": "spec",
                     "title": "Phase1",
                     "text": "Nexus ships with doctor checks, permission modes, and workspace manifests.",
+                    "metadata": {
+                        "source_kind": "public-doc-corpus",
+                        "privacy_class": "public",
+                        "consent_status": "training-approved",
+                        "rights_license_status": "approved-for-training",
+                    },
                 }
             ]
         },
     )
+    assert ingest.status_code == 200
+    assert ingest.json()["doc_ids"][0].startswith("genesis-retrieval-candidate::")
     response = client.post("/retrieval/query", json=RetrievalRequest(query="doctor checks", top_k=3).model_dump(mode="json"))
     assert response.status_code == 200
-    assert response.json()["hits"]
+    assert response.json()["hits"] == []
     manifest = client.get("/ops/manifest")
     assert manifest.status_code == 200
     assert "Nexus Workspace Manifest" in manifest.text

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from threading import RLock
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -47,12 +48,14 @@ class AgenticPipelineRuntime:
         self.runs_dir = self.artifacts_dir / "agents" / "pipelines" / "runs"
         self.runs_dir.mkdir(parents=True, exist_ok=True)
         self.policy_kernel = PolicyKernel.default()
+        self._lock = RLock()
 
     def start(self, request: AgenticPipelineRequest | dict[str, Any]) -> dict[str, Any]:
         normalized = request if isinstance(request, AgenticPipelineRequest) else AgenticPipelineRequest.model_validate(request)
         created_at = utcnow().isoformat()
         run_id = new_id("agentic_pipeline")
         blocks = list(normalized.blocks or _default_blocks())
+        dependency_graph = _dependency_graph(blocks)
         upstream_aitune_gate = _upstream_aitune_gate(normalized.upstream_aitune_gate)
         upstream_aitune_blocked = _upstream_aitune_gate_blocked(upstream_aitune_gate)
         policy_targets = list(normalized.policy_targets)
@@ -73,7 +76,11 @@ class AgenticPipelineRuntime:
         lifecycle_state = (
             "blocked_by_upstream_aitune_gate"
             if upstream_aitune_blocked
-            else ("blocked_by_policy" if policy_blocked else "completed")
+            else (
+                "blocked_by_policy"
+                if policy_blocked
+                else ("blocked_by_invalid_dependencies" if dependency_graph["invalid"] else "completed")
+            )
         )
         artifact_path = self.runs_dir / f"{run_id}.json"
         manifest = {
@@ -109,7 +116,15 @@ class AgenticPipelineRuntime:
                 "status": (
                     "blocked-upstream-gate"
                     if upstream_aitune_blocked
-                    else ("blocked" if policy_blocked and block.role == "policy" else "completed")
+                    else (
+                        "blocked"
+                        if policy_blocked and block.role == "policy"
+                        else (
+                            "blocked-invalid-dependency"
+                            if any(item["block_id"] == block.block_id for item in dependency_graph["unknown_dependency_refs"])
+                            else ("blocked-dependency-graph" if dependency_graph["invalid"] else "completed")
+                        )
+                    )
                 ),
             }
             for block in blocks
@@ -136,6 +151,7 @@ class AgenticPipelineRuntime:
             "created_at": created_at,
             "manifest": manifest,
             "blocks": block_payloads,
+            "dependency_graph": dependency_graph,
             "events": events,
             "policy_scan": policy_scan.model_dump(mode="json"),
             "upstream_aitune_gate": upstream_aitune_gate,
@@ -144,6 +160,153 @@ class AgenticPipelineRuntime:
         }
         artifact_path.write_text(json.dumps(run, indent=2), encoding="utf-8")
         return run
+
+    def start_scheduled(self, request: AgenticPipelineRequest | dict[str, Any]) -> dict[str, Any]:
+        run = self.start(request)
+        if run["lifecycle_state"] != "completed":
+            return run
+        for block in run["blocks"]:
+            block["status"] = "waiting-dependencies" if block["dependencies"] else "ready"
+            block["output_ref"] = None
+        run["lifecycle_state"] = "scheduled"
+        run["runtime_state"] = "live-bound"
+        run["scheduler"] = {
+            "state": "live",
+            "ready_block_ids": sorted(
+                block["block_id"] for block in run["blocks"] if block["status"] == "ready"
+            ),
+            "claimed_block_ids": [],
+            "completed_block_ids": [],
+        }
+        run["events"] = [
+            event
+            for event in run.get("events") or []
+            if event.get("event_type")
+            not in {"block_started", "block_completed", "pipeline_completed"}
+        ]
+        run["events"].append(
+            {
+                "event_id": new_id("agentic_pipeline_event"),
+                "event_type": "dependency_schedule_created",
+                "run_id": run["run_id"],
+                "created_at": utcnow().isoformat(),
+                "ready_block_ids": run["scheduler"]["ready_block_ids"],
+            }
+        )
+        self._write_run(run)
+        return run
+
+    def claim_ready_blocks(self, run_id: str, *, max_count: int = 1) -> dict[str, Any]:
+        if max_count < 1 or max_count > 16:
+            raise ValueError("max_count must be between 1 and 16")
+        with self._lock:
+            run = self._load_run(run_id)
+            if run.get("lifecycle_state") not in {"scheduled", "running"}:
+                raise PermissionError("pipeline run is not eligible for dependency scheduling")
+            ready = sorted(
+                (block for block in run["blocks"] if block.get("status") == "ready"),
+                key=lambda block: block["block_id"],
+            )[:max_count]
+            claimed_at = utcnow().isoformat()
+            for block in ready:
+                block["status"] = "running"
+                block["claimed_at"] = claimed_at
+            if ready:
+                run["lifecycle_state"] = "running"
+                run["scheduler"]["claimed_block_ids"] = sorted(
+                    block["block_id"] for block in run["blocks"] if block.get("status") == "running"
+                )
+                run["scheduler"]["ready_block_ids"] = sorted(
+                    block["block_id"] for block in run["blocks"] if block.get("status") == "ready"
+                )
+                run["events"].append(
+                    {
+                        "event_id": new_id("agentic_pipeline_event"),
+                        "event_type": "dependency_ready_blocks_claimed",
+                        "run_id": run_id,
+                        "created_at": claimed_at,
+                        "block_ids": [block["block_id"] for block in ready],
+                    }
+                )
+                self._write_run(run)
+            return {**run, "claimed_blocks": ready}
+
+    def complete_block(
+        self,
+        run_id: str,
+        *,
+        block_id: str,
+        output_ref: str,
+        succeeded: bool = True,
+    ) -> dict[str, Any]:
+        if succeeded and not output_ref.strip():
+            raise ValueError("successful block completion requires output_ref")
+        with self._lock:
+            run = self._load_run(run_id)
+            block = next((item for item in run["blocks"] if item["block_id"] == block_id), None)
+            if block is None:
+                raise KeyError(f"unknown pipeline block: {block_id}")
+            if block.get("status") != "running":
+                raise PermissionError(f"pipeline block must be running before completion: {block_id}")
+
+            completed_at = utcnow().isoformat()
+            block["status"] = "completed" if succeeded else "failed"
+            block["output_ref"] = output_ref if succeeded else None
+            block["completed_at"] = completed_at
+            newly_ready: list[str] = []
+            if succeeded:
+                statuses = {item["block_id"]: item["status"] for item in run["blocks"]}
+                for candidate in run["blocks"]:
+                    if candidate.get("status") != "waiting-dependencies":
+                        continue
+                    if all(statuses.get(dependency) == "completed" for dependency in candidate["dependencies"]):
+                        candidate["status"] = "ready"
+                        newly_ready.append(candidate["block_id"])
+            run["lifecycle_state"] = (
+                "blocked_block_failure"
+                if not succeeded
+                else (
+                    "completed"
+                    if all(item.get("status") == "completed" for item in run["blocks"])
+                    else "running"
+                )
+            )
+            run["runtime_state"] = "degraded" if not succeeded else "live-bound"
+            run["scheduler"]["state"] = "completed" if run["lifecycle_state"] == "completed" else run["lifecycle_state"]
+            run["scheduler"]["ready_block_ids"] = sorted(
+                item["block_id"] for item in run["blocks"] if item.get("status") == "ready"
+            )
+            run["scheduler"]["claimed_block_ids"] = sorted(
+                item["block_id"] for item in run["blocks"] if item.get("status") == "running"
+            )
+            run["scheduler"]["completed_block_ids"] = sorted(
+                item["block_id"] for item in run["blocks"] if item.get("status") == "completed"
+            )
+            run["events"].append(
+                {
+                    "event_id": new_id("agentic_pipeline_event"),
+                    "event_type": "dependency_block_completed" if succeeded else "dependency_block_failed",
+                    "run_id": run_id,
+                    "created_at": completed_at,
+                    "block_id": block_id,
+                    "output_ref": output_ref if succeeded else None,
+                    "newly_ready_block_ids": sorted(newly_ready),
+                }
+            )
+            self._write_run(run)
+            return {**run, "newly_ready_block_ids": sorted(newly_ready)}
+
+    def _load_run(self, run_id: str) -> dict[str, Any]:
+        path = self.runs_dir / f"{run_id}.json"
+        if not path.exists():
+            raise KeyError(f"unknown agentic pipeline run: {run_id}")
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def _write_run(self, run: dict[str, Any]) -> None:
+        path = self.runs_dir / f"{run['run_id']}.json"
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(run, indent=2), encoding="utf-8")
+        temporary.replace(path)
 
     def summary(self, *, session_id: str | None = None, limit: int = 20) -> dict[str, Any]:
         runs = self._list_runs(session_id=session_id, limit=limit)
@@ -232,6 +395,19 @@ class AgenticPipelineRuntime:
                     )
                 )
                 continue
+            if block["status"].startswith("blocked-"):
+                events.append(
+                    _event(
+                        run_id,
+                        session_id,
+                        "block_blocked",
+                        block["role"],
+                        f"Blocked {block['block_id']} as {block['status']}",
+                        created_at,
+                        block_id=block["block_id"],
+                    )
+                )
+                continue
             events.append(
                 _event(
                     run_id,
@@ -269,7 +445,7 @@ class AgenticPipelineRuntime:
             _event(
                 run_id,
                 session_id,
-                "pipeline_blocked" if lifecycle_state == "blocked_by_policy" else "pipeline_completed",
+                "pipeline_blocked" if lifecycle_state.startswith("blocked") else "pipeline_completed",
                 "NexusBrain",
                 lifecycle_state,
                 created_at,
@@ -285,6 +461,87 @@ def _default_blocks() -> list[PipelineBlockSpec]:
         PipelineBlockSpec(block_id="policy-gate", role="policy", expected_output="policy scan"),
         PipelineBlockSpec(block_id="manager-review", role="reviewer", expected_output="promotion decision"),
     ]
+
+
+def _dependency_graph(blocks: list[PipelineBlockSpec]) -> dict[str, Any]:
+    block_ids = [block.block_id for block in blocks]
+    known_ids = set(block_ids)
+    dependencies_by_block = {
+        block.block_id: sorted(dependency_id for dependency_id in block.dependencies if dependency_id in known_ids)
+        for block in blocks
+    }
+    unknown_dependency_refs = [
+        {"block_id": block.block_id, "dependency_id": dependency_id}
+        for block in blocks
+        for dependency_id in block.dependencies
+        if dependency_id not in known_ids
+    ]
+    duplicate_block_ids = sorted({block_id for block_id in block_ids if block_ids.count(block_id) > 1})
+    cycle_block_ids = _cyclic_block_ids(dependencies_by_block)
+    reverse_edges = {block_id: [] for block_id in sorted(known_ids)}
+    for block_id, dependencies in dependencies_by_block.items():
+        for dependency_id in dependencies:
+            reverse_edges[dependency_id].append(block_id)
+    reverse_edges = {block_id: sorted(dependents) for block_id, dependents in reverse_edges.items()}
+    return {
+        "nodes": block_ids,
+        "edges": [
+            {"from_block_id": dependency_id, "to_block_id": block.block_id}
+            for block in blocks
+            for dependency_id in block.dependencies
+            if dependency_id in known_ids
+        ],
+        "unknown_dependency_refs": unknown_dependency_refs,
+        "duplicate_block_ids": duplicate_block_ids,
+        "cycle_block_ids": cycle_block_ids,
+        "blocks": reverse_edges,
+        "blocked_by": {block_id: dependencies_by_block.get(block_id, []) for block_id in sorted(known_ids)},
+        "parallel_ready_block_ids": sorted(
+            block_id for block_id, dependencies in dependencies_by_block.items() if not dependencies
+        ),
+        "topological_order": _topological_order(dependencies_by_block, reverse_edges),
+        "invalid": bool(unknown_dependency_refs or duplicate_block_ids or cycle_block_ids),
+    }
+
+
+def _cyclic_block_ids(dependencies_by_block: dict[str, list[str]]) -> list[str]:
+    visited: set[str] = set()
+    visiting: list[str] = []
+    cycle_ids: set[str] = set()
+
+    def visit(block_id: str) -> None:
+        if block_id in visiting:
+            cycle_ids.update(visiting[visiting.index(block_id) :])
+            return
+        if block_id in visited:
+            return
+        visiting.append(block_id)
+        for dependency_id in dependencies_by_block.get(block_id, []):
+            visit(dependency_id)
+        visiting.pop()
+        visited.add(block_id)
+
+    for block_id in dependencies_by_block:
+        visit(block_id)
+    return sorted(cycle_ids)
+
+
+def _topological_order(
+    dependencies_by_block: dict[str, list[str]],
+    reverse_edges: dict[str, list[str]],
+) -> list[str]:
+    remaining = {block_id: len(dependencies) for block_id, dependencies in dependencies_by_block.items()}
+    ready = sorted(block_id for block_id, count in remaining.items() if count == 0)
+    ordered: list[str] = []
+    while ready:
+        block_id = ready.pop(0)
+        ordered.append(block_id)
+        for dependent in reverse_edges.get(block_id, []):
+            remaining[dependent] -= 1
+            if remaining[dependent] == 0:
+                ready.append(dependent)
+                ready.sort()
+    return ordered
 
 
 def _event(
@@ -352,5 +609,17 @@ def _operator_actions() -> dict[str, dict[str, Any]]:
     return {
         "inspect": {"method": "GET", "endpoint": "/ops/brain/agentic-pipelines"},
         "create_run": {"method": "POST", "endpoint": "/ops/brain/agentic-pipelines/runs"},
+        "create_scheduled_run": {
+            "method": "POST",
+            "endpoint": "/ops/brain/agentic-pipelines/scheduled-runs",
+        },
+        "claim_ready": {
+            "method": "POST",
+            "endpoint": "/ops/brain/agentic-pipelines/runs/{run_id}/claim-ready",
+        },
+        "complete_block": {
+            "method": "POST",
+            "endpoint": "/ops/brain/agentic-pipelines/runs/{run_id}/blocks/{block_id}/complete",
+        },
         "scorecard": {"method": "GET", "endpoint": "/ops/brain/canon/agentic-pipelines"},
     }

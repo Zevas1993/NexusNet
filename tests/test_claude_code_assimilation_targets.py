@@ -51,7 +51,7 @@ def test_assimilation_targets_scorecard_covers_all_requested_targets(tmp_path: P
     assert {"cheetahclaws-python", "mattpocock-skills", "openai-symphony", "mattpocock-sandcastle"}.issubset(source_ids)
 
     sandbox_target = next(target for target in payload["targets"] if target["target_id"] == "sandbox-agent-factory")
-    assert sandbox_target["implementation_state"] == "v0-runtime-bound"
+    assert sandbox_target["implementation_state"] == "runtime-executable-local-and-container"
     assert "merge_back_policy_gate" in sandbox_target["required_controls"]
 
     visualizer = client.get("/ops/brain/visualizer/state", params={"session_id": "assimilation-cockpit"})
@@ -120,6 +120,78 @@ def test_skill_system_composer_builds_chained_orchestrator_with_handoffs(tmp_pat
     assert payload["human_checkpoints"][0]["after_skill_id"] == "clip-selection"
 
 
+def test_skill_system_executor_endpoint_runs_a_local_registered_skill(tmp_path: Path):
+    project_root = _project_with_control_panel(tmp_path)
+    client = TestClient(create_app(str(project_root)))
+
+    response = client.post(
+        "/ops/brain/skill-systems/execute",
+        json={
+            "system": {
+                "system_id": "passthrough-system",
+                "goal": "Carry reviewed text through one governed local handoff.",
+                "components": [
+                    {
+                        "skill_id": "context-passthrough",
+                        "purpose": "pass reviewed input to the next local step",
+                        "required_input": "reviewed_text",
+                        "output": "handoff_text",
+                    }
+                ],
+            },
+            "initial_context": {"reviewed_text": "NexusNet"},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["lifecycle_state"] == "completed"
+    assert payload["outputs"] == {"handoff_text": "NexusNet"}
+
+
+def test_skill_system_executor_api_pauses_and_resumes_required_human_checkpoint(tmp_path: Path):
+    client = TestClient(create_app(str(_project_with_control_panel(tmp_path))))
+    paused_response = client.post(
+        "/ops/brain/skill-systems/execute",
+        json={
+            "system": {
+                "system_id": "checkpoint-api-system",
+                "goal": "Require approval after preparing reviewed text.",
+                "components": [
+                    {
+                        "skill_id": "context-passthrough",
+                        "purpose": "prepare reviewed text",
+                        "required_input": "source_text",
+                        "output": "reviewed_text",
+                    }
+                ],
+                "human_checkpoints": [
+                    {
+                        "checkpoint_id": "approve-reviewed-text",
+                        "after_skill_id": "context-passthrough",
+                        "required": True,
+                    }
+                ],
+            },
+            "initial_context": {"source_text": "review me"},
+        },
+    )
+
+    assert paused_response.status_code == 200
+    paused = paused_response.json()
+    assert paused["lifecycle_state"] == "awaiting_human_checkpoint"
+    resumed_response = client.post(
+        f"/ops/brain/skill-systems/runs/{paused['run_id']}/resume",
+        json={"approved_checkpoint_ids": ["approve-reviewed-text"]},
+    )
+
+    assert resumed_response.status_code == 200
+    resumed = resumed_response.json()
+    assert resumed["lifecycle_state"] == "completed"
+    assert resumed["outputs"] == {"reviewed_text": "review me"}
+    assert resumed["checkpoint_receipts"][0]["state"] == "approved"
+
+
 def test_control_panel_surfaces_assimilation_targets(tmp_path: Path):
     project_root = _project_with_control_panel(tmp_path)
     client = TestClient(create_app(str(project_root)))
@@ -135,3 +207,24 @@ def test_control_panel_surfaces_assimilation_targets(tmp_path: Path):
     assert "renderAssimilationTargetScorecard" in app_js
     assert "/ops/brain/canon/assimilation-targets" in app_js
     assert "/ops/brain/skill-systems/compose" in app_js
+
+
+def test_assimilation_targets_point_to_executable_runtime_sources(tmp_path: Path):
+    payload = TestClient(create_app(str(_project_with_control_panel(tmp_path)))).get(
+        "/ops/brain/canon/assimilation-targets"
+    ).json()
+    targets = {target["target_id"]: target for target in payload["targets"]}
+
+    assert "nexusnet/operations/checkpoint_rewind.py" in targets["checkpoint-rewind-ledger"]["implementation_source_refs"]
+    assert "/ops/brain/skill-systems/execute" in targets["skill-system-orchestrator"]["endpoint_refs"]
+    assert "/ops/brain/skill-systems/runs/{run_id}/resume" in targets["skill-system-orchestrator"]["endpoint_refs"]
+    assert "/ops/tools/filesystem.write" in targets["tool-execution-registry"]["endpoint_refs"]
+    assert "/ops/tools/batch" in targets["tool-execution-registry"]["endpoint_refs"]
+    assert "/ops/brain/agentic-pipelines/runs/{run_id}/claim-ready" in targets["task-dependency-graph"]["endpoint_refs"]
+    assert "nexusnet/computer_fabric/bridges.py" in targets["bridge-manager"]["implementation_source_refs"]
+    assert "/ops/brain/bridges/commitments/{commitment_id}/dispatch" in targets["bridge-manager"]["endpoint_refs"]
+    assert "nexusnet/research/monitor.py" in targets["research-monitor-pipeline"]["implementation_source_refs"]
+    assert "/ops/brain/research-monitors/poll-due" in targets["research-monitor-pipeline"]["endpoint_refs"]
+    assert "/ops/brain/sandbox-agent-factory/runs/{run_id}/execute-local" in targets["sandbox-agent-factory"]["endpoint_refs"]
+    assert "/ops/brain/sandbox-agent-factory/runs/{run_id}/execute-container" in targets["sandbox-agent-factory"]["endpoint_refs"]
+    assert "/ops/brain/sandbox-agent-factory/runs/{run_id}/merge-gates" in targets["sandbox-agent-factory"]["endpoint_refs"]

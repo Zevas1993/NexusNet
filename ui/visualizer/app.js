@@ -94,6 +94,7 @@ const dom = {
 const state = {
   scene: null,
   overlay: null,
+  federatedPeerDelivery: null,
   currentMode: "engineering",
   viewBox: { ...DEFAULT_VIEWBOX },
   selectedNodeId: null,
@@ -1272,6 +1273,12 @@ function renderLivePosture() {
   const releaseSelfRepairLedger = overlay.control_panel?.release_wrapper_self_repair_ledger
     || overlay.control_panel?.release_wrapper_runtime?.self_repair_ledger
     || {};
+  const releaseAutonomousUpdates = overlay.control_panel?.autonomous_update_scorecard || {};
+  const releaseSandboxEvidence = releaseAutonomousUpdates.latest_sandbox_test_evidence
+    || releaseAutonomousUpdates.latest_proposal?.latest_sandbox_test_evidence
+    || {};
+  const releaseSandboxEnvironmentPolicy = releaseSandboxEvidence.sandbox?.environment_policy || "not-recorded";
+  const releaseSandboxNetworkBoundary = releaseSandboxEvidence.sandbox?.network_policy || "not-recorded";
   const releaseForwardPassCoverage = releaseTelemetry.forward_pass_coverage
     || overlay.control_panel?.release_wrapper_runtime?.forward_pass_coverage
     || {};
@@ -1350,6 +1357,7 @@ function renderLivePosture() {
   const releaseTelemetryFailureLearning = releaseTelemetry.failure_learning || {};
   const releaseFederatedPacketOutbox = overlay.control_panel?.release_wrapper_runtime?.federated_packet_outbox || {};
   const releaseFederatedPacketInbox = overlay.control_panel?.release_wrapper_runtime?.federated_packet_inbox || {};
+  const releaseFederatedPeerDelivery = state.federatedPeerDelivery || {};
   const releaseOperationReceiptRows = (releaseForwardPassMatrix.entrypoints || []).filter((row) => row.operation_receipt?.receipt_id);
   const releaseCoveredOperationReceiptRows = releaseOperationReceiptRows.filter((row) => row.operation_receipt?.status === "covered");
   const latestFederatedImportReceipt = releaseFederatedPacketInbox.latest_import?.operation_receipt || {};
@@ -1404,9 +1412,13 @@ function renderLivePosture() {
     <div class="metric release-wrapper-self-repair-ledger"><strong>${escapeHtml(String(releaseSelfRepairLedger.repair_count || 0))}</strong><small>Release Harness self repair actions</small></div>
     <div class="metric release-wrapper-ao-guard"><strong>${escapeHtml(String(latestSelfRepairGuardReceipts.length || releaseSelfRepairLedger.ao_guard_passed_count || 0))}</strong><small>Harness AO guard receipts</small></div>
     <div class="metric release-wrapper-authority-receipts"><strong>${escapeHtml(String(releaseSelfRepairLedger.authority_decision_count || 0))}</strong><small>Harness authority receipts</small></div>
+    <div class="metric release-wrapper-sandbox-environment"><strong>${escapeHtml(releaseSandboxEnvironmentPolicy)}</strong><small>Harness sandbox environment</small></div>
+    <div class="metric release-wrapper-sandbox-network"><strong>${escapeHtml(releaseSandboxNetworkBoundary)}</strong><small>Harness sandbox network</small></div>
     <div class="metric"><strong>${escapeHtml(String(releaseTelemetryFederation.packet_count || 0))}</strong><small>Harness federated packets</small></div>
     <div class="metric release-wrapper-federated-packet-outbox"><strong>${escapeHtml(String(releaseFederatedPacketOutbox.packet_count || 0))}</strong><small>Wrapper packet outbox</small></div>
     <div class="metric release-wrapper-federated-packet-inbox"><strong>${escapeHtml(String(releaseFederatedPacketInbox.import_count || 0))}</strong><small>Wrapper packet inbox</small></div>
+    <div class="metric release-wrapper-federated-peer-delivery"><strong>${escapeHtml(releaseFederatedPeerDelivery.status || "not-configured-no-admin-approved-peer")}</strong><small>admin-approved shadow delivery</small></div>
+    <div class="metric"><strong>${escapeHtml(`${releaseFederatedPeerDelivery.acknowledged_delivery_count || 0}/${releaseFederatedPeerDelivery.pending_retry_count || 0}`)}</strong><small>peer delivery ack/retry</small></div>
     <div class="metric"><strong>${escapeHtml(String(releaseTelemetryGrowth.global_captures || 0))}</strong><small>Harness growth captures</small></div>
     <div class="metric release-wrapper-failure-learning"><strong>${escapeHtml(String(releaseTelemetryFailureLearning.captured_count || 0))}</strong><small>failure learning captures</small></div>
     <div class="metric"><strong>${escapeHtml(physiology.thermal_mode || "unknown")}</strong><small>Thermal Mode</small></div>
@@ -1850,7 +1862,9 @@ function drawAmbientFrame(now) {
 }
 
 async function loadOverlay() {
-  const overlay = await fetchJSON(`/ops/brain/visualizer/state?session_id=${encodeURIComponent(dom.sessionInput.value || sessionId())}`);
+  const sessionRef = encodeURIComponent(dom.sessionInput.value || sessionId());
+  const overlay = await fetchJSON(`/ops/brain/visualizer/state?session_id=${sessionRef}`);
+  state.federatedPeerDelivery = await fetchJSON(`/ops/wrapper/federated-deliveries?session_id=${sessionRef}`).catch(() => null);
   state.overlay = overlay;
   dom.overlayStatus.textContent = `Overlay: ${overlay.overlay_state?.active_registry_layer || "pending"} / ${overlay.overlay_state?.route_activity?.selected_expert || "idle"} / ${overlay.overlay_state?.performance_profile?.recommended_tier || "balanced"}`;
   renderFilterControls();

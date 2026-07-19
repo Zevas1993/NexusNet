@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, Literal
@@ -62,13 +63,35 @@ class MemoryQualityLedger:
         quality_findings = _quality_findings(normalized)
         policy_scan = self.policy_kernel.scan(_policy_targets(normalized))
         blocked = bool(quality_findings) or policy_scan.summary.active_hard_fail_count > 0
+        genesis_admission = _record_genesis_source_claim_admission(self, normalized)
+        admission_allows_memory = (
+            genesis_admission.get("memory_write_allowed") is True if genesis_admission else not blocked
+        )
+        admission_allows_retrieval = (
+            genesis_admission.get("retrieval_truth_allowed") is True if genesis_admission else not blocked
+        )
+        admission_allows_training = (
+            genesis_admission.get("training_allowed") is True if genesis_admission else False
+        )
+        memory_write_allowed = admission_allows_memory and not blocked
+        retrieval_truth_allowed = admission_allows_retrieval and not blocked
+        training_allowed = admission_allows_training and not blocked
+        graph_truth_allowed = (
+            memory_write_allowed
+            and retrieval_truth_allowed
+            and normalized.source_status in {"primary_verified", "secondary_verified"}
+        )
+        knowledge_artifact_allowed = graph_truth_allowed and bool(_provenance_refs(normalized))
+        genesis_denied_raw_claim = bool(genesis_admission) and genesis_admission.get("memory_write_allowed") is not True
+        raw_claim_allowed = not genesis_denied_raw_claim and (memory_write_allowed or not normalized.contains_private_data)
+        claim_text = normalized.claim_text if raw_claim_allowed else _redacted_claim_ref(normalized.claim_text)
         claim = {
             "status_label": "LOCKED CANON",
             "authority": "NexusBrain",
             "surface_id": "memory-quality",
             "claim_id": normalized.claim_id,
             "answer_id": normalized.answer_id,
-            "claim_text": normalized.claim_text,
+            "claim_text": claim_text,
             "answerability_status": normalized.answerability_status,
             "answerability_gate": _answerability_gate(normalized),
             "source_status": normalized.source_status,
@@ -92,7 +115,14 @@ class MemoryQualityLedger:
             "required_controls": _required_controls(),
             "quality_findings": quality_findings,
             "policy_scan": policy_scan.model_dump(mode="json"),
-            "metadata": normalized.metadata,
+            "genesis_memory_admission": genesis_admission,
+            "raw_content_included": raw_claim_allowed,
+            "memory_write_allowed": memory_write_allowed,
+            "retrieval_truth_allowed": retrieval_truth_allowed,
+            "training_allowed": training_allowed,
+            "graph_truth_allowed": graph_truth_allowed,
+            "knowledge_artifact_allowed": knowledge_artifact_allowed,
+            "metadata": _sanitized_claim_metadata(normalized, genesis_admission),
         }
         self._persist(claim)
         return claim
@@ -260,6 +290,80 @@ def _policy_targets(request: SourceClaimRequest) -> list[dict[str, Any]]:
             },
         },
     ]
+
+
+def _record_genesis_source_claim_admission(
+    ledger: MemoryQualityLedger,
+    request: SourceClaimRequest,
+) -> dict[str, Any]:
+    admission = getattr(ledger, "genesis_memory_admission", None)
+    record_manual_ingress = getattr(admission, "record_manual_ingress", None)
+    if not callable(record_manual_ingress):
+        return {}
+    return record_manual_ingress(
+        session_id=_source_claim_session_id(request),
+        ingress_route="source-claim-record",
+        content=request.claim_text,
+        metadata=_source_claim_ingress_metadata(request),
+    )
+
+
+def _source_claim_session_id(request: SourceClaimRequest) -> str | None:
+    session_id = request.metadata.get("session_id") or request.metadata.get("session_ref")
+    return str(session_id) if session_id else None
+
+
+def _source_claim_ingress_metadata(request: SourceClaimRequest) -> dict[str, Any]:
+    metadata = dict(request.metadata)
+    return {
+        "source_kind": metadata.get("source_kind") or "source-claim-record",
+        "privacy_class": metadata.get("privacy_class")
+        or ("operator-private" if request.contains_private_data else "unspecified"),
+        "consent_status": metadata.get("consent_status") or ("memory-approved" if request.consent_ref else "not-declared"),
+        "rights_license_status": metadata.get("rights_license_status")
+        or metadata.get("license_status")
+        or "not-declared",
+        "claim_status": request.answerability_status,
+        "source_status": request.source_status,
+        "promotion_state": request.promotion_state,
+    }
+
+
+def _redacted_claim_ref(value: str) -> str:
+    return f"redacted::sha256:{hashlib.sha256(value.encode('utf-8')).hexdigest()}"
+
+
+def _sanitized_claim_metadata(
+    request: SourceClaimRequest,
+    genesis_admission: dict[str, Any],
+) -> dict[str, Any]:
+    safe_keys = {
+        "source_kind",
+        "privacy_class",
+        "consent_status",
+        "rights_license_status",
+        "license_status",
+        "retention_policy",
+    }
+    metadata = {
+        key: value
+        for key, value in request.metadata.items()
+        if key in safe_keys and _is_safe_metadata_value(value)
+    }
+    session_ref_digest = genesis_admission.get("session_ref_digest") if genesis_admission else None
+    if session_ref_digest:
+        metadata["session_ref_digest"] = session_ref_digest
+    decision_id = genesis_admission.get("decision_id") if genesis_admission else None
+    if decision_id:
+        metadata["genesis_memory_admission_decision_id"] = decision_id
+    return metadata
+
+
+def _is_safe_metadata_value(value: Any) -> bool:
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        text = str(value).lower()
+        return not any(marker in text for marker in ("secret", "token", "password", "api-key", "apikey", ":\\"))
+    return False
 
 
 def _provenance_refs(request: SourceClaimRequest) -> list[str]:

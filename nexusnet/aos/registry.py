@@ -39,6 +39,50 @@ class AssistantOrchestrator:
             responsibilities=self.responsibilities,
         )
 
+    def contract(self) -> dict[str, Any]:
+        return {
+            "schema_version": "nexusnet-genesis-assistant-orchestrator-contract-v1",
+            "surface_id": "genesis-o-ao-expert-contract-registry",
+            "contract_ref": f"ao-contract::{self.name}",
+            "node_name": self.name,
+            "node_kind": "assistant-orchestrator",
+            "brain_scale_hierarchy": "assistant-orchestrator-mini-nexusnet",
+            "declared_capabilities": list(self.responsibilities),
+            "capability_boundaries": [
+                "declared-responsibilities-only",
+                "no-direct-governance-bypass",
+                "no-unscoped-local-state-access",
+                "no-direct-active-production-mutation",
+            ],
+            "tool_permission_refs": ["tool-policy::ao-deny-by-default"],
+            "memory_scope_refs": [
+                "memory-scope::session-sanitized",
+                "memory-scope::governed-shared-by-reference",
+            ],
+            "failure_visibility_refs": [
+                "failure-visibility::genesis-event-spine",
+                "failure-visibility::operator-control-panel",
+            ],
+            "self_improvement_participation": {
+                "mode": "proposal-evidence-and-review-only",
+                "direct_self_mutation_allowed": False,
+                "governed_promotion_required": True,
+            },
+            "temporary_child_contract": {
+                "mode": "sandbox-shadow-only",
+                "retention_review_required": True,
+                "permanent_birth_allowed": False,
+            },
+            "parent_retirement_contract": {
+                "archive_not_delete": True,
+                "admin_approval_required": True,
+                "replay_lineage_required": True,
+            },
+            "cluster9_reconciliation_ref": "cluster9-roster::canon-reconciled-open-ended",
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+        }
+
 
 class AssistantOrchestratorRegistry:
     def __init__(self, orchestrators: list[AssistantOrchestrator], *, artifacts_dir: Path | None = None):
@@ -53,7 +97,8 @@ class AssistantOrchestratorRegistry:
         self._replay_status = {
             "status": "replayed" if self._execution_receipts else "no-persisted-receipts",
             "receipt_count": len(self._execution_receipts),
-            "artifact_dir": str(self.execution_receipts_dir) if self.execution_receipts_dir is not None else "",
+            "artifact_ref": "aos/execution-receipts" if self.execution_receipts_dir is not None else "",
+            "artifact_available": self.execution_receipts_dir is not None,
         }
 
     def get(self, name: str) -> AssistantOrchestrator | None:
@@ -63,7 +108,23 @@ class AssistantOrchestratorRegistry:
         return list(self._orchestrators.values())
 
     def snapshot(self) -> AORegistrySnapshot:
-        receipts = list(self._execution_receipts)
+        receipts = [_public_execution_receipt(receipt) for receipt in self._execution_receipts]
+        unified_registry = getattr(self, "node_contract_registry", None)
+        unified_contract_summary = (
+            unified_registry.summary()
+            if unified_registry is not None and callable(getattr(unified_registry, "summary", None))
+            else {
+                "surface_id": "genesis-o-ao-expert-contract-registry",
+                "status": "not-configured",
+                "contract_count": 0,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+            }
+        )
+        contracts = {
+            orchestrator.name: orchestrator.contract()
+            for orchestrator in self.list()
+        }
         latest_execution = next(
             (
                 receipt
@@ -80,6 +141,7 @@ class AssistantOrchestratorRegistry:
                     "status_label": orchestrator.status_label,
                     "risk_tier": orchestrator.risk_tier,
                     "responsibilities": orchestrator.responsibilities,
+                    "contract": contracts[orchestrator.name],
                     "execution_count": sum(1 for receipt in receipts if receipt.get("ao_name") == orchestrator.name),
                     "latest_trace_ref": next(
                         (
@@ -95,7 +157,29 @@ class AssistantOrchestratorRegistry:
             execution_count=len(receipts),
             latest_execution=latest_execution,
             execution_receipts=receipts,
-            replay=dict(self._replay_status),
+            replay={
+                **self._replay_status,
+                "contract_registry": {
+                    "schema_version": "nexusnet-genesis-o-ao-expert-contract-registry-v1",
+                    "surface_id": "genesis-o-ao-expert-contract-registry",
+                    "status": "live-contract-registry",
+                    "honest_status_label": "genesis-layer9-assistant-orchestrator-contracts-live",
+                    "contract_count": len(contracts),
+                    "complete_contract_count": sum(
+                        1
+                        for contract in contracts.values()
+                        if contract.get("capability_boundaries")
+                        and contract.get("tool_permission_refs")
+                        and contract.get("memory_scope_refs")
+                        and contract.get("failure_visibility_refs")
+                    ),
+                    "roster_policy": "open-ended-canon-reconciled",
+                    "cluster9_reconciliation_ref": "cluster9-roster::canon-reconciled-open-ended",
+                    "raw_content_included": False,
+                    "active_production_mutation_allowed": False,
+                },
+                "unified_node_contract_registry": unified_contract_summary,
+            },
         )
 
     def select_request(self, request: OperatorRequest, *, expert: str | None = None, wrapper_mode: str | None = None) -> AOPlan:
@@ -135,16 +219,44 @@ class AssistantOrchestratorRegistry:
         wrapper_mode: str | None,
         session_ref_digest: str | None = None,
     ) -> dict[str, Any]:
+        orchestrator = self.get(plan.ao_name)
+        if orchestrator is None:
+            raise ValueError(f"AO execution denied because no registered contract exists for {plan.ao_name}")
+        contract = orchestrator.contract()
+        session_digest = session_ref_digest or _privacy_digest(session_id)
+        unified_registry = getattr(self, "node_contract_registry", None)
+        node_contract_route_receipt = None
+        if unified_registry is not None and callable(getattr(unified_registry, "authorize_route", None)):
+            node_contract_route_receipt = unified_registry.authorize_route(
+                selected_ao=plan.ao_name,
+                selected_expert=str(selected_expert or "conversationalist"),
+                trace_ref=f"trace::{trace_id}",
+                session_ref_digest=session_digest,
+            )
+            if node_contract_route_receipt.get("route_allowed") is not True:
+                blockers = ", ".join(node_contract_route_receipt.get("blockers") or ["unknown"])
+                raise ValueError(f"AO/expert execution denied by node contract registry: {blockers}")
         receipt = {
             "surface_id": "ao-execution-receipt",
             "execution_id": f"aoexec::{_safe_ref(trace_id)}",
             "ao_name": plan.ao_name,
             "trace_ref": f"trace::{trace_id}",
-            "session_ref_digest": session_ref_digest or _privacy_digest(session_id),
+            "session_ref_digest": session_digest,
             "selected_expert": selected_expert,
             "selected_teacher_ref": f"teacher::{selected_teacher_id}" if selected_teacher_id else None,
             "wrapper_mode": wrapper_mode or "standard-chat",
             "input_contract": "nexusbrain-command-envelope-and-trace-only",
+            "contract_ref": contract["contract_ref"],
+            "contract_enforcement": {
+                "status": "enforced",
+                "capability_boundaries": contract["capability_boundaries"],
+                "tool_permission_refs": contract["tool_permission_refs"],
+                "memory_scope_refs": contract["memory_scope_refs"],
+                "failure_visibility_refs": contract["failure_visibility_refs"],
+                "direct_active_production_mutation_allowed": False,
+                "raw_content_included": False,
+            },
+            "node_contract_route_receipt": node_contract_route_receipt,
             "consumed_refs": [f"trace::{trace_id}", f"ao-plan::{plan.ao_name}"],
             "direct_local_state_reads": [],
             "raw_content_included": False,
@@ -161,8 +273,11 @@ class AssistantOrchestratorRegistry:
         if self.execution_receipts_dir is None:
             return
         path = self.execution_receipts_dir / f"{_safe_ref(str(receipt['execution_id']))}.json"
+        receipt["artifact_ref"] = f"aos/execution-receipts/{path.name}"
+        persisted = dict(receipt)
+        persisted.pop("artifact_path", None)
+        path.write_text(json.dumps(persisted, indent=2, sort_keys=True), encoding="utf-8")
         receipt["artifact_path"] = str(path)
-        path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
 
     def _load_execution_receipts(self) -> list[dict[str, Any]]:
         if self.execution_receipts_dir is None:
@@ -175,6 +290,9 @@ class AssistantOrchestratorRegistry:
                 continue
             if not _is_replayable_receipt(receipt):
                 continue
+            receipt["artifact_ref"] = str(
+                receipt.get("artifact_ref") or f"aos/execution-receipts/{path.name}"
+            )
             receipt["artifact_path"] = str(path)
             receipts.append(receipt)
         receipts.sort(key=lambda item: item.get("created_at") or "", reverse=True)
@@ -535,6 +653,12 @@ def _is_replayable_receipt(receipt: dict[str, Any]) -> bool:
         and isinstance(receipt.get("trace_ref"), str)
         and isinstance(receipt.get("ao_name"), str)
     )
+
+
+def _public_execution_receipt(receipt: dict[str, Any]) -> dict[str, Any]:
+    public = dict(receipt)
+    public.pop("artifact_path", None)
+    return public
 
 
 def _privacy_digest(value: str) -> str:

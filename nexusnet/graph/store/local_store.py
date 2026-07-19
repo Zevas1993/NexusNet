@@ -76,6 +76,45 @@ class LocalGraphStore(GraphStore):
             "source_count": len(payload["sources"]),
         }
 
+    def deactivate_source(self, source: str, *, reason_ref: str) -> dict:
+        payload = self._load()
+        removed_node_ids = {
+            str(node.get("node_id") or "")
+            for node in payload["nodes"]
+            if str((node.get("provenance") or {}).get("source") or "") == source
+        }
+        before_edges = len(payload["edges"])
+        payload["nodes"] = [
+            node
+            for node in payload["nodes"]
+            if str(node.get("node_id") or "") not in removed_node_ids
+        ]
+        payload["edges"] = [
+            edge
+            for edge in payload["edges"]
+            if str(edge.get("source_node_id") or "") not in removed_node_ids
+            and str(edge.get("target_node_id") or "") not in removed_node_ids
+        ]
+        payload["sources"] = [
+            item for item in payload["sources"] if str(item.get("source") or "") != source
+        ]
+        payload.setdefault("deactivated_sources", []).append(
+            {
+                "source": source,
+                "reason_ref": reason_ref,
+                "node_count": len(removed_node_ids),
+            }
+        )
+        self._save(payload)
+        return {
+            "provider": self.provider_name,
+            "source": source,
+            "status": "revoked",
+            "nodes_removed": len(removed_node_ids),
+            "edges_removed": before_edges - len(payload["edges"]),
+            "reason_ref": reason_ref,
+        }
+
     def _load(self) -> dict:
         return json.loads(self.path.read_text(encoding="utf-8"))
 

@@ -84,9 +84,57 @@ class PlanPromotionController:
 
     @staticmethod
     def _improves(candidate: PlanEvidence, champion: PlanEvidence) -> bool:
-        candidate_latency = candidate.warm_latency_ms or float("inf")
-        champion_latency = champion.warm_latency_ms or float("inf")
-        return candidate_latency < champion_latency or candidate.peak_ram_bytes < champion.peak_ram_bytes or candidate.peak_vram_bytes < champion.peak_vram_bytes
+        try:
+            max_regression = float(candidate.plan.parameters.get("pareto_max_regression_ratio", 0.05))
+            min_improvement = float(candidate.plan.parameters.get("pareto_min_improvement_ratio", 0.01))
+        except (TypeError, ValueError):
+            return False
+        if not 0 <= max_regression <= 1 or not 0 < min_improvement <= 1:
+            return False
+        if candidate.warm_latency_ms is None:
+            return False
+
+        lower_is_better = [
+            (candidate.warm_latency_ms, champion.warm_latency_ms),
+            (float(candidate.peak_ram_bytes), float(champion.peak_ram_bytes)),
+            (float(candidate.peak_vram_bytes), float(champion.peak_vram_bytes)),
+            (float(candidate.bytes_moved), float(champion.bytes_moved)),
+            (candidate.uncertainty, champion.uncertainty),
+        ]
+        if champion.energy_joules is not None:
+            if candidate.energy_joules is None:
+                return False
+            lower_is_better.append((candidate.energy_joules, champion.energy_joules))
+
+        def within_lower(candidate_value: float, champion_value: float | None) -> bool:
+            if champion_value is None:
+                return True
+            if champion_value == 0:
+                return candidate_value == 0
+            return candidate_value <= champion_value * (1 + max_regression)
+
+        def improved_lower(candidate_value: float, champion_value: float | None) -> bool:
+            if champion_value is None:
+                return True
+            if champion_value == 0:
+                return False
+            return candidate_value <= champion_value * (1 - min_improvement)
+
+        protected = all(within_lower(left, right) for left, right in lower_is_better)
+        throughput_protected = (
+            champion.throughput_tokens_s <= 0
+            or candidate.throughput_tokens_s >= champion.throughput_tokens_s * (1 - max_regression)
+        )
+        if not protected or not throughput_protected:
+            return False
+
+        materially_better = any(improved_lower(left, right) for left, right in lower_is_better)
+        throughput_better = (
+            candidate.throughput_tokens_s > 0
+            if champion.throughput_tokens_s <= 0
+            else candidate.throughput_tokens_s >= champion.throughput_tokens_s * (1 + min_improvement)
+        )
+        return materially_better or throughput_better
 
     def _load(self) -> dict:
         if self.path.exists():

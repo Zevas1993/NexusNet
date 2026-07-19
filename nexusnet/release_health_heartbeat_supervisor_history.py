@@ -16,11 +16,11 @@ def build_release_health_heartbeat_supervisor_repair_history(
     runs = [
         run
         for run in readiness_runs
-        if str(run.get("status") or "").endswith("heartbeat-supervisor-repair")
+        if "heartbeat-supervisor-repair" in str(run.get("status") or "")
         and (not session_ref_digest or str(run.get("session_ref_digest") or "") == session_ref_digest)
     ]
     global_repair_count = sum(
-        1 for run in readiness_runs if str(run.get("status") or "").endswith("heartbeat-supervisor-repair")
+        1 for run in readiness_runs if "heartbeat-supervisor-repair" in str(run.get("status") or "")
     )
     pulses_by_update: dict[str, dict[str, Any]] = {}
     for pulse in pulses:

@@ -9,6 +9,7 @@ from uuid import uuid4
 from nexus.schemas import utcnow
 
 from .approvals import ApprovalQueue
+from .bridges import BridgeManager, LocalArtifactBridgeAdapter
 from .cockpit import ReplayCockpitBuilder
 from .evals import ComputerEvalGauntlet
 from .firewall import PromptInjectionFirewall
@@ -44,6 +45,10 @@ class ComputerFabricService:
         self.governor = PersistentComputerGovernor()
         self.eval_gauntlet = ComputerEvalGauntlet()
         self.cockpit = ReplayCockpitBuilder()
+        self.bridge_manager = BridgeManager(
+            artifacts_dir=self.artifacts_dir,
+            adapters={"local-artifact": LocalArtifactBridgeAdapter(artifacts_dir=self.artifacts_dir)},
+        )
 
     def start_session(self, request: ComputerSessionRequest) -> ComputerSessionSummary:
         session_id = f"computer_{uuid4().hex[:12]}"

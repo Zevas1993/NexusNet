@@ -224,13 +224,14 @@ class OperatorKernel:
             objective = str(request.metadata.get("inference_objective", "balanced"))
             if objective not in {"latency", "throughput", "memory", "balanced"}:
                 objective = "balanced"
+            workload_profile = WorkloadProfile(
+                prompt_tokens=input_tokens,
+                max_new_tokens=max(1, int(request.metadata.get("max_new_tokens", 256))),
+                batch_size=max(1, int(request.metadata.get("batch_size", 1))),
+                concurrent_requests=max(1, int(request.metadata.get("concurrent_requests", 1))),
+            )
             selected_execution_plan = self.evolutionary_inference.select_plan(
-                WorkloadProfile(
-                    prompt_tokens=input_tokens,
-                    max_new_tokens=max(1, int(request.metadata.get("max_new_tokens", 256))),
-                    batch_size=max(1, int(request.metadata.get("batch_size", 1))),
-                    concurrent_requests=max(1, int(request.metadata.get("concurrent_requests", 1))),
-                ),
+                workload_profile,
                 SLOProfile(
                     objective=objective,
                     max_latency_ms=request.metadata.get("max_inference_latency_ms"),
@@ -239,13 +240,39 @@ class OperatorKernel:
                 ),
             )
             evolution_status = self.evolutionary_inference.status()
+            plan_verified = selected_execution_plan.plan_id in evolution_status.get("verified_plan_ids", [])
+            raw_required_controls = request.metadata.get("required_runtime_controls", [])
+            required_controls = (
+                sorted({str(control) for control in raw_required_controls if str(control)})
+                if isinstance(raw_required_controls, (list, tuple, set))
+                else []
+            )
+            execution_fit_receipts: dict[str, dict[str, Any]] = {}
+            if plan_verified and evolution_status.get("model_fingerprint_id"):
+                for capability_profile in self.runtime_registry.runtime_capability_profiles():
+                    fit_receipt = self.evolutionary_inference.fit_plan(
+                        selected_execution_plan,
+                        workload_profile,
+                        capability_profile,
+                        required_controls=required_controls,
+                    )
+                    execution_fit_receipts[capability_profile.runtime_name] = fit_receipt.model_dump(
+                        mode="json"
+                    )
+            selected_fit_receipt = execution_fit_receipts.get(selected_runtime_name)
+            if selected_fit_receipt is None:
+                selected_fit_receipt = execution_fit_receipts.get(runtime.runtime_name)
             evolutionary_selection = {
                 "plan_id": selected_execution_plan.plan_id,
                 "primitive_ids": selected_execution_plan.primitive_ids,
                 "parameters": selected_execution_plan.parameters,
                 "fallback_plan_id": selected_execution_plan.fallback_plan_id,
                 "model_fingerprint_id": evolution_status.get("model_fingerprint_id"),
-                "verified": selected_execution_plan.plan_id in evolution_status.get("verified_plan_ids", []),
+                "verified": plan_verified,
+                "fit_required": bool(execution_fit_receipts),
+                "execution_fit_receipt": selected_fit_receipt,
+                "execution_fit_receipts": execution_fit_receipts,
+                "required_controls": required_controls,
                 "quality_semantics": selected_execution_plan.quality_semantics,
                 "raw_content_included": False,
             }
@@ -286,6 +313,37 @@ class OperatorKernel:
         )
         output = brain_result.output
         runtime = self.runtime_registry.get_adapter(brain_result.runtime_name)
+        runtime_control_receipt = runtime.control_binding_status()
+        served_evolutionary_selection = dict(
+            (brain_result.runtime_selection or {}).get("evolutionary_inference") or {}
+        )
+        served_fit_receipts = served_evolutionary_selection.get("execution_fit_receipts") or {}
+        if isinstance(served_fit_receipts, dict) and runtime.runtime_name in served_fit_receipts:
+            served_evolutionary_selection["execution_fit_receipt"] = served_fit_receipts[
+                runtime.runtime_name
+            ]
+        runtime_selection_payload = {
+            **brain_result.runtime_selection,
+            "evolutionary_inference": served_evolutionary_selection,
+        }
+        if runtime_control_receipt is not None:
+            runtime_selection_payload["runtime_control_receipt"] = runtime_control_receipt.model_dump(
+                mode="json"
+            )
+            steps.append(
+                TraceStep(
+                    name="evolutionary_inference_execution",
+                    status="warning" if runtime_control_receipt.decision == "degraded" else "ok",
+                    detail={
+                        "runtime_name": runtime_control_receipt.runtime_name,
+                        "plan_id": runtime_control_receipt.plan_id,
+                        "binding_id": runtime_control_receipt.binding_id,
+                        "decision": runtime_control_receipt.decision,
+                        "reason_codes": runtime_control_receipt.reason_codes,
+                        "raw_content_included": False,
+                    },
+                )
+            )
         selected_model = self.model_registry.resolve_model(brain_result.model_id)
         critique = brain_result.critique or self.critique.assess(
             trace_id=operator_request.trace_id,
@@ -487,7 +545,7 @@ class OperatorKernel:
             },
             teacher_provenance=teacher_provenance,
             retrieval_policy=brain_result.retrieval_policy_decision.get("policy_mode"),
-            runtime_selection=brain_result.runtime_selection,
+            runtime_selection=runtime_selection_payload,
             promotion_references=brain_result.promotion_references,
             retrieval_hits=retrieval_hits,
             critique_id=critique.critique_id,
@@ -529,7 +587,7 @@ class OperatorKernel:
             critique=critique,
             approval_required=approval_required,
             trace=trace,
-            runtime_selection=brain_result.runtime_selection,
+            runtime_selection=runtime_selection_payload,
         )
 
     def _core_attachment_provenance(self) -> dict[str, Any]:

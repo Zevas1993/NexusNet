@@ -9,6 +9,7 @@ import yaml
 
 from nexus.schemas import new_id, utcnow
 from nexusnet.recipes.reports import build_recipe_execution_report
+from nexusnet.operations.change_passport import OperationalChangeRegistry
 
 
 class WorkflowCatalogService:
@@ -43,6 +44,7 @@ class WorkflowCatalogService:
         self.workspace_workflow_root = Path(config_dir) / "workflows"
         self.artifacts_dir = Path(artifacts_dir)
         self.execution_store = execution_store
+        self.operational_changes = OperationalChangeRegistry(artifacts_dir=self.artifacts_dir)
         self.gateway = gateway
         self.events = events
 
@@ -221,6 +223,26 @@ class WorkflowCatalogService:
                 self.events.record(event_type="workflow.node.end", subject=f"{subject}:{node_id}", trace_ids=linked_trace_ids, payload=state)
 
         effective_status = status or self._overall_status(node_states)
+        approval_decision = str(
+            ((approval_path or {}).get("decision"))
+            or ((gateway_resolution or {}).get("approval_path") or {}).get("decision")
+            or "not-requested"
+        )
+        operational_change_passport = self.operational_changes.create(
+            change_id=f"workflow-change:{workflow_id}:{self._stable_hash({'traces': linked_trace_ids, 'parameters': parameter_set})}",
+            owner=str(parameter_set.get("owner") or agent_id),
+            goal=str(workflow.get("label") or workflow_id),
+            source_refs=[str(workflow.get("source_path") or f"workflow:{workflow_id}")],
+            base_state_ref=str(parameter_set.get("base_state_ref") or "runtime:current"),
+            worktree_ref=str(parameter_set.get("worktree_ref") or f"workspace:{workspace_id}"),
+            affected_surfaces=[str(item.get("id")) for item in workflow.get("nodes", []) if item.get("id")],
+            permissions=sorted(set(requested_tools or ["workflow:metadata"])),
+            feature_flag=str(parameter_set.get("feature_flag") or f"workflow:{workflow_id}"),
+            evidence_refs=linked_trace_ids or [f"workflow-validation:{self._stable_hash(validation)}"],
+            telemetry_refs=linked_trace_ids or [f"workflow-event:{workflow_id}"],
+            rollback_ref=str(parameter_set.get("rollback_ref") or f"workflow-checkpoints:{workflow_id}"),
+            approval_refs=[f"approval:{approval_decision}"],
+        )
         durable_ledger = self._durable_ledger(
             workflow_id=workflow_id,
             node_states=node_states,
@@ -235,6 +257,7 @@ class WorkflowCatalogService:
             "validation": validation,
             "gateway_resolution_id": (gateway_resolution or {}).get("resolution_id"),
             "durable_ledger": durable_ledger,
+            "operational_change_passport": operational_change_passport,
         }
         record = self.execution_store.record(
             recipe_id=workflow_id,
@@ -273,6 +296,7 @@ class WorkflowCatalogService:
                 "requested_tools": requested_tools,
                 "requested_extensions": requested_extensions,
                 "durable_ledger": durable_ledger,
+                "operational_change_passport": operational_change_passport,
                 "execution_allowed": False,
                 "mutation_allowed": False,
             },
@@ -292,6 +316,7 @@ class WorkflowCatalogService:
             "mutation_allowed": False,
             "node_states": node_states,
             "durable_ledger": durable_ledger,
+            "operational_change_passport": operational_change_passport,
             "validation": validation,
             "gateway_resolution": gateway_resolution,
             "execution_history": record,

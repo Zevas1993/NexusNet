@@ -85,7 +85,126 @@ def _ao_receipt_for_trace(aos: dict, trace_id: str) -> dict:
     return next(receipt for receipt in aos["execution_receipts"] if receipt.get("trace_ref") == trace_ref)
 
 
+def _authorized_provider_inference_lease(
+    client: TestClient,
+    *,
+    provider_id: str,
+    provider_local: bool,
+) -> str:
+    response = client.post(
+        "/ops/brain/execution-authority/leases/request",
+        json={
+            "capability": "model_inference",
+            "scope": {
+                "provider_id": provider_id,
+                "provider_local": provider_local,
+                "operation": "chat_completion",
+            },
+            "expires_at": "2099-01-01T00:00:00+00:00",
+            "budget": {"max_usd": 1.0, "max_minutes": 1},
+            "rollback_plan": {"strategy": "stop-dispatch-and-use-native-fallback"},
+            "approval_id": f"approval::{provider_id}",
+            "approval_decision": "approved",
+            "gateway_decision": "allow",
+            "product_sweep_gate_ids": ["provider-inference"],
+            "product_sweep_decision": "passed",
+            "requested_execution": True,
+            "requested_mutation": False,
+        },
+    )
+    assert response.status_code == 200
+    return response.json()["lease"]["lease_id"]
+
+
 # --- provider wrapping ---
+
+def test_provider_chat_persists_one_final_release_summary_per_interaction(monkeypatch, tmp_path: Path):
+    client = TestClient(create_app(str(make_project(tmp_path))))
+    runtime = client.app.state.release_wrapper_runtime
+    summary_path = runtime.runtime_dir / "summary.json"
+    original_write_text = Path.write_text
+    summary_writes: list[Path] = []
+
+    def counted_write_text(path: Path, *args, **kwargs):
+        if path == summary_path:
+            summary_writes.append(path)
+        return original_write_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", counted_write_text)
+
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "nexusnet-offline",
+            "messages": [{"role": "user", "content": "Persist one final living-system summary."}],
+            "user": "summary-persistence-user",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(summary_writes) == 1
+    final_summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    forward_pass = payload["nexusnet"]["forward_pass_evidence"]
+    assert final_summary["latest_interaction"]["runtime_growth_receipt_id"] == forward_pass["global_growth_receipt_id"]
+    assert final_summary["latest_interaction"]["federated_packet_id"] == forward_pass["federated_packet_id"]
+    assert final_summary["latest_interaction"]["nexusbrain_genesis_activation"]["status"] == "completed"
+    packet_id = final_summary["latest_interaction"]["federated_packet_id"]
+    assert sum(packet.get("packet_id") == packet_id for packet in runtime._federated_packets) == 1
+
+
+def test_failed_provider_chat_persists_one_final_release_summary_per_interaction(monkeypatch, tmp_path: Path):
+    class FailingProvider:
+        provider_id = "summary-persistence-failing-provider"
+        is_local = True
+
+        def complete(self, messages):
+            return {
+                "ok": False,
+                "text": "",
+                "model": "summary-persistence-failing-model",
+                "local": True,
+                "error": "simulated provider failure",
+            }
+
+    registry = ProviderRegistry()
+    registry.register(FailingProvider())
+    monkeypatch.setattr(nexus_api_app, "_default_provider_registry", lambda **_: registry)
+    client = TestClient(create_app(str(make_project(tmp_path))))
+    runtime = client.app.state.release_wrapper_runtime
+    summary_path = runtime.runtime_dir / "summary.json"
+    original_write_text = Path.write_text
+    summary_writes: list[Path] = []
+
+    def counted_write_text(path: Path, *args, **kwargs):
+        if path == summary_path:
+            summary_writes.append(path)
+        return original_write_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", counted_write_text)
+    lease_id = _authorized_provider_inference_lease(
+        client,
+        provider_id="summary-persistence-failing-provider",
+        provider_local=True,
+    )
+
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "summary-persistence-failing-provider",
+            "messages": [{"role": "user", "content": "Persist the final failed interaction summary."}],
+            "user": "summary-persistence-failed-user",
+            "metadata": {"execution_authority_lease_id": lease_id},
+        },
+    )
+
+    assert response.status_code == 502
+    assert len(summary_writes) == 1
+    final_summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert final_summary["latest_interaction"]["status"] == "error"
+    assert final_summary["latest_interaction"]["global_growth_receipt_id"]
+    assert final_summary["latest_interaction"]["federated_packet_id"]
+
 
 def test_app_ao_registry_exposes_consolidated_canon_roster_and_routes_domains(tmp_path: Path):
     client = TestClient(create_app(str(make_project(tmp_path))))
@@ -95,6 +214,25 @@ def test_app_ao_registry_exposes_consolidated_canon_roster_and_routes_domains(tm
     registry = client.app.state.services.brain_aos
 
     assert CONSOLIDATED_CANONICAL_AOS <= active_names
+    contract_registry = aos["replay"]["contract_registry"]
+    assert contract_registry["status"] == "live-contract-registry"
+    assert contract_registry["contract_count"] == len(aos["active_aos"])
+    assert contract_registry["complete_contract_count"] == len(aos["active_aos"])
+    assert contract_registry["roster_policy"] == "open-ended-canon-reconciled"
+    for descriptor in aos["active_aos"]:
+        contract = descriptor["contract"]
+        assert contract["contract_ref"] == f"ao-contract::{descriptor['name']}"
+        assert contract["node_kind"] == "assistant-orchestrator"
+        assert contract["brain_scale_hierarchy"] == "assistant-orchestrator-mini-nexusnet"
+        assert contract["capability_boundaries"]
+        assert contract["tool_permission_refs"] == ["tool-policy::ao-deny-by-default"]
+        assert contract["memory_scope_refs"]
+        assert contract["failure_visibility_refs"]
+        assert contract["self_improvement_participation"]["direct_self_mutation_allowed"] is False
+        assert contract["temporary_child_contract"]["retention_review_required"] is True
+        assert contract["parent_retirement_contract"]["archive_not_delete"] is True
+        assert contract["cluster9_reconciliation_ref"] == "cluster9-roster::canon-reconciled-open-ended"
+        assert contract["raw_content_included"] is False
     assert registry.select_request(OperatorRequest(prompt="Research assimilation targets and cite source evidence.")).ao_name == "ResearchAO"
     assert registry.select_request(OperatorRequest(prompt="Import federated peer packet and check poisoning risk.")).ao_name == "FederationAO"
     assert registry.select_request(OperatorRequest(prompt="Audit MCP protocol bridge and tool handshake policy.")).ao_name == "ProtocolAO"
@@ -253,6 +391,11 @@ def test_openai_compatible_chat_completions_feeds_release_runtime(tmp_path: Path
     project_root = make_project(tmp_path)
     sandbox_command = _write_release_wrapper_auto_governance_probe(project_root)
     client = TestClient(create_app(str(project_root)))
+    lease_id = _authorized_provider_inference_lease(
+        client,
+        provider_id="deterministic-failing-provider",
+        provider_local=True,
+    )
 
     response = client.post(
         "/v1/chat/completions",
@@ -277,6 +420,15 @@ def test_openai_compatible_chat_completions_feeds_release_runtime(tmp_path: Path
     assert payload["usage"]["total_tokens"] >= payload["usage"]["completion_tokens"]
     assert payload["nexusnet"]["wrapper_mode"] == "openai-compatible"
     assert payload["nexusnet"]["release_runtime_ref"] == "/ops/wrapper/release-runtime"
+    forward_pass = payload["nexusnet"]["forward_pass_evidence"]
+    assert forward_pass["status"] == "completed"
+    assert forward_pass["nexusbrain_native_hive_forward_pass_id"]
+    assert forward_pass["global_growth_receipt_id"]
+    assert forward_pass["federated_packet_id"]
+    assert forward_pass["genesis_heartbeat_record_id"]
+    assert forward_pass["raw_content_included"] is False
+    assert forward_pass["active_production_mutation_allowed"] is False
+    assert forward_pass["active_production_mutated"] is False
 
     runtime = client.get("/ops/wrapper/release-runtime", params={"session_id": "openai-compat-user"}).json()
     assert runtime["entrypoint"]["runtime_state"] == "live-bound"
@@ -291,46 +443,31 @@ def test_openai_compatible_chat_completions_feeds_release_runtime(tmp_path: Path
     assert runtime["federated_packet_count"] == 1
     assert runtime["production_spine"]["packet_count"] == 1
     interaction = runtime["latest_interaction"]
+    activation = interaction["nexusbrain_genesis_activation"]
+    assert forward_pass["nexusbrain_native_hive_forward_pass_id"] == activation["hive_run_id"]
+    assert forward_pass["global_growth_receipt_id"] == interaction["runtime_growth_receipt_id"]
+    assert forward_pass["federated_packet_id"] == interaction["federated_packet_id"]
+    assert forward_pass["genesis_heartbeat_record_id"] == activation["genesis_heartbeat_record_id"]
     dream_queue = runtime["dream_research_queue"]
     cycle = runtime["nexusbrain_runtime_cycle"]
     cycle_receipt = cycle["latest_receipt"]
     status_card = client.get("/ops/wrapper/status-card", params={"session_id": "openai-compat-user"}).json()
     readiness_runner = status_card["release_readiness_evidence_runner"]
-    assert interaction["improvement_queue_id"] == dream_queue["latest_item"]["queue_id"]
-    assert interaction["dream_research_episode_id"] == dream_queue["latest_item"]["research_episode_id"]
-    assert interaction["autonomous_update_lifecycle_status"] == "completed"
+    assert interaction["improvement_queue_id"]
+    assert interaction["dream_research_episode_id"]
+    assert dream_queue["item_count"] >= 1
+    assert interaction["autonomous_update_lifecycle_status"] == "pending-admin-approval"
     assert interaction["autonomous_update_lifecycle_update_id"] == interaction["autonomous_update_proposal_id"]
-    lifecycle_run = readiness_runner["latest_autonomous_update_lifecycle_run"]
-    assert readiness_runner["latest_autonomous_update_lifecycle_status"] == "completed"
-    assert readiness_runner["latest_autonomous_update_lifecycle_run_id"] == (
-        interaction["autonomous_update_lifecycle_run_id"]
-    )
-    assert readiness_runner["latest_autonomous_update_lifecycle_update_id"] == (
-        interaction["autonomous_update_lifecycle_update_id"].replace(":", "_")
-    )
-    assert lifecycle_run["command"] == sandbox_command
-    assert lifecycle_run["actions"]["rollback"]["status"] == "rolled-back"
-    assert lifecycle_run["active_production_mutated"] is False
-    cycle_stage_statuses = {stage["stage_id"]: stage["status"] for stage in cycle_receipt["stages"]}
-    assert cycle["latest_status"] == "covered"
-    assert cycle_stage_statuses["self_repair_update_governance"] == "covered"
+    assert readiness_runner["latest_autonomous_update_lifecycle_status"] == "pending-admin-approval"
+    assert interaction["autonomous_update_lifecycle_run_id"]
     assert cycle_receipt["evidence_refs"]["dream_research_episode_id"] == interaction["dream_research_episode_id"]
-    assert cycle_receipt["evidence_refs"]["autonomous_update_lifecycle_run_id"] == (
-        interaction["autonomous_update_lifecycle_run_id"]
-    )
     restarted = TestClient(create_app(str(project_root)))
     replayed = restarted.get("/ops/wrapper/release-runtime", params={"session_id": "openai-compat-user"}).json()
     replayed_interaction = replayed["latest_interaction"]
     replayed_cycle_receipt = replayed["nexusbrain_runtime_cycle"]["latest_receipt"]
     assert replayed_interaction["dream_research_episode_id"] == interaction["dream_research_episode_id"]
-    assert replayed_interaction["autonomous_update_lifecycle_run_id"] == (
-        interaction["autonomous_update_lifecycle_run_id"]
-    )
-    assert replayed["nexusbrain_runtime_cycle"]["latest_status"] == "covered"
+    assert replayed_interaction["autonomous_update_lifecycle_status"] == "pending-admin-approval"
     assert replayed_cycle_receipt["evidence_refs"]["dream_research_episode_id"] == interaction["dream_research_episode_id"]
-    assert replayed_cycle_receipt["evidence_refs"]["autonomous_update_lifecycle_run_id"] == (
-        interaction["autonomous_update_lifecycle_run_id"]
-    )
     assert "Say hello through the wrapper" not in str(runtime)
     control_panel_js = (project_root / "ui" / "control-panel" / "app.js").read_text(encoding="utf-8")
     assert "runtime growth bridge" in control_panel_js
@@ -395,6 +532,13 @@ def test_openai_compatible_provider_chat_records_sanitized_ao_receipt(tmp_path: 
     assert receipt["ao_name"] == "EvalsAO"
     assert receipt["trace_ref"] == f"trace::{runtime['latest_interaction']['trace_id']}"
     assert receipt["input_contract"] == "nexusbrain-command-envelope-and-trace-only"
+    assert receipt["contract_ref"] == "ao-contract::EvalsAO"
+    assert receipt["contract_enforcement"]["status"] == "enforced"
+    assert receipt["contract_enforcement"]["tool_permission_refs"] == [
+        "tool-policy::ao-deny-by-default"
+    ]
+    assert receipt["contract_enforcement"]["direct_active_production_mutation_allowed"] is False
+    assert receipt["contract_enforcement"]["failure_visibility_refs"]
     assert receipt["direct_local_state_reads"] == []
     assert receipt["raw_content_included"] is False
     assert receipt["wrapper_mode"] == "openai-compatible"
@@ -745,8 +889,13 @@ def test_provider_ao_execution_receipts_persist_replay_and_feed_release_readines
     active_ao_names = {ao["name"] for ao in before_aos["active_aos"]}
     assert REQUIRED_CANONICAL_AOS <= active_ao_names
     assert before_aos["execution_count"] >= 1 + len(REQUIRED_CANONICAL_AOS)
-    assert before_receipt["artifact_path"].endswith(".json")
-    assert Path(before_receipt["artifact_path"]).exists()
+    assert "artifact_path" not in before_receipt
+    assert before_receipt["artifact_ref"].startswith("aos/execution-receipts/")
+    persisted_receipt_path = client.app.state.services.paths.artifacts_dir / before_receipt["artifact_ref"]
+    assert persisted_receipt_path.exists()
+    persisted_receipt = json.loads(persisted_receipt_path.read_text(encoding="utf-8"))
+    assert "artifact_path" not in persisted_receipt
+    assert str(project_root) not in json.dumps(persisted_receipt)
 
     restarted = TestClient(create_app(str(project_root)))
     after_aos = restarted.get("/ops/brain/aos").json()
@@ -767,6 +916,8 @@ def test_provider_ao_execution_receipts_persist_replay_and_feed_release_readines
 
     assert after_aos["execution_count"] >= 1 + len(REQUIRED_CANONICAL_AOS)
     assert after_aos["replay"]["status"] == "replayed"
+    assert "artifact_path" not in after_receipt
+    assert after_receipt["artifact_ref"] == before_receipt["artifact_ref"]
     assert after_receipt["execution_id"] == before_receipt["execution_id"]
     assert after_receipt["raw_content_included"] is False
     assert after_receipt["direct_local_state_reads"] == []
@@ -837,6 +988,11 @@ def test_openai_compatible_provider_failure_records_degraded_forward_pass_receip
     project_root = make_project(tmp_path)
     sandbox_command = _write_release_wrapper_auto_governance_probe(project_root)
     client = TestClient(create_app(str(project_root)))
+    lease_id = _authorized_provider_inference_lease(
+        client,
+        provider_id="deterministic-failing-provider",
+        provider_local=True,
+    )
 
     response = client.post(
         "/v1/chat/completions",
@@ -844,6 +1000,7 @@ def test_openai_compatible_provider_failure_records_degraded_forward_pass_receip
             "model": "deterministic-failing-provider",
             "messages": [{"role": "user", "content": "Provider failure should not leak raw prompt secret-123."}],
             "user": "provider-failure-user",
+            "metadata": {"execution_authority_lease_id": lease_id},
         },
     )
 
@@ -867,6 +1024,7 @@ def test_openai_compatible_provider_failure_records_degraded_forward_pass_receip
     action_lane = status_card["operator_action_lane"]
     expert_node = runtime["latest_interaction"]["expert_node"]
     failure_learning = runtime["latest_interaction"]["failure_learning_signal"]
+    genesis_activation = runtime["latest_interaction"]["nexusbrain_genesis_activation"]
     runtime_failure_learning = runtime["live_wrapper_telemetry"]["failure_learning"]
     status_failure_learning = status_card["runtime"]["live_wrapper_telemetry"]["failure_learning"]
     visualizer_failure_learning = visualizer["overlay_state"]["control_panel"]["release_wrapper_telemetry"]["failure_learning"]
@@ -875,14 +1033,22 @@ def test_openai_compatible_provider_failure_records_degraded_forward_pass_receip
     assert coverage["latest_status"] == "covered"
     assert receipt["surface_id"] == "release-wrapper-forward-pass-receipt"
     assert heartbeat["surface_id"] == "nexusnet-project-heartbeat"
-    assert heartbeat["status"] == "alive"
+    assert heartbeat["status"] == "degraded"
     assert heartbeat["raw_content_included"] is False
     assert heartbeat["active_production_mutation_allowed"] is False
     assert heartbeat["active_production_mutated"] is False
     assert runtime["latest_interaction"]["hive_run_id"] == heartbeat["source_run_id"]
     assert runtime["latest_interaction"]["project_heartbeat_id"] == heartbeat["heartbeat_id"]
     assert runtime["latest_interaction"]["project_heartbeat_source_run_id"] == heartbeat["source_run_id"]
-    assert runtime["latest_interaction"]["project_heartbeat_status"] == "alive"
+    assert runtime["latest_interaction"]["project_heartbeat_status"] == "degraded"
+    assert genesis_activation["activation_source"] == "wrapped-model-interaction"
+    assert genesis_activation["status"] == "completed"
+    assert genesis_activation["brain_generate_status"] == "error"
+    assert genesis_activation["hive_run_id"] == runtime["latest_interaction"]["hive_run_id"]
+    assert genesis_activation["genesis_heartbeat_record_id"]
+    assert genesis_activation["genesis_memory_admission_decision_id"]
+    assert genesis_activation["raw_content_included"] is False
+    assert genesis_activation["active_production_mutated"] is False
     assert status_card["project_heartbeat"]["heartbeat_id"] == heartbeat["heartbeat_id"]
     assert control_panel["project_heartbeat"]["heartbeat_id"] == heartbeat["heartbeat_id"]
     assert native_heartbeat["surface_id"] == "release-wrapper-native-hive-heartbeat"
@@ -976,7 +1142,7 @@ def test_openai_compatible_provider_failure_records_degraded_forward_pass_receip
     assert runtime_failure_learning["latest_status"] == "captured"
     assert status_failure_learning["captured_count"] == 1
     assert visualizer_failure_learning["captured_count"] == 1
-    assert runtime["federated_packet_count"] == 1
+    assert runtime["federated_packet_count"] == 2
     assert runtime["latest_federated_packet"]["status"] == "degraded"
     assert runtime["latest_federated_packet"]["raw_content_included"] is False
     assert runtime["production_spine"]["packet_count"] == 1
@@ -991,8 +1157,15 @@ def test_openai_compatible_provider_failure_records_degraded_forward_pass_receip
     assert dream_queue["latest_item"]["metadata"]["expert_node"] == expert_node
     assert dream_queue["latest_item"]["metadata"]["failure_class"] == "model_interaction_failed"
     assert dream_queue["latest_item"]["metadata"]["raw_content_included"] is False
-    assert dream_queue["latest_item"]["status"] == "reverted"
-    assert dream_queue["latest_item"]["governance"]["proposal_status"] == "rolled-back"
+    assert dream_queue["latest_item"]["status"] == "proposed"
+    assert dream_queue["latest_item"]["governance"]["proposal_status"] == "proposed"
+    assert dream_queue["latest_item"]["governance"]["admin_action_statuses"] == {
+        "admin_approval": "pending-admin-approval",
+        "shadow_eval_replay": "not-run",
+        "sandbox_tests": "not-run",
+        "apply": "not-applied",
+        "rollback": "not-rolled-back",
+    }
     assert dream_queue["latest_item"]["governance"]["active_production_mutation_allowed"] is False
     proposal_id = dream_queue["latest_item"]["governance"]["proposal_update_id"]
     dream_proposal = next(
@@ -1002,56 +1175,47 @@ def test_openai_compatible_provider_failure_records_degraded_forward_pass_receip
     )
     assert dream_proposal["metadata"]["dream_research_queue"] is True
     assert dream_proposal["metadata"]["safe_payload"]["failure_class"] == "model_interaction_failed"
-    assert dream_proposal["operator_approved"] is True
-    assert dream_proposal["status"] == "rolled-back"
-    assert dream_proposal["latest_eval_replay"]["status"] == "passed-shadow"
-    assert dream_proposal["latest_eval_replay"]["operator_approved"] is True
-    assert dream_proposal["latest_sandbox_test_evidence"]["status"] == "passed"
-    assert dream_proposal["latest_sandbox_test_evidence"]["sandbox"]["active_project_root_mutated"] is False
-    assert dream_proposal["latest_sandbox_test_evidence"]["diff_summary"]["unsafe_change_count"] == 0
+    assert dream_proposal["operator_approved"] is False
+    assert dream_proposal["status"] == "proposed"
+    assert dream_proposal.get("latest_eval_replay") is None
+    assert dream_proposal.get("latest_sandbox_test_evidence") is None
     assert dream_proposal["metadata"]["active_production_mutation_allowed"] is False
-    assert autonomous_updates["latest_applied"]["update_id"] == proposal_id
-    assert autonomous_updates["latest_applied"]["status"] == "applied-shadow-safe-file"
-    assert autonomous_updates["latest_applied"]["active_production_mutated"] is False
-    assert autonomous_updates["latest_applied"]["test_evidence_refs"] == [
-        dream_proposal["latest_sandbox_test_evidence"]["evidence_ref"]
-    ]
-    assert autonomous_updates["latest_rollback"]["update_id"] == proposal_id
-    assert autonomous_updates["latest_rollback"]["status"] == "rolled-back"
-    assert autonomous_updates["latest_rollback"]["rollback_restored"] is True
-    assert autonomous_updates["latest_rollback"]["active_production_mutated"] is False
-    assert not Path(autonomous_updates["latest_applied"]["safe_file_path"]).exists()
-    assert readiness_runner["latest_status"] == "completed"
-    assert readiness_runner["latest_run"]["update_id"] == proposal_id.replace(":", "_")
-    assert readiness_runner["latest_run"]["command"] == sandbox_command
+    assert dream_proposal.get("latest_apply") is None
+    assert dream_proposal.get("latest_rollback") is None
+    assert runtime["latest_interaction"]["autonomous_update_lifecycle_status"] == "pending-admin-approval"
+    assert runtime["latest_interaction"]["autonomous_update_lifecycle_update_id"] == proposal_id
+    assert readiness_runner["latest_status"] == "pending-admin-approval"
+    assert readiness_runner["latest_heartbeat_supervisor_repair_status"] == (
+        "planned-admin-approval-required-heartbeat-supervisor-repair"
+    )
     assert readiness_runner["latest_run"]["active_production_mutated"] is False
+    assert readiness_runner["latest_autonomous_update_lifecycle_status"] == (
+        "pending-admin-approval"
+    )
+    assert not (project_root / "tests" / "release_wrapper_auto_sandbox_probe_test.py").exists()
     runner_actions = readiness_runner["latest_run"]["actions"]
-    assert runner_actions["admin_approval"]["status"] == "admin-approved"
-    assert runner_actions["admin_approval"]["linked_eval_replay"]["status"] == "passed-shadow"
-    assert runner_actions["sandbox_tests"]["status"] == "passed"
-    assert runner_actions["sandbox_tests"]["sandbox"]["active_project_root_mutated"] is False
-    assert runner_actions["apply"]["status"] == "applied-shadow-safe-file"
-    assert runner_actions["apply"]["active_production_mutated"] is False
-    assert runner_actions["rollback"]["status"] == "rolled-back"
-    assert runner_actions["rollback"]["rollback_restored"] is True
-    assert runner_actions["rollback"]["active_production_mutated"] is False
-    assert self_repair["repair_count"] >= 4
+    assert runner_actions["admin_approval"]["status"] == "pending-admin-approval"
+    assert "shadow_eval_replay" not in runner_actions
+    assert "sandbox_tests" not in runner_actions
+    assert "apply" not in runner_actions
+    assert "rollback" not in runner_actions
+    assert self_repair["repair_count"] == 0
     assert self_repair["active_production_mutated"] is False
-    assert self_repair["latest_action"] == "rollback"
-    assert self_repair["latest_status"] == "rolled-back"
-    assert self_repair["action_counts"]["admin_approval"] == 1
-    assert self_repair["action_counts"]["sandbox_tests"] == 1
-    assert self_repair["action_counts"]["apply"] == 1
-    assert self_repair["action_counts"]["rollback"] == 1
-    assert self_repair["ao_guard_passed_count"] >= 4
-    assert action_lane["proposal_update_id"] == proposal_id
-    assert action_lane["latest_action_statuses"]["admin_approval"] == "admin-approved"
-    assert action_lane["latest_action_statuses"]["shadow_eval_replay"] == "passed-shadow"
-    assert action_lane["latest_action_statuses"]["sandbox_tests"] == "passed"
-    assert action_lane["latest_action_statuses"]["apply"] == "applied-shadow-safe-file"
-    assert action_lane["latest_action_statuses"]["rollback"] == "rolled-back"
-    assert action_lane["latest_action_statuses"]["readiness_runner"] == "completed"
-    assert checks["project-heartbeat"]["status"] == "pass"
+    assert self_repair["latest_action"] is None
+    assert self_repair["latest_status"] is None
+    assert self_repair["action_counts"] == {}
+    assert self_repair["ao_guard_passed_count"] == 0
+    assert action_lane["active_production_mutation_allowed"] is False
+    assert action_lane["latest_action_statuses"]["admin_approval"] == "pending-admin-approval"
+    assert action_lane["latest_action_statuses"]["shadow_eval_replay"] == "not-run"
+    assert action_lane["latest_action_statuses"]["sandbox_tests"] == "not-run"
+    assert action_lane["latest_action_statuses"]["apply"] == "not-applied"
+    assert action_lane["latest_action_statuses"]["rollback"] == "not-rolled-back"
+    assert action_lane["latest_action_statuses"]["readiness_runner"] == (
+        "pending-admin-approval"
+    )
+    assert checks["project-heartbeat"]["status"] == "blocked"
+    assert "project heartbeat is missing, degraded, or unsanitized" in readiness["blockers"]
     assert readiness["evidence"]["project_heartbeat"]["heartbeat_id"] == heartbeat["heartbeat_id"]
     assert checks["native-hive-heartbeat"]["status"] == "pass"
     assert checks["native-hive-heartbeat-watchdog"]["status"] == "pass"
@@ -1128,6 +1292,11 @@ def test_degraded_provider_forward_pass_records_cache_evidence_and_replays_after
     client = TestClient(create_app(str(project_root)))
     session_id = "provider-failure-cache-user"
     prompt = "Provider failure cache evidence must not leak SECRET-CACHE-FAIL."
+    lease_id = _authorized_provider_inference_lease(
+        client,
+        provider_id="deterministic-cache-failing-provider",
+        provider_local=True,
+    )
 
     response = client.post(
         "/v1/chat/completions",
@@ -1135,6 +1304,7 @@ def test_degraded_provider_forward_pass_records_cache_evidence_and_replays_after
             "model": "deterministic-cache-failing-provider",
             "messages": [{"role": "user", "content": prompt}],
             "user": session_id,
+            "metadata": {"execution_authority_lease_id": lease_id},
         },
     )
 
@@ -1161,7 +1331,7 @@ def test_degraded_provider_forward_pass_records_cache_evidence_and_replays_after
     assert runtime["session_scope"] == "session-filtered"
     assert runtime["forward_pass_coverage"]["latest_status"] == "covered"
     assert heartbeat["surface_id"] == "nexusnet-project-heartbeat"
-    assert heartbeat["status"] == "alive"
+    assert heartbeat["status"] == "degraded"
     assert interaction["project_heartbeat_id"] == heartbeat["heartbeat_id"]
     assert interaction["project_heartbeat_source_run_id"] == heartbeat["source_run_id"]
     assert heartbeat["raw_content_included"] is False
@@ -1185,21 +1355,21 @@ def test_degraded_provider_forward_pass_records_cache_evidence_and_replays_after
     assert native_watchdog["raw_content_included"] is False
     assert dream_queue["status"] == "live-bound"
     assert dream_queue["latest_item"]["metadata"]["failure_class"] == "model_interaction_failed"
-    assert dream_queue["latest_item"]["status"] == "reverted"
-    assert dream_queue["latest_item"]["governance"]["proposal_status"] == "rolled-back"
+    assert dream_queue["latest_item"]["status"] == "proposed"
+    assert dream_queue["latest_item"]["governance"]["proposal_status"] == "proposed"
     assert dream_queue["latest_item"]["governance"]["active_production_mutation_allowed"] is False
     proposal_id = dream_queue["latest_item"]["governance"]["proposal_update_id"]
-    assert autonomous_updates["latest_applied"]["status"] == "applied-shadow-safe-file"
-    assert autonomous_updates["latest_rollback"]["status"] == "rolled-back"
-    assert not Path(autonomous_updates["latest_applied"]["safe_file_path"]).exists()
-    assert readiness_runner["latest_status"] == "completed"
-    assert readiness_runner["latest_run"]["command"] == sandbox_command
-    assert readiness_runner["latest_run"]["actions"]["rollback"]["status"] == "rolled-back"
-    assert self_repair["action_counts"]["admin_approval"] == 1
-    assert self_repair["action_counts"]["sandbox_tests"] == 1
-    assert self_repair["action_counts"]["apply"] == 1
-    assert self_repair["action_counts"]["rollback"] == 1
+    assert autonomous_updates["latest_applied"] is None
+    assert autonomous_updates["latest_rollback"] is None
+    assert readiness_runner["latest_status"] == "pending-admin-approval"
+    assert readiness_runner["latest_run"]["actions"]["admin_approval"]["status"] == "pending-admin-approval"
+    assert "sandbox_tests" not in readiness_runner["latest_run"]["actions"]
+    assert "apply" not in readiness_runner["latest_run"]["actions"]
+    assert "rollback" not in readiness_runner["latest_run"]["actions"]
+    assert self_repair["action_counts"] == {}
+    assert self_repair["repair_count"] == 0
     assert self_repair["active_production_mutated"] is False
+    assert not (project_root / "tests" / "release_wrapper_auto_sandbox_probe_test.py").exists()
     assert cache["surface_id"] == "effective-context-cache-ledger"
     assert cache["entry_count"] == 1
     assert cache["latest_entry"]["entry_id"] == interaction["cache_ledger_entry_id"]
@@ -1230,6 +1400,7 @@ def test_degraded_provider_forward_pass_records_cache_evidence_and_replays_after
         "federation": "covered",
         "production_spine": "covered",
         "developmental_cortex": "covered",
+        "ao_runtime_governance": "covered",
         "authority_evals_tools": "covered",
         "ao_runtime_governance": "covered",
         "dream_research": "covered",
@@ -1277,7 +1448,7 @@ def test_degraded_provider_forward_pass_records_cache_evidence_and_replays_after
     assert replayed["session_ref_digest"] == runtime["session_ref_digest"]
     assert replayed["session_scope"] == "session-filtered"
     assert replayed_heartbeat["heartbeat_id"] == heartbeat["heartbeat_id"]
-    assert replayed_heartbeat["status"] == "alive"
+    assert replayed_heartbeat["status"] == "degraded"
     assert replayed_heartbeat["raw_content_included"] is False
     assert replayed["latest_interaction"]["project_heartbeat_id"] == heartbeat["heartbeat_id"]
     assert replayed_native_heartbeat["heartbeat_id"] == native_heartbeat["heartbeat_id"]
@@ -1287,8 +1458,10 @@ def test_degraded_provider_forward_pass_records_cache_evidence_and_replays_after
     assert replayed["latest_interaction"]["native_hive_heartbeat_id"] == native_heartbeat["heartbeat_id"]
     assert replayed["latest_interaction"]["improvement_queue_id"] == dream_queue["latest_item"]["queue_id"]
     assert replayed["latest_interaction"]["dream_research_episode_id"] == dream_queue["latest_item"]["research_episode_id"]
-    assert replayed["latest_interaction"]["autonomous_update_lifecycle_run_id"] == readiness_runner["latest_run"]["run_id"]
-    assert replayed["latest_interaction"]["autonomous_update_lifecycle_status"] == "completed"
+    assert replayed["latest_interaction"]["autonomous_update_lifecycle_run_id"] == interaction[
+        "autonomous_update_lifecycle_run_id"
+    ]
+    assert replayed["latest_interaction"]["autonomous_update_lifecycle_status"] == "pending-admin-approval"
     assert replayed["latest_interaction"]["continuous_assimilation_capture_ref"] == (
         interaction["continuous_assimilation_capture_ref"]
     )
@@ -1306,19 +1479,15 @@ def test_degraded_provider_forward_pass_records_cache_evidence_and_replays_after
     assert replayed_native_watchdog["latest_heartbeat_id"] == native_heartbeat["heartbeat_id"]
     assert replayed_dream_queue["latest_item"]["queue_id"] == dream_queue["latest_item"]["queue_id"]
     assert replayed_dream_queue["latest_item"]["research_status"] == "researched"
-    assert replayed_dream_queue["latest_item"]["status"] == "reverted"
-    assert replayed_dream_queue["latest_item"]["governance"]["proposal_status"] == "rolled-back"
-    assert replayed_updates["latest_applied"]["update_id"] == proposal_id
-    assert replayed_updates["latest_applied"]["status"] == "applied-shadow-safe-file"
-    assert replayed_updates["latest_rollback"]["update_id"] == proposal_id
-    assert replayed_updates["latest_rollback"]["status"] == "rolled-back"
-    assert replayed_runner["latest_status"] == "completed"
+    assert replayed_dream_queue["latest_item"]["status"] == "proposed"
+    assert replayed_dream_queue["latest_item"]["governance"]["proposal_status"] == "proposed"
+    assert replayed_updates["latest_applied"] is None
+    assert replayed_updates["latest_rollback"] is None
+    assert replayed_runner["latest_status"] == "pending-admin-approval"
     assert replayed_runner["latest_run"]["run_id"] == readiness_runner["latest_run"]["run_id"]
     assert replayed_runner["latest_run"]["active_production_mutated"] is False
-    assert replayed_self_repair["action_counts"]["admin_approval"] == 1
-    assert replayed_self_repair["action_counts"]["sandbox_tests"] == 1
-    assert replayed_self_repair["action_counts"]["apply"] == 1
-    assert replayed_self_repair["action_counts"]["rollback"] == 1
+    assert replayed_self_repair["action_counts"] == {}
+    assert replayed_self_repair["repair_count"] == 0
     assert replayed_self_repair["active_production_mutated"] is False
     assert replayed_cache["entry_count"] == 1
     assert replayed_cache["latest_entry"]["entry_id"] == cache["latest_entry"]["entry_id"]
@@ -1327,7 +1496,7 @@ def test_degraded_provider_forward_pass_records_cache_evidence_and_replays_after
     assert replayed["continuous_assimilation"]["nodes"][replayed["latest_interaction"]["expert_node"]]["captures"] == 1
     assert replayed["global_growth"]["global_captures"] >= 2
     assert replayed["live_wrapper_telemetry"]["failure_learning"]["captured_count"] == 1
-    assert replayed["federated_packet_count"] == 1
+    assert replayed["federated_packet_count"] == 2
     assert replayed["latest_federated_packet"]["raw_content_included"] is False
     assert replayed["production_spine"]["packet_count"] == 1
     assert replayed["production_spine"]["latest_packet"]["raw_content_included"] is False
@@ -1409,10 +1578,24 @@ def test_openai_compatible_streaming_chat_completions_feeds_release_runtime(tmp_
     assert all(chunk["object"] == "chat.completion.chunk" for chunk in chunks)
     streamed_text = "".join((chunk["choices"][0]["delta"] or {}).get("content", "") for chunk in chunks)
     assert streamed_text == "[nexusnet-offline] Stream provider smoke."
+    forward_pass = chunks[-1]["nexusnet"]["forward_pass_evidence"]
+    assert forward_pass["status"] == "completed"
+    assert forward_pass["nexusbrain_native_hive_forward_pass_id"]
+    assert forward_pass["global_growth_receipt_id"]
+    assert forward_pass["federated_packet_id"]
+    assert forward_pass["genesis_heartbeat_record_id"]
+    assert forward_pass["raw_content_included"] is False
+    assert forward_pass["active_production_mutated"] is False
 
     runtime = client.get("/ops/wrapper/release-runtime", params={"session_id": "stream-provider-user"}).json()
     assert runtime["entrypoint"]["runtime_state"] == "live-bound"
     assert runtime["latest_interaction"]["source_model"] == "nexusnet-offline"
+    interaction = runtime["latest_interaction"]
+    activation = interaction["nexusbrain_genesis_activation"]
+    assert forward_pass["nexusbrain_native_hive_forward_pass_id"] == activation["hive_run_id"]
+    assert forward_pass["global_growth_receipt_id"] == interaction["runtime_growth_receipt_id"]
+    assert forward_pass["federated_packet_id"] == interaction["federated_packet_id"]
+    assert forward_pass["genesis_heartbeat_record_id"] == activation["genesis_heartbeat_record_id"]
     assert runtime["federated_packet_count"] == 1
     assert runtime["production_spine"]["packet_count"] == 1
     aos = client.get("/ops/brain/aos").json()
@@ -1422,6 +1605,46 @@ def test_openai_compatible_streaming_chat_completions_feeds_release_runtime(tmp_
     assert receipt["raw_content_included"] is False
     assert runtime["canonical_ao_coverage"]["passed"] is True
     assert set(runtime["canonical_ao_coverage"]["covered_aos"]) >= REQUIRED_CANONICAL_AOS
+
+
+def test_openai_compatible_internal_streaming_chat_exposes_terminal_forward_pass_evidence(tmp_path: Path):
+    client = TestClient(create_app(str(make_project(tmp_path))))
+    session_id = "stream-internal-user"
+
+    with client.stream(
+        "POST",
+        "/v1/chat/completions",
+        json={
+            "model": "mock/default",
+            "messages": [{"role": "user", "content": "Stream internal runtime evidence."}],
+            "user": session_id,
+            "stream": True,
+        },
+    ) as response:
+        assert response.status_code == 200
+        body = "".join(response.iter_text())
+
+    data_lines = [line.removeprefix("data: ") for line in body.splitlines() if line.startswith("data: ")]
+    assert data_lines[-1] == "[DONE]"
+    chunks = [json.loads(line) for line in data_lines[:-1]]
+    assert all(chunk["object"] == "chat.completion.chunk" for chunk in chunks)
+    assert "".join((chunk["choices"][0]["delta"] or {}).get("content", "") for chunk in chunks)
+    forward_pass = chunks[-1]["nexusnet"]["forward_pass_evidence"]
+    assert forward_pass["status"] == "completed"
+    assert forward_pass["nexusbrain_native_hive_forward_pass_id"]
+    assert forward_pass["global_growth_receipt_id"]
+    assert forward_pass["federated_packet_id"]
+    assert forward_pass["genesis_heartbeat_record_id"]
+    assert forward_pass["raw_content_included"] is False
+    assert forward_pass["active_production_mutated"] is False
+
+    runtime = client.get("/ops/wrapper/release-runtime", params={"session_id": session_id}).json()
+    interaction = runtime["latest_interaction"]
+    activation = interaction["nexusbrain_genesis_activation"]
+    assert forward_pass["nexusbrain_native_hive_forward_pass_id"] == activation["hive_run_id"]
+    assert forward_pass["global_growth_receipt_id"] == interaction["runtime_growth_receipt_id"]
+    assert forward_pass["federated_packet_id"] == interaction["federated_packet_id"]
+    assert forward_pass["genesis_heartbeat_record_id"] == activation["genesis_heartbeat_record_id"]
 
 
 def test_v1_models_and_native_chat_are_release_wrapper_entrypoints(tmp_path: Path):

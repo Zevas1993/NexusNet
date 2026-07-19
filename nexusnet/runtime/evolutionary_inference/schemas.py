@@ -97,6 +97,113 @@ class InferencePrimitive(BaseModel):
     approval_required: bool = False
 
 
+class InferenceMethodRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["1.0"] = "1.0"
+    method_id: str
+    version: str
+    source_kind: Literal["external-engine", "primitive-family", "nexus-native-graph"]
+    source_digest: str
+    artifact_digest: str | None = None
+    rights: dict[str, Literal["allowed", "review-required", "blocked", "unknown"]]
+    claimed_capabilities: list[str] = Field(default_factory=list)
+    reproduced_capabilities: list[str] = Field(default_factory=list)
+    supported_model_families: list[str] = Field(default_factory=list)
+    supported_operator_families: list[str] = Field(default_factory=list)
+    supported_formats: list[str] = Field(default_factory=list)
+    supported_precisions: list[str] = Field(default_factory=list)
+    supported_hardware: list[str] = Field(default_factory=list)
+    tunable_controls: list[str] = Field(default_factory=list)
+    known_conflicts: list[str] = Field(default_factory=list)
+    fallback_method_id: str | None = None
+    maturity: Literal["researched", "adapted", "reproduced", "primitive-extracted", "native", "certified"]
+    assimilation_paths: list[Literal["whole-engine", "primitive"]] = Field(min_length=1)
+
+
+class RuntimeCapabilityProfile(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["1.0"] = "1.0"
+    runtime_name: str
+    runtime_version: str
+    implementation_digest: str
+    capability_state: Literal["verified", "declared", "unknown"]
+    supported_controls: list[str] = Field(default_factory=list)
+    observable_controls: list[str] = Field(default_factory=list)
+
+
+class RuntimeControlBinding(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    control: str
+    requested_value: int | float | str | bool
+    applied_value: int | float | str | bool | None = None
+    status: Literal["applied", "degraded", "unsupported", "rejected"]
+    reason_code: str
+
+
+class RuntimeControlReceipt(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["1.0"] = "1.0"
+    binding_id: str
+    runtime_name: str
+    plan_id: str
+    decision: Literal["admitted", "degraded", "rejected"]
+    bound_parameters: dict[str, int | float | str | bool] = Field(default_factory=dict)
+    bindings: list[RuntimeControlBinding] = Field(default_factory=list)
+    reason_codes: list[str] = Field(default_factory=list)
+
+
+class ExecutionFitRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["1.0"] = "1.0"
+    request_id: str
+    plan_id: str
+    model_fingerprint: ModelExecutionFingerprint
+    hardware: HardwareCapabilityGraph
+    runtime_capabilities: RuntimeCapabilityProfile
+    requested_context_tokens: int = Field(gt=0)
+    max_new_tokens: int = Field(gt=0)
+    batch_size: int = Field(default=1, gt=0)
+    concurrent_requests: int = Field(default=1, gt=0)
+    runtime_buffer_bytes: int = Field(ge=0)
+    safety_headroom_ratio: float = Field(default=0.15, ge=0, lt=0.5)
+    requested_controls: dict[str, int | float | str | bool] = Field(default_factory=dict)
+    required_controls: list[str] = Field(default_factory=list)
+
+
+class ExecutionFitReceipt(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["1.0"] = "1.0"
+    receipt_id: str
+    request_id: str
+    plan_id: str
+    model_fingerprint_id: str
+    hardware_fingerprint: str
+    runtime_name: str
+    decision: Literal["admitted", "degraded", "rejected"]
+    requested_context_tokens: int = Field(gt=0)
+    selected_context_tokens: int = Field(ge=0)
+    safe_context_tokens: int = Field(ge=0)
+    dense_weight_bytes: int = Field(ge=0)
+    expert_weight_bytes: int = Field(ge=0)
+    active_expert_bytes: int = Field(ge=0)
+    kv_cache_bytes: int = Field(ge=0)
+    runtime_buffer_bytes: int = Field(ge=0)
+    headroom_bytes: int = Field(ge=0)
+    estimated_peak_ram_bytes: int = Field(ge=0)
+    estimated_peak_vram_bytes: int = Field(ge=0)
+    placement: dict[str, Literal["gpu", "ram", "storage", "unplaced"]]
+    predicted_bottleneck: Literal["ram", "vram", "kv-cache", "runtime-capability", "none"]
+    confidence: float = Field(ge=0, le=1)
+    control_bindings: list[RuntimeControlBinding] = Field(default_factory=list)
+    reason_codes: list[str] = Field(default_factory=list)
+
+
 class FeasibilityCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -232,6 +339,17 @@ class RuntimeObservation(BaseModel):
     stable: bool
     peak_ram_bytes: int | None = Field(default=None, ge=0)
     peak_vram_bytes: int | None = Field(default=None, ge=0)
+
+
+class ExecutionFitReconciliation(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    receipt_id: str
+    plan_id: str
+    status: Literal["healthy", "degraded", "rejected", "rollback-required"]
+    ram_error_ratio: float | None = None
+    vram_error_ratio: float | None = None
+    reason_codes: list[str] = Field(default_factory=list)
 
 
 class CapacityGate(BaseModel):

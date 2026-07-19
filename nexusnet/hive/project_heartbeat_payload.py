@@ -35,8 +35,16 @@ def project_heartbeat_payload(
     self_healing_route_around: dict[str, Any] | None,
     policy_scan: dict[str, Any],
     immune_findings: list[dict[str, Any]],
+    source_brain_generate_status: str | None = None,
 ) -> dict[str, Any]:
     policy_summary = policy_scan.get("summary") if isinstance(policy_scan.get("summary"), dict) else {}
+    normalized_brain_generate_status = _normalized_brain_generate_status(source_brain_generate_status)
+    source_runtime_degraded = normalized_brain_generate_status in {
+        "blocked",
+        "error",
+        "failed",
+        "runtime-unavailable",
+    }
     nexus_brain_present = any(_node_type(node) == "NexusBrain" for node in nodes)
     selected_node_ids = [_node_id(node) for node in selected_nodes if _node_id(node)]
     self_healing_refs = heartbeat_payload_refs(
@@ -44,6 +52,17 @@ def project_heartbeat_payload(
         ("route-around", self_healing_route_around, "route_around_id"),
     )
     lanes = [
+        project_heartbeat_lane(
+            lane_id="model-serving-runtime",
+            label="NexusBrain model-serving runtime result for this forward pass",
+            status_if_alive=not source_runtime_degraded,
+            artifact_refs=[f"brain-generate-status::{normalized_brain_generate_status}"],
+            blockers=(
+                [f"model-serving-runtime-{normalized_brain_generate_status}"]
+                if source_runtime_degraded
+                else []
+            ),
+        ),
         project_heartbeat_lane(
             lane_id="nexus-brain",
             label="NexusBrain authority and selected brain-bearing nodes",
@@ -195,7 +214,7 @@ def project_heartbeat_payload(
     degraded_lanes = [lane for lane in lanes if lane["status"] != "alive"]
     status = "alive" if not degraded_lanes else "degraded"
     failure_recovery_governance = project_heartbeat_failure_recovery_governance(
-        blocked=blocked,
+        blocked=blocked or source_runtime_degraded,
         health_event=health_event,
         self_healing_route_around=self_healing_route_around,
         checkpoint=checkpoint,
@@ -221,6 +240,8 @@ def project_heartbeat_payload(
         "generated_at": created_at,
         "source_run_id": run_id,
         "source_trace_ref": f"trace::{run_id}",
+        "source_brain_generate_status": normalized_brain_generate_status,
+        "source_runtime_degraded": source_runtime_degraded,
         "session_ref_digest": privacy_digest(session_id),
         "lane_count": len(lanes),
         "alive_lane_count": len(alive_lanes),
@@ -360,3 +381,20 @@ def _node_id(node: Any) -> str:
 
 def _node_type(node: Any) -> str:
     return str(getattr(node, "node_type", "") or "")
+
+
+def _normalized_brain_generate_status(value: Any) -> str:
+    status = str(value or "unknown").strip().lower()
+    if status not in {
+        "blocked",
+        "completed",
+        "covered",
+        "error",
+        "failed",
+        "ok",
+        "runtime-unavailable",
+        "unknown",
+        "warning",
+    }:
+        return "unknown"
+    return status

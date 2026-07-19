@@ -89,6 +89,79 @@ class HarnessModelRouter:
             ],
         }
 
+    def compose_prompt(
+        self,
+        *,
+        base_prompt: str,
+        provider_overlay: str | dict[str, Any] = "",
+        model_family_overlay: str | dict[str, Any] = "",
+        local_model_overlay: str | dict[str, Any] = "",
+        provider_id: str = "default",
+        model_family: str = "default",
+        runtime: str = "default",
+        local_model: bool = False,
+    ) -> dict[str, Any]:
+        context = {
+            "provider_id": provider_id,
+            "model_family": model_family,
+            "runtime": runtime,
+            "local_model": local_model,
+        }
+        base = base_prompt.strip()
+        raw_layers = (
+            ("provider", provider_overlay, 100),
+            ("model_family", model_family_overlay, 200),
+            ("local_model", local_model_overlay, 300),
+        )
+        overlays = [
+            normalized
+            for layer_id, value, default_priority in raw_layers
+            if (normalized := _normalize_prompt_overlay(layer_id, value, default_priority)) is not None
+        ]
+        incompatible = [
+            overlay["overlay_id"]
+            for overlay in overlays
+            if not _overlay_applies(overlay["applies_to"], context)
+        ]
+        conflicts = _overlay_conflicts(overlays)
+        blocked = bool(incompatible or conflicts)
+
+        seen: set[str] = set()
+        segments: list[str] = [base] if base else []
+        applied_layers: list[str] = ["base"] if base else []
+        deduplicated_layers: list[str] = []
+        if base:
+            seen.add(base)
+        if not blocked:
+            for overlay in sorted(overlays, key=lambda item: (item["priority"], item["layer_id"])):
+                content = overlay["content"]
+                if content in seen:
+                    deduplicated_layers.append(overlay["layer_id"])
+                    continue
+                seen.add(content)
+                segments.append(content)
+                applied_layers.append(overlay["layer_id"])
+        return {
+            "prompt": "\n\n".join(segments),
+            "applied_layers": applied_layers,
+            "deduplicated_layers": deduplicated_layers,
+            "decision": "blocked" if blocked else "allow",
+            "compatibility_receipt": {
+                "target_context": context,
+                "compatible_overlay_ids": [
+                    overlay["overlay_id"]
+                    for overlay in overlays
+                    if overlay["overlay_id"] not in incompatible
+                ],
+                "incompatible_overlay_ids": incompatible,
+            },
+            "conflict_receipt": {
+                "conflict_count": len(conflicts),
+                "conflicts": conflicts,
+            },
+            "raw_prompt_persisted": False,
+        }
+
     def recommend(self, request: HarnessRouteRequest | dict[str, Any]) -> dict[str, Any]:
         normalized = request if isinstance(request, HarnessRouteRequest) else HarnessRouteRequest.model_validate(request)
         blocked_reasons = _blocked_reasons(normalized)
@@ -179,6 +252,92 @@ class HarnessModelRouter:
         }
         self._recommendations.append(result)
         return result
+
+
+def _normalize_prompt_overlay(
+    layer_id: str,
+    value: str | dict[str, Any],
+    default_priority: int,
+) -> dict[str, Any] | None:
+    if isinstance(value, str):
+        content = value.strip()
+        if not content:
+            return None
+        return {
+            "layer_id": layer_id,
+            "overlay_id": layer_id,
+            "content": content,
+            "applies_to": {},
+            "priority": default_priority,
+            "insert_after": "base",
+            "conflicts_with": [],
+        }
+    if not isinstance(value, dict):
+        raise TypeError(f"{layer_id}_overlay must be a string or object")
+    content = str(value.get("content") or "").strip()
+    if not content:
+        return None
+    priority = value.get("priority", default_priority)
+    if isinstance(priority, bool) or not isinstance(priority, int):
+        raise TypeError(f"{layer_id}_overlay priority must be an integer")
+    applies_to = value.get("applies_to") or {}
+    if not isinstance(applies_to, dict):
+        raise TypeError(f"{layer_id}_overlay applies_to must be an object")
+    conflicts_with = value.get("conflicts_with") or []
+    if not isinstance(conflicts_with, list) or not all(isinstance(item, str) for item in conflicts_with):
+        raise TypeError(f"{layer_id}_overlay conflicts_with must be a list of strings")
+    return {
+        "layer_id": layer_id,
+        "overlay_id": str(value.get("overlay_id") or layer_id),
+        "content": content,
+        "applies_to": dict(applies_to),
+        "priority": priority,
+        "insert_after": str(value.get("insert_after") or "base"),
+        "conflicts_with": list(dict.fromkeys(conflicts_with)),
+    }
+
+
+def _overlay_applies(applies_to: dict[str, Any], context: dict[str, Any]) -> bool:
+    return all(str(context.get(key)) == str(expected) for key, expected in applies_to.items())
+
+
+def _overlay_conflicts(overlays: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    conflicts: list[dict[str, Any]] = []
+    ids = {overlay["overlay_id"] for overlay in overlays}
+    seen_ids: set[str] = set()
+    slots: dict[tuple[str, int], str] = {}
+    explicit_pairs: set[tuple[str, str]] = set()
+    for overlay in overlays:
+        overlay_id = overlay["overlay_id"]
+        if overlay_id in seen_ids:
+            conflicts.append({"conflict_type": "duplicate_overlay_id", "overlay_id": overlay_id})
+        seen_ids.add(overlay_id)
+        slot = (overlay["insert_after"], overlay["priority"])
+        if slot in slots:
+            conflicts.append(
+                {
+                    "conflict_type": "same_insert_slot_and_priority",
+                    "overlay_id": overlay_id,
+                    "conflicts_with": slots[slot],
+                }
+            )
+        else:
+            slots[slot] = overlay_id
+        for target in overlay["conflicts_with"]:
+            if target not in ids:
+                continue
+            pair = tuple(sorted((overlay_id, target)))
+            if pair in explicit_pairs:
+                continue
+            explicit_pairs.add(pair)
+            conflicts.append(
+                {
+                    "conflict_type": "explicit_conflict",
+                    "overlay_id": overlay_id,
+                    "conflicts_with": target,
+                }
+            )
+    return conflicts
 
 
 def _default_routes() -> list[dict[str, Any]]:

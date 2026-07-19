@@ -165,6 +165,327 @@ def test_default_primitive_registry_assimilates_portable_and_existing_moe_capabi
     ]
 
 
+def test_inference_method_record_supports_whole_engine_and_primitive_assimilation():
+    from nexusnet.runtime.evolutionary_inference import InferenceMethodRecord
+
+    method = InferenceMethodRecord(
+        method_id="runtime::example",
+        version="1.2.3",
+        source_kind="external-engine",
+        source_digest="sha256:source",
+        artifact_digest="sha256:artifact",
+        rights={
+            "inference": "allowed",
+            "evaluation": "allowed",
+            "derivative": "review-required",
+            "redistribution": "blocked",
+        },
+        claimed_capabilities=["paged-kv", "continuous-batching"],
+        reproduced_capabilities=["paged-kv"],
+        supported_model_families=["transformer"],
+        supported_operator_families=["attention", "gemm"],
+        supported_formats=["safetensors"],
+        supported_precisions=["fp16", "int8"],
+        supported_hardware=["cuda"],
+        tunable_controls=["context_tokens", "runtime_batch_tokens"],
+        known_conflicts=[],
+        fallback_method_id="runtime::portable-reference",
+        maturity="reproduced",
+        assimilation_paths=["whole-engine", "primitive"],
+    )
+
+    assert method.assimilation_paths == ["whole-engine", "primitive"]
+    assert method.reproduced_capabilities == ["paged-kv"]
+    assert method.rights["redistribution"] == "blocked"
+
+
+def test_execution_fit_receipt_accounts_for_moe_kv_and_unsupported_controls():
+    from nexusnet.runtime.evolutionary_inference import (
+        ExecutionFitEstimator,
+        ExecutionFitRequest,
+        HardwareNode,
+        RuntimeCapabilityProfile,
+        RuntimeModelMetadata,
+        fingerprint_from_runtime_metadata,
+    )
+
+    graph = HardwareCapabilityDiscoverer(
+        command_runner=lambda command, timeout: (_ for _ in ()).throw(FileNotFoundError(command[0])),
+        system_name="Linux",
+        machine="x86_64",
+        processor_name="CPU",
+        logical_cpu_count=16,
+        total_memory_bytes=64 * 1024**3,
+        disk_usage_reader=lambda _: SimpleNamespace(total=2 * 1024**4, free=1024**4),
+        storage_root="/",
+    ).discover()
+    graph = graph.model_copy(
+        update={
+            "nodes": graph.nodes
+            + [
+                HardwareNode(
+                    node_id="gpu:cuda:0",
+                    kind="gpu",
+                    name="constrained-gpu",
+                    backend="cuda",
+                    memory_bytes=8 * 1024**3,
+                    capabilities=["cuda", "device-memory"],
+                )
+            ]
+        }
+    )
+    fingerprint = fingerprint_from_runtime_metadata(
+        RuntimeModelMetadata(
+            architecture_family="sparse-transformer",
+            parameter_count=46_700_000_000,
+            tensor_bytes=26 * 1024**3,
+            quantization="q4_k_m",
+            context_length=32768,
+            layer_count=32,
+            expert_count=8,
+            experts_per_token=2,
+            operator_families=["attention", "grouped-gemm"],
+            tensor_groups=[
+                {"group_id": "dense", "bytes": 6 * 1024**3, "dtype": "int4", "layout": "row-major"},
+                {"group_id": "experts", "bytes": 20 * 1024**3, "dtype": "int4", "layout": "expert-major"},
+            ],
+            state_and_kv_contract={"kind": "paged-kv", "bytes_per_token": 131072},
+            sparsity_and_router_contract={"kind": "top-k", "k": 2},
+            rights_and_artifact_refs=["artifact::trusted-model-metadata"],
+        )
+    )
+    capabilities = RuntimeCapabilityProfile(
+        runtime_name="runtime::example",
+        runtime_version="1.2.3",
+        implementation_digest="sha256:runtime",
+        capability_state="verified",
+        supported_controls=["context_tokens", "runtime_batch_tokens", "cpu_moe"],
+        observable_controls=["context_tokens", "runtime_batch_tokens", "cpu_moe"],
+    )
+    request = ExecutionFitRequest(
+        request_id="fit-request::one",
+        plan_id="plan::mixed-moe",
+        model_fingerprint=fingerprint,
+        hardware=graph,
+        runtime_capabilities=capabilities,
+        requested_context_tokens=8192,
+        max_new_tokens=256,
+        batch_size=1,
+        concurrent_requests=1,
+        runtime_buffer_bytes=512 * 1024**2,
+        requested_controls={
+            "context_tokens": 8192,
+            "runtime_batch_tokens": 256,
+            "cpu_moe": True,
+            "cache_type_k": "q8_0",
+        },
+        required_controls=["context_tokens", "cpu_moe"],
+    )
+
+    receipt = ExecutionFitEstimator().evaluate(request)
+
+    assert receipt.decision == "degraded"
+    assert receipt.dense_weight_bytes == 6 * 1024**3
+    assert receipt.expert_weight_bytes == 20 * 1024**3
+    assert receipt.active_expert_bytes == 5 * 1024**3
+    assert receipt.kv_cache_bytes == 8192 * 131072
+    assert receipt.placement["dense"] == "gpu"
+    assert receipt.placement["experts"] == "ram"
+    assert {binding.control: binding.status for binding in receipt.control_bindings} == {
+        "cache_type_k": "unsupported",
+        "context_tokens": "applied",
+        "cpu_moe": "applied",
+        "runtime_batch_tokens": "applied",
+    }
+    assert "optional-control-unsupported" in receipt.reason_codes
+    assert "required-control-unsupported" not in receipt.reason_codes
+
+    missing_required = ExecutionFitEstimator().evaluate(
+        request.model_copy(update={"required_controls": ["context_tokens", "threads"]})
+    )
+    assert missing_required.decision == "rejected"
+    assert {binding.control: binding.status for binding in missing_required.control_bindings}["threads"] == "rejected"
+    assert "required-control-missing" in missing_required.reason_codes
+
+    multi_gpu_graph = graph.model_copy(
+        update={
+            "nodes": graph.nodes
+            + [
+                HardwareNode(
+                    node_id="gpu:cuda:1",
+                    kind="gpu",
+                    name="second-constrained-gpu",
+                    backend="cuda",
+                    memory_bytes=8 * 1024**3,
+                    capabilities=["cuda", "device-memory"],
+                )
+            ]
+        }
+    )
+    compact_fingerprint = fingerprint_from_runtime_metadata(
+        RuntimeModelMetadata(
+            architecture_family="dense-transformer",
+            parameter_count=20_000_000_000,
+            tensor_bytes=12 * 1024**3,
+            quantization="q4_k_m",
+            context_length=32768,
+            layer_count=32,
+            operator_families=["attention", "gemm"],
+            tensor_groups=[
+                {"group_id": "dense", "bytes": 12 * 1024**3, "dtype": "int4", "layout": "row-major"}
+            ],
+            state_and_kv_contract={"kind": "paged-kv", "bytes_per_token": 131072},
+            rights_and_artifact_refs=["artifact::trusted-model-metadata"],
+        )
+    )
+    multi_gpu_capabilities = capabilities.model_copy(
+        update={
+            "supported_controls": capabilities.supported_controls + ["tensor_split"],
+            "observable_controls": capabilities.observable_controls + ["tensor_split"],
+        }
+    )
+    conservative_receipt = ExecutionFitEstimator().evaluate(
+        request.model_copy(
+            update={
+                "model_fingerprint": compact_fingerprint,
+                "hardware": multi_gpu_graph,
+                "runtime_capabilities": multi_gpu_capabilities,
+                "requested_controls": {"context_tokens": 8192},
+                "required_controls": ["context_tokens"],
+            }
+        )
+    )
+    split_receipt = ExecutionFitEstimator().evaluate(
+        request.model_copy(
+            update={
+                "model_fingerprint": compact_fingerprint,
+                "hardware": multi_gpu_graph,
+                "runtime_capabilities": multi_gpu_capabilities,
+                "requested_controls": {"context_tokens": 8192, "tensor_split": "0.5,0.5"},
+                "required_controls": ["context_tokens", "tensor_split"],
+            }
+        )
+    )
+
+    assert conservative_receipt.placement["dense"] == "ram"
+    assert split_receipt.placement["dense"] == "gpu"
+
+    constrained_nodes = [
+        node.model_copy(update={"memory_bytes": 15 * 1024**3})
+        if node.kind == "system-ram"
+        else node
+        for node in multi_gpu_graph.nodes
+        if node.kind != "gpu"
+    ]
+    constrained_receipt = ExecutionFitEstimator().evaluate(
+        request.model_copy(
+            update={
+                "model_fingerprint": compact_fingerprint,
+                "hardware": multi_gpu_graph.model_copy(update={"nodes": constrained_nodes}),
+                "runtime_capabilities": multi_gpu_capabilities,
+                "requested_controls": {"context_tokens": 8192},
+                "required_controls": ["context_tokens"],
+            }
+        )
+    )
+    context_binding = {
+        binding.control: binding for binding in constrained_receipt.control_bindings
+    }["context_tokens"]
+
+    assert constrained_receipt.decision == "degraded"
+    assert 256 < constrained_receipt.selected_context_tokens < 8192
+    assert context_binding.applied_value == constrained_receipt.selected_context_tokens
+    assert context_binding.status == "degraded"
+
+    unbound_context_receipt = ExecutionFitEstimator().evaluate(
+        request.model_copy(
+            update={
+                "model_fingerprint": compact_fingerprint,
+                "hardware": multi_gpu_graph.model_copy(update={"nodes": constrained_nodes}),
+                "runtime_capabilities": multi_gpu_capabilities,
+                "requested_controls": {},
+                "required_controls": [],
+            }
+        )
+    )
+    assert unbound_context_receipt.decision == "rejected"
+    assert "context-reduction-unbound" in unbound_context_receipt.reason_codes
+
+
+def test_execution_fit_reconciliation_rejects_cross_plan_and_requires_rollback_on_memory_violation():
+    from nexusnet.runtime.evolutionary_inference import (
+        ExecutionFitReceipt,
+        ExecutionFitReconciler,
+        RuntimeObservation,
+    )
+
+    receipt = ExecutionFitReceipt(
+        receipt_id="execution-fit::one",
+        request_id="fit-request::one",
+        plan_id="plan::one",
+        model_fingerprint_id="model-fingerprint::one",
+        hardware_fingerprint="hardware::one",
+        runtime_name="runtime::one",
+        decision="admitted",
+        requested_context_tokens=4096,
+        selected_context_tokens=4096,
+        safe_context_tokens=8192,
+        dense_weight_bytes=1024,
+        expert_weight_bytes=0,
+        active_expert_bytes=0,
+        kv_cache_bytes=512,
+        runtime_buffer_bytes=256,
+        headroom_bytes=256,
+        estimated_peak_ram_bytes=2048,
+        estimated_peak_vram_bytes=0,
+        placement={"dense": "ram", "experts": "ram", "kv-cache": "ram", "runtime-buffers": "ram"},
+        predicted_bottleneck="ram",
+        confidence=1.0,
+    )
+    reconciler = ExecutionFitReconciler(max_memory_regression_ratio=0.05)
+
+    healthy = reconciler.reconcile(
+        receipt,
+        RuntimeObservation(
+            plan_id="plan::one",
+            latency_ms=10,
+            quality_equivalent=True,
+            stable=True,
+            peak_ram_bytes=2000,
+            peak_vram_bytes=0,
+        ),
+    )
+    cross_plan = reconciler.reconcile(
+        receipt,
+        RuntimeObservation(
+            plan_id="plan::other",
+            latency_ms=10,
+            quality_equivalent=True,
+            stable=True,
+            peak_ram_bytes=2000,
+            peak_vram_bytes=0,
+        ),
+    )
+    memory_violation = reconciler.reconcile(
+        receipt,
+        RuntimeObservation(
+            plan_id="plan::one",
+            latency_ms=10,
+            quality_equivalent=True,
+            stable=True,
+            peak_ram_bytes=4096,
+            peak_vram_bytes=0,
+        ),
+    )
+
+    assert healthy.status == "healthy"
+    assert healthy.reason_codes == ["fit-observation-within-bounds"]
+    assert cross_plan.status == "rejected"
+    assert cross_plan.reason_codes == ["fit-observation-plan-mismatch"]
+    assert memory_violation.status == "rollback-required"
+    assert memory_violation.reason_codes == ["peak-ram-exceeded-fit-receipt"]
+
+
 def test_feasibility_selects_global_primitives_without_mutating_policy():
     cpu_graph = HardwareCapabilityDiscoverer(
         command_runner=lambda command, timeout: (_ for _ in ()).throw(FileNotFoundError(command[0])),

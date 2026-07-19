@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import shutil
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -130,6 +132,48 @@ def test_hive_neural_substrate_forward_pass_creates_sparse_recurrent_trace(tmp_p
     ]
 
 
+def test_hive_artifact_summary_cache_reuses_reads_and_invalidates_after_forward_pass(tmp_path: Path, monkeypatch):
+    substrate = HiveNeuralSubstrate(artifacts_dir=tmp_path)
+    first = substrate.run_forward_pass(
+        HiveForwardPassRequest(
+            session_id="artifact-cache-session",
+            task_id="artifact-cache-first",
+            intent="Record the first cached hive forward pass.",
+        )
+    )
+    original_read_text = Path.read_text
+    artifact_reads: list[Path] = []
+
+    def counted_read_text(path: Path, *args, **kwargs):
+        if path.suffix == ".json" and tmp_path in path.parents:
+            artifact_reads.append(path)
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", counted_read_text)
+
+    first_summary = substrate.summary(session_id="artifact-cache-session")
+    first_read_count = len(artifact_reads)
+    second_summary = substrate.summary(session_id="artifact-cache-session")
+
+    assert first_summary["latest_forward_pass"]["run_id"] == first["run_id"]
+    assert second_summary["latest_forward_pass"]["run_id"] == first["run_id"]
+    assert first_read_count > 0
+    assert len(artifact_reads) == first_read_count
+
+    second = substrate.run_forward_pass(
+        HiveForwardPassRequest(
+            session_id="artifact-cache-session",
+            task_id="artifact-cache-second",
+            intent="Record the second cached hive forward pass.",
+        )
+    )
+    refreshed_summary = substrate.summary(session_id="artifact-cache-session")
+
+    assert len(artifact_reads) > first_read_count
+    assert refreshed_summary["latest_forward_pass"]["run_id"] == second["run_id"]
+    assert refreshed_summary["runtime_growth"]["runtime_interaction_count"] >= 2
+
+
 def test_hive_forward_pass_emits_project_heartbeat_from_core_organs(tmp_path: Path):
     substrate = HiveNeuralSubstrate(artifacts_dir=tmp_path)
     session_id = "project-heartbeat-session"
@@ -168,6 +212,8 @@ def test_hive_forward_pass_emits_project_heartbeat_from_core_organs(tmp_path: Pa
     assert heartbeat["honest_status_label"] == "core-substrate-heartbeat-alive"
     assert heartbeat["source_run_id"] == result["run_id"]
     assert heartbeat["source_trace_ref"] == f"trace::{result['run_id']}"
+    assert heartbeat["source_brain_generate_status"] == "unknown"
+    assert heartbeat["source_runtime_degraded"] is False
     assert heartbeat["lane_count"] == len(heartbeat["lanes"])
     assert heartbeat["alive_lane_count"] == heartbeat["lane_count"]
     assert heartbeat["degraded_lane_count"] == 0
@@ -190,6 +236,8 @@ def test_hive_forward_pass_emits_project_heartbeat_from_core_organs(tmp_path: Pa
     assert all(lane["status"] == "alive" for lane in lanes.values())
     assert all(lane["raw_content_included"] is False for lane in lanes.values())
     assert all(lane["active_production_mutation_allowed"] is False for lane in lanes.values())
+    assert lanes["model-serving-runtime"]["status"] == "alive"
+    assert lanes["model-serving-runtime"]["blockers"] == []
     assert lanes["growth-engine"]["artifact_refs"]
     assert lanes["federation-runtime"]["artifact_refs"]
     assert lanes["dream-runtime"]["artifact_refs"]
@@ -206,6 +254,8 @@ def test_hive_forward_pass_emits_project_heartbeat_from_core_organs(tmp_path: Pa
     assert native_record["source_run_id"] == result["run_id"]
     assert native_record["replay_ref"] == heartbeat["native_replay_ref"]
     assert native_record["session_ref_digest"] == heartbeat["session_ref_digest"]
+    assert native_record["source_brain_generate_status"] == "unknown"
+    assert native_record["source_runtime_degraded"] is False
     assert native_record["raw_content_included"] is False
     assert native_record["active_production_mutation_allowed"] is False
     assert native_record["active_production_mutated"] is False
@@ -310,6 +360,121 @@ def test_hive_substrate_api_exposes_project_heartbeat_from_forward_pass(tmp_path
     assert "SECRET-API-HEARTBEAT" not in serialized
     assert session_id not in serialized
     assert str(project_root) not in serialized
+
+
+def test_hive_substrate_api_forward_pass_delivers_sanitized_packet_to_approved_peer(tmp_path: Path):
+    received_payloads: list[dict] = []
+
+    class _PeerImportHandler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802 - HTTP handler contract
+            body = self.rfile.read(int(self.headers.get("Content-Length") or "0"))
+            received_payloads.append(json.loads(body.decode("utf-8")))
+            response = json.dumps(
+                {
+                    "status": "quarantined-shadow-accepted",
+                    "import_id": "remote-direct-hive-import::accepted",
+                    "raw_content_included": False,
+                    "contains_personal_data": False,
+                }
+            ).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            return None
+
+    peer_server = ThreadingHTTPServer(("127.0.0.1", 0), _PeerImportHandler)
+    peer_thread = threading.Thread(target=peer_server.serve_forever, daemon=True)
+    peer_thread.start()
+    try:
+        project_root = make_project(tmp_path)
+        client = TestClient(create_app(str(project_root)))
+        session_id = "api-direct-hive-federation-private-session-SECRET"
+        prompt = "Direct Hive federation SECRET-DIRECT-HIVE must remain sanitized."
+        peer_node_id = "peer-direct-hive-approved-delivery"
+        import_url = (
+            f"http://127.0.0.1:{peer_server.server_port}"
+            "/ops/wrapper/federated-packets/import"
+        )
+
+        approval = client.post(
+            "/ops/approvals",
+            json={
+                "subject": "release-wrapper-federated-peer-delivery",
+                "decision": "approved",
+                "approver": "operator@example.invalid",
+                "rationale": "Approve sanitized direct Hive API federation delivery.",
+                "metadata": {"peer_node_id": peer_node_id, "import_url": import_url},
+            },
+        )
+        assert approval.status_code == 200
+        assert client.post(
+            "/ops/wrapper/federated-peers",
+            json={
+                "peer_node_id": peer_node_id,
+                "import_url": import_url,
+                "approval_decision_id": approval.json()["decision_id"],
+            },
+        ).status_code == 200
+
+        response = client.post(
+            "/ops/brain/hive-substrate/forward-pass",
+            json={
+                "session_id": session_id,
+                "task_id": "api-direct-hive-federation",
+                "intent": prompt,
+                "source_ref": "operator::direct-hive-federation",
+                "requested_capabilities": ["runtime", "memory", "federation"],
+                "requested_actions": [
+                    {"action_id": "inspect-direct-hive", "action_type": "read", "target_ref": "hive"}
+                ],
+                "max_loops": 2,
+            },
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        delivery = payload["native_federated_peer_delivery"]
+        assert delivery["status"] == "live-shadow-delivery-active"
+        assert delivery["delivery_count"] == 1
+        assert delivery["packet_ref"].startswith("federated-packet::")
+        assert delivery["privacy_consent_record_id"]
+        assert delivery["raw_content_included"] is False
+        assert delivery["contains_personal_data"] is False
+        assert len(received_payloads) == 1
+        assert received_payloads[0]["peer_node_id"] == peer_node_id
+        assert received_payloads[0]["packet"]["raw_content_included"] is False
+        assert received_payloads[0]["packet"]["contains_personal_data"] is False
+        assert received_payloads[0]["packet"]["consent_policy"]["sanitized_metadata_federation_allowed"] is True
+
+        deliveries = client.get(
+            "/ops/wrapper/federated-deliveries", params={"session_id": session_id}
+        ).json()
+        assert deliveries["acknowledged_delivery_count"] == 1
+        assert deliveries["latest_delivery"]["status"] == "acknowledged-shadow-accepted"
+
+        replayed = TestClient(create_app(str(project_root))).get(
+            "/ops/wrapper/federated-deliveries", params={"session_id": session_id}
+        ).json()
+        assert replayed["replay"]["status"] == "replayed"
+        assert replayed["acknowledged_delivery_count"] == 1
+
+        serialized = json.dumps(
+            {"delivery": delivery, "deliveries": deliveries, "replayed": replayed},
+            sort_keys=True,
+        )
+        assert prompt not in serialized
+        assert "SECRET-DIRECT-HIVE" not in serialized
+        assert session_id not in serialized
+        assert peer_node_id not in serialized
+        assert import_url not in serialized
+    finally:
+        peer_server.shutdown()
+        peer_server.server_close()
+        peer_thread.join(timeout=5)
 
 
 def test_hive_forward_pass_emits_first_class_neural_pathway_map(tmp_path: Path):
@@ -1488,6 +1653,34 @@ def test_sanitized_federated_learning_packet_is_mandatory_and_raw_private_conten
     assert packet["sanitization"]["raw_memory_refs_exported"] is False
     assert packet["sanitization"]["raw_action_targets_exported"] is False
     assert packet["privacy_class"] == "sanitized-metadata-only"
+    plane_sync = packet["per_plane_sync"]
+    assert plane_sync["status"] == "partial-live-producer-evidence"
+    assert plane_sync["policy_ref"] == "canon::C29M0037"
+    by_plane = {entry["canonical_plane"]: entry for entry in plane_sync["planes"]}
+    assert by_plane["episodic"]["sync_allowed"] is False
+    assert by_plane["episodic"]["payload_mode"] == "none"
+    assert by_plane["semantic"]["sync_allowed"] is True
+    assert by_plane["semantic"]["payload_mode"] == "compressed-embedding-digest-only"
+    assert by_plane["semantic"]["producer_status"] == "live-sanitized-producer"
+    assert by_plane["semantic"]["producer_ref"].startswith("embedding::")
+    assert by_plane["temporal"]["payload_mode"] == "causal-graph-digest-only"
+    assert by_plane["temporal"]["producer_status"] == "live-sanitized-producer"
+    assert by_plane["temporal"]["producer_ref"].startswith("temporal::")
+    assert by_plane["tool-reliability"]["producer_status"] == "live-sanitized-producer"
+    assert by_plane["tool-reliability"]["action_count"] == 1
+    assert by_plane["tool-reliability"]["ungated_write_count"] == 0
+    assert by_plane["safety"]["producer_status"] == "live-sanitized-producer"
+    assert by_plane["safety"]["hard_fail_count"] == 0
+    assert by_plane["safety"]["immune_finding_count"] == 0
+    assert by_plane["dreams"]["producer_status"] == "live-sanitized-producer"
+    assert by_plane["dreams"]["dream_candidate_count"] == 2
+    assert by_plane["dreams"]["critic_review_count"] == 2
+    assert by_plane["dreams"]["producer_ref"].startswith("dream-cycle::")
+    assert by_plane["tool-reliability"]["payload_mode"] == "sanitized-reliability-statistics-only"
+    assert by_plane["personality"]["payload_mode"] == "sanitized-preference-vector-only"
+    assert by_plane["safety"]["payload_mode"] == "safe-mode-correction-metadata-only"
+    assert by_plane["dreams"]["payload_mode"] == "distilled-summary-only"
+    assert all(entry["raw_content_included"] is False for entry in plane_sync["planes"])
     security = packet["security_envelope"]
     assert security["contract_id"] == "signed-secure-federation-packet-v0"
     assert security["signed_packet"]["signature"].startswith("hive_sig_")
@@ -1502,6 +1695,25 @@ def test_sanitized_federated_learning_packet_is_mandatory_and_raw_private_conten
     assert "Project Caldera" not in str(packet)
     assert "private.txt" not in str(packet)
     assert r"C:\Users\ChrisBoyd" not in str(packet)
+
+    replay = substrate.replay(
+        session_id="sanitized-federation-session",
+        run_id=result["run_id"],
+    )
+    replayed_plane_sync = replay["federated_per_plane_sync"]
+    assert replayed_plane_sync["status"] == "partial-live-producer-evidence"
+    assert replayed_plane_sync["packet_ref"] == packet["packet_id"]
+    assert replayed_plane_sync["raw_content_included"] is False
+    assert replayed_plane_sync["contains_personal_data"] is False
+    replayed_by_plane = {
+        entry["canonical_plane"]: entry for entry in replayed_plane_sync["planes"]
+    }
+    assert replayed_by_plane["semantic"]["producer_status"] == "live-sanitized-producer"
+    assert replayed_by_plane["dreams"]["dream_candidate_count"] == 2
+    assert "federated_per_plane_sync" in replay["control_panel_replay"]["available_chains"]
+    assert "Project Caldera" not in str(replayed_plane_sync)
+    assert "private.txt" not in str(replayed_plane_sync)
+    assert r"C:\Users\ChrisBoyd" not in str(replayed_plane_sync)
 
     assert "federated_learning_packet_ready" in {
         message["message_type"] for message in result["neural_bus"]["messages"]
@@ -1519,6 +1731,81 @@ def test_sanitized_federated_learning_packet_is_mandatory_and_raw_private_conten
     component_ids = {component["component_id"] for component in scorecard["substrate_components"]}
     assert "FederatedLearningSanitizer" in component_ids
     assert "ForwardPacketFederationSecurity" in component_ids
+
+
+def test_hive_personality_preferences_persist_locally_and_federate_only_with_explicit_opt_in(
+    tmp_path: Path,
+):
+    substrate = HiveNeuralSubstrate(artifacts_dir=tmp_path)
+    session_id = "personality-preference-native-session"
+    secret = "SECRET-PERSONALITY-PREFERENCE-NATIVE"
+
+    opted_in = substrate.run_forward_pass(
+        HiveForwardPassRequest(
+            session_id=session_id,
+            task_id="personality-preference-opt-in",
+            intent=f"Never export {secret} from the native Hive preference ledger.",
+            metadata={
+                "personality_preference_keys": ["concise", "structured", secret],
+                "personal_data_federation_allowed": True,
+                "privacy_consent_record_id": "consent-opt-in-native",
+            },
+        )
+    )
+
+    opted_in_ledger = opted_in["personality_preference_ledger"]
+    opted_in_personality = next(
+        plane
+        for plane in opted_in["federated_learning_packet"]["per_plane_sync"]["planes"]
+        if plane["canonical_plane"] == "personality"
+    )
+    assert opted_in_ledger["session_ref_digest"]
+    assert opted_in_ledger["preference_keys"] == ["concise", "structured"]
+    assert opted_in_ledger["preference_feature_count"] == 2
+    assert opted_in_ledger["personal_data_federation_allowed"] is True
+    assert opted_in_ledger["raw_content_included"] is False
+    assert opted_in_ledger["contains_personal_data"] is False
+    assert opted_in_personality["producer_status"] == "live-sanitized-producer"
+    assert opted_in_personality["producer_ref"] == (
+        f"preference-vector::{opted_in_ledger['preference_ledger_id']}"
+    )
+    assert opted_in_personality["preference_feature_count"] == 2
+
+    revoked = substrate.run_forward_pass(
+        HiveForwardPassRequest(
+            session_id=session_id,
+            task_id="personality-preference-revoked",
+            intent=f"Revocation must stop personality federation without exporting {secret}.",
+            metadata={
+                "personality_preference_keys": ["detailed", secret],
+                "personal_data_federation_allowed": False,
+                "privacy_consent_record_id": "consent-revoked-native",
+            },
+        )
+    )
+    revoked_ledger = revoked["personality_preference_ledger"]
+    revoked_personality = next(
+        plane
+        for plane in revoked["federated_learning_packet"]["per_plane_sync"]["planes"]
+        if plane["canonical_plane"] == "personality"
+    )
+    assert revoked_ledger["preference_keys"] == ["detailed"]
+    assert revoked_ledger["personal_data_federation_allowed"] is False
+    assert revoked_personality["producer_status"] == "live-local-only-consent-required"
+    assert "producer_ref" not in revoked_personality
+    assert revoked_personality["preference_feature_count"] == 0
+
+    restored = HiveNeuralSubstrate(artifacts_dir=tmp_path)
+    replay = restored.replay(session_id=session_id)
+    chain = replay["personality_preference_chain"]
+    assert [entry["preference_ledger_id"] for entry in chain] == [
+        revoked_ledger["preference_ledger_id"],
+        opted_in_ledger["preference_ledger_id"],
+    ]
+    assert replay["control_panel_replay"]["chain_counts"]["personality_preference_chain"] == 2
+    assert "personality_preference_chain" in replay["control_panel_replay"]["available_chains"]
+    assert secret not in json.dumps({"chain": chain, "packet": opted_in["federated_learning_packet"]})
+    assert session_id not in json.dumps({"chain": chain, "packet": opted_in["federated_learning_packet"]})
 
 
 def test_hive_forward_pass_records_shared_runtime_growth_receipt_without_private_content(tmp_path: Path):
@@ -1900,14 +2187,25 @@ def test_native_hive_growth_proposal_runs_admin_sandbox_apply_and_rollback(tmp_p
     assert action_lane["latest_action_statuses"]["proposal"] == "proposed"
     assert action_lane["latest_action_statuses"]["admin_approval"] == "pending-admin-approval"
 
+    approval = client.post(
+        "/ops/approvals",
+        json={
+            "subject": "release-wrapper-autonomous-update",
+            "decision": "approved",
+            "approver": "operator@example.invalid",
+            "rationale": "Approve the native Hive sandbox-only growth lifecycle.",
+            "metadata": {"update_id": update_id},
+        },
+    )
+    assert approval.status_code == 200
+
     run_response = client.post(
         action_lane["run_readiness_evidence_ref"],
         json={
             "session_id": session_id,
             "command": "pytest tests/native_hive_growth_runner_probe_test.py -q",
             "timeout_seconds": 30,
-            "approved_by": "admin",
-            "approval_ref": "operator-review::native-hive-growth-runner",
+            "approval_decision_id": approval.json()["decision_id"],
         },
     )
     assert run_response.status_code == 200
@@ -3457,6 +3755,10 @@ def test_hive_neural_substrate_api_and_control_panel_surface(tmp_path: Path):
     assert replay_payload["rollback_chain"][0]["rollback_id"] == rollback_payload["rollback_id"]
     assert replay_payload["rewind_chain"][0]["rewind_id"] == rewind_payload["rewind_id"]
     assert replay_payload["global_federation_review_chain"][0]["review_id"] == global_federation_payload["review_id"]
+    assert replay_payload["federated_per_plane_sync"]["status"] == "partial-live-producer-evidence"
+    assert replay_payload["federated_per_plane_sync"]["raw_content_included"] is False
+    assert replay_payload["federated_per_plane_sync"]["contains_personal_data"] is False
+    assert "federated_per_plane_sync" in replay_payload["control_panel_replay"]["available_chains"]
     assert replay_payload["control_panel_replay"]["available"] is True
 
     health_response = client.get("/ops/brain/hive-substrate/health", params={"session_id": "api-hive-session"})
@@ -3479,6 +3781,8 @@ def test_hive_neural_substrate_api_and_control_panel_surface(tmp_path: Path):
     assert "/ops/brain/canon/hive-substrate" in app_js
     assert "/ops/brain/hive-substrate/replay" in app_js
     assert "renderHiveNeuralSubstrateReplayDrilldown" in app_js
+    assert "federatedPerPlaneSync" in app_js
+    assert "federation plane sync" in app_js
     assert "laminarMicrocircuitChain" in app_js
     assert "neuralPathwayChain" in app_js
     assert "synapticTransmissionChain" in app_js

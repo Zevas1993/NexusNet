@@ -3,18 +3,24 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from .advanced import AdvancedDevelopmentalRuntime
 from .body_schema import NexusBodySchemaBuilder
 from .causal_lab import CausalInterventionLab
 from .contracts import DevelopmentalCortexResult
 from .growth_archive import GrowthArchive
+from .global_workspace import GlobalWorkspaceRouter
 from .promotion_tribunal import PromotionTribunal
 from .reference_frames import ReferenceFrameStore
+from .semantic_pointers import SemanticPointerMemory
 from .simulator import DreamingSimulator
 
 
 class DevelopmentalCortexKernel:
     def __init__(self, *, artifacts_dir: Path | str | None = None) -> None:
         self.body_schema = NexusBodySchemaBuilder()
+        self.global_workspace = GlobalWorkspaceRouter()
+        self.semantic_memory = SemanticPointerMemory()
+        self.advanced_development = AdvancedDevelopmentalRuntime()
         self.reference_frames = ReferenceFrameStore(artifacts_dir=artifacts_dir)
         self.simulator = DreamingSimulator(artifacts_dir=artifacts_dir)
         self.causal_lab = CausalInterventionLab(artifacts_dir=artifacts_dir)
@@ -41,6 +47,39 @@ class DevelopmentalCortexKernel:
             eval_state=eval_state,
         )
         body_schema_blocked = _body_schema_blocked(body_schema_snapshot)
+        global_workspace = self.global_workspace.ignite(
+            workspace_id=f"workspace:{stable_id}",
+            candidates=[
+                {
+                    "candidate_id": f"goal:{stable_id}",
+                    "content_ref": task_ref,
+                    "goal_relevance": 1.0,
+                    "salience": 0.8,
+                    "evidence_refs": evidence_refs or trace_refs,
+                },
+                {
+                    "candidate_id": f"eval:{stable_id}",
+                    "content_ref": trace_refs[0] if trace_refs else task_ref,
+                    "eval_failure": 1.0 if eval_state.get("failed") else 0.0,
+                    "anomaly": 1.0 if body_schema_blocked else 0.0,
+                    "evidence_refs": trace_refs or evidence_refs,
+                },
+            ],
+        )
+        semantic_memory = self.semantic_memory.record_binding(
+            binding_id=f"semantic:{stable_id}",
+            labels=[f"task:{task_ref}", "relation:assessed-by", "component:developmental-cortex"],
+            evidence_refs=evidence_refs or trace_refs,
+        )
+        advanced_development = self.advanced_development.assess(
+            request_id=request_id,
+            task_ref=task_ref,
+            trace_refs=trace_refs,
+            evidence_refs=evidence_refs,
+            runtime_state=runtime_state,
+            memory_state=memory_state,
+            eval_state=eval_state,
+        )
         reference_frame = self.reference_frames.record(
             frame_id=f"frame:task:{stable_id}",
             frame_type="task",
@@ -90,6 +129,9 @@ class DevelopmentalCortexKernel:
         )
         status = "blocked" if _has_blocker(
             body_schema_snapshot=body_schema_snapshot,
+            global_workspace=global_workspace,
+            semantic_memory=semantic_memory,
+            advanced_development=advanced_development,
             reference_frame=reference_frame,
             simulation=simulation,
             causal_intervention=causal_intervention,
@@ -101,6 +143,9 @@ class DevelopmentalCortexKernel:
             task_ref=task_ref,
             status=status,
             body_schema_snapshot=body_schema_snapshot,
+            global_workspace=global_workspace,
+            semantic_memory=semantic_memory,
+            advanced_development=advanced_development,
             reference_frame=reference_frame,
             simulation=simulation,
             causal_intervention=causal_intervention,
@@ -113,6 +158,9 @@ class DevelopmentalCortexKernel:
 def _has_blocker(
     *,
     body_schema_snapshot: dict[str, Any],
+    global_workspace: dict[str, Any],
+    semantic_memory: dict[str, Any],
+    advanced_development: dict[str, Any],
     reference_frame: dict[str, Any],
     simulation: dict[str, Any],
     causal_intervention: dict[str, Any],
@@ -121,6 +169,9 @@ def _has_blocker(
 ) -> bool:
     return (
         _body_schema_blocked(body_schema_snapshot)
+        or global_workspace.get("status") != "broadcast"
+        or semantic_memory.get("status") == "blocked"
+        or advanced_development.get("production_mutation_allowed") is not False
         or reference_frame.get("runtime_state") == "degraded"
         or simulation.get("status") == "blocked"
         or causal_intervention.get("status") == "blocked"

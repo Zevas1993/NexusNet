@@ -168,6 +168,42 @@ def test_product_mode_fails_closed_instead_of_mock_fallback(tmp_path: Path, monk
     assert "product-evidence-required" in detail["blocked_reasons"]
 
 
+def test_openai_compatible_product_mode_fails_closed_with_sanitized_native_federation_evidence(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.setenv("NEXUSNET_PRODUCT_MODE", "1")
+    monkeypatch.delenv("NEXUSNET_ALLOW_MOCK_RUNTIME", raising=False)
+
+    session_id = "openai-product-runtime-private-session-SECRET"
+    prompt = "Product-mode OpenAI path SECRET-OPENAI-RUNTIME must not use mock serving."
+    client = TestClient(create_app(str(make_project(tmp_path))), raise_server_exceptions=False)
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "session_id": session_id,
+            "model": "ollama/mistral-small:4",
+            "messages": [{"role": "user", "content": prompt}],
+        },
+    )
+
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["error"] == "runtime-unavailable"
+    assert detail["requested_model_id"] == "ollama/mistral-small:4"
+    assert detail["requested_runtime"] == "ollama"
+    assert detail["served_runtime"] is None
+    assert "mock-runtime-disabled" in detail["blocked_reasons"]
+    native_hive = detail["native_hive_forward_pass"]
+    federation = native_hive["native_federated_peer_delivery"]
+    assert federation["status"] == "not-configured-no-admin-approved-peer"
+    assert federation["delivery_count"] == 0
+    assert federation["raw_content_included"] is False
+    assert federation["contains_personal_data"] is False
+    assert prompt not in str(detail)
+    assert session_id not in str(detail)
+
+
 def test_qes_selector_never_selects_unregistered_or_unavailable_onnx(tmp_path: Path):
     services = build_services(str(make_project(tmp_path)))
 

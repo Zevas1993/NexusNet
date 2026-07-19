@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from nexus.memory import MemoryService
 from nexus.schemas import MemoryRecord, MemoryScore, Message
 from nexus.storage import NexusStore
@@ -79,6 +81,32 @@ class NeuralMemoryCortex:
         )
         written += 1
         return written
+
+    def record_admission_receipt(
+        self,
+        *,
+        session_context: SessionContext,
+        trace: InferenceTrace,
+        admission_decision: dict[str, Any],
+    ) -> int:
+        content = {
+            "trace_id": trace.trace_id,
+            "admission_decision_id": admission_decision.get("decision_id"),
+            "decision": admission_decision.get("decision"),
+            "memory_write_allowed": False,
+            "raw_content_blocked": True,
+            "raw_content_included": False,
+            "source": "genesis-memory-admission",
+        }
+        for role in ("user", "assistant"):
+            self._record_extra(
+                session_id=session_context.session_id,
+                plane="working",
+                content={**content, "role": role},
+                tags=["chat", "genesis-memory-admission", "sanitized-receipt"],
+                score=MemoryScore(relevance=0.4, freshness=1.0, importance=0.5),
+            )
+        return 2
 
     def record_benchmark_run(self, run: BenchmarkRun) -> MemoryRecord:
         return self._record_extra(

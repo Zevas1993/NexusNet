@@ -226,6 +226,7 @@ const state = {
   releaseWrapperReadiness: null,
   releaseWrapperTelemetry: null,
   releaseWrapperSessionLifecycle: null,
+  federatedPeerDelivery: null,
   blackBox: null,
   hiveConsensus: null,
   aoHive: null,
@@ -832,7 +833,7 @@ function developmentalSupportLanes() {
     { lane_id: "authority-spine", surface_id: authority.surface_id || "authority-integrity-spine", runtime_state: authority.runtime_state || "static-canon", metric: `decisions ${authority.decision_count || 0} | blocked ${authority.blocked_count || 0}` },
     { lane_id: "evidence-store", surface_id: evidence.surface_id || "content-addressed-evidence-store", runtime_state: evidence.runtime_state || "static-canon", metric: `records ${evidence.record_count || 0}` },
     { lane_id: "eval-federation", surface_id: evalFed.surface_id || "eval-federation", runtime_state: evalFed.runtime_state || "static-canon", metric: `events ${evalFed.event_count || 0}` },
-    { lane_id: "tool-action-harness", surface_id: tools.surface_id || "tool-action-harness", runtime_state: tools.runtime_state || "static-canon", metric: `plans ${tools.plan_count || 0}` },
+    { lane_id: "tool-action-harness", surface_id: tools.surface_id || "tool-action-harness", runtime_state: tools.runtime_state || "static-canon", metric: `plans ${tools.plan_count || 0} | executions ${tools.execution_count || 0} | latest ${tools.latest_execution?.status || "none"}` },
     { lane_id: "runtime-decision-ledger", surface_id: runtime.surface_id || "runtime-decision-ledger", runtime_state: runtime.runtime_state || "static-canon", metric: `decisions ${runtime.decision_count || 0}` },
   ];
 }
@@ -3308,6 +3309,7 @@ function renderAutonomousUpdatesScorecard() {
     || state.controlPanel?.release_wrapper_forward_pass_enforcement_matrix
     || {};
   const federatedPacketOutbox = releaseRuntime.federated_packet_outbox || {};
+  const federatedPeerDelivery = state.federatedPeerDelivery || {};
   const privacyConsent = releaseRuntime.privacy_consent
     || state.releaseWrapperStatus?.privacy_consent
     || state.controlPanel?.release_wrapper_privacy_consent
@@ -3417,6 +3419,10 @@ function renderAutonomousUpdatesScorecard() {
   const globalGrowth = releaseRuntime.global_growth || {};
   const latestRuntimeGrowthReceipt = globalGrowth.latest_runtime_receipt || {};
   const runtimeGrowthPacket = latestRuntimeGrowthReceipt.federated_packet || {};
+  const latestFederatedPacket = releaseRuntime.latest_federated_packet || {};
+  const latestPersonalityPlane = (latestFederatedPacket.per_plane_sync?.planes || []).find(
+    (plane) => plane.canonical_plane === "personality",
+  ) || {};
   const directNexusBrainForwardPass = releaseRuntime.direct_nexusbrain_forward_pass
     || state.controlPanel?.direct_nexusbrain_forward_pass
     || {};
@@ -3455,6 +3461,8 @@ function renderAutonomousUpdatesScorecard() {
   const sandboxDiff = latestSandbox.diff_summary || {};
   const sandboxMode = latestSandbox.sandbox?.mode || "not-run";
   const sandboxModeLabel = sandboxMode === "isolated-filesystem-copy-allowlisted-pytest" ? "isolated filesystem" : sandboxMode;
+  const sandboxEnvironmentPolicy = latestSandbox.sandbox?.environment_policy || "not-recorded";
+  const sandboxNetworkBoundary = latestSandbox.sandbox?.network_policy || "not-recorded";
   const upstream_eval_gate = latest.upstream_eval_gate || {};
   const upstream_lifecycle_gate = upstream_eval_gate.upstream_lifecycle_gate || {};
   const latestEvalReplay = latest.latest_eval_replay || {};
@@ -3504,8 +3512,12 @@ function renderAutonomousUpdatesScorecard() {
         <span><strong>${escapeHtml(privacyConsent.status || "not-recorded")}</strong><small>privacy consent</small></span>
         <span><strong>${escapeHtml(privacyConsent.personal_data_training_opt_in ? "opted-in" : "default-off")}</strong><small>personal-data training</small></span>
         <span><strong>${escapeHtml(releaseRuntime.federated_packet_count || 0)}</strong><small>fed packets</small></span>
+        <span><strong>${escapeHtml(latestPersonalityPlane.producer_status || "not-observed")}</strong><small>federated personality plane</small></span>
+        <span><strong>${escapeHtml(`${latestPersonalityPlane.preference_feature_count || 0} | ${latestPersonalityPlane.preference_vector_scope || "not-observed"}`)}</strong><small>personality preference vector</small></span>
         <span><strong>${escapeHtml(federatedPacketOutbox.packet_count || releaseRuntime.federated_packet_count || 0)}</strong><small>federated packet outbox</small></span>
         <span><strong>${escapeHtml(federatedPacketInbox.import_count || 0)}</strong><small>federated packet inbox</small></span>
+        <span class="release-wrapper-federated-peer-delivery"><strong>${escapeHtml(federatedPeerDelivery.status || "not-configured-no-admin-approved-peer")}</strong><small>admin-approved shadow delivery</small></span>
+        <span><strong>${escapeHtml(federatedPeerDelivery.acknowledged_delivery_count || 0)}/${escapeHtml(federatedPeerDelivery.pending_retry_count || 0)}</strong><small>peer delivery ack/retry</small></span>
         <span><strong>${escapeHtml(forwardPassCoverage.latest_status || "not-run")}</strong><small>forward coverage</small></span>
         <span><strong>${escapeHtml(forwardPassCoverage.receipt_count || 0)}</strong><small>coverage receipts</small></span>
         <span><strong>${escapeHtml(nexusbrainRuntimeCycle.latest_status || "not-run")}</strong><small>NexusBrain runtime cycle</small></span>
@@ -3820,6 +3832,8 @@ function renderAutonomousUpdatesScorecard() {
         <span><strong>${escapeHtml(scorecard.shadow_ready_count || 0)}</strong><small>shadow</small></span>
         <span><strong>${escapeHtml(scorecard.blocked_count || 0)}</strong><small>blocked</small></span>
         <span><strong>${escapeHtml(scorecard.sandbox_test_evidence_count || 0)}</strong><small>test evidence</small></span>
+        <span><strong>${escapeHtml(sandboxEnvironmentPolicy)}</strong><small>sandbox environment policy</small></span>
+        <span><strong>${escapeHtml(sandboxNetworkBoundary)}</strong><small>sandbox network boundary</small></span>
       </div>
     </article>
     <div class="completion-scope">${escapeHtml(latest.update_id || scorecard.self_improvement_boundary || "No autonomous update proposals recorded")}</div>
@@ -3831,6 +3845,7 @@ function renderAutonomousUpdatesScorecard() {
       <small>${escapeHtml(releaseActionLane.proposal_update_id || "No release Harness proposal available")}</small>
       <div class="surface-action-row">
         ${releaseWrapperActionButton("admin_approval", "Approve", releaseActionLane.admin_approval_ref)}
+        ${releaseWrapperActionButton("run_governed_lifecycle", "Execute sandbox lifecycle", releaseActionLane.run_governed_lifecycle_ref)}
         ${releaseWrapperActionButton("sandbox_tests", "Sandbox", releaseActionLane.sandbox_tests_ref)}
         ${releaseWrapperActionButton("apply", "Apply", releaseActionLane.apply_ref)}
         ${releaseWrapperActionButton("rollback", "Rollback", releaseActionLane.rollback_ref)}
@@ -4412,6 +4427,9 @@ function renderHiveNeuralSubstrateReplayDrilldown() {
   const bridgeManagerChain = replay.bridge_manager_chain || [];
   const researchMonitorChain = replay.research_monitor_pipeline_chain || [];
   const activeReleaseChain = replay.active_release_chain || [];
+  const federatedPerPlaneSync = replay.federated_per_plane_sync || {};
+  const federatedPlaneCount = Number(federatedPerPlaneSync.plane_count || 0);
+  const federatedSyncStatus = federatedPerPlaneSync.status || "not available";
   const projectHeartbeatChain = replay.project_heartbeat_chain || replay.project_heartbeat_replay_chain || [];
   const latestProjectHeartbeat = projectHeartbeatChain[0]
     || state.releaseWrapperRuntime?.project_heartbeat
@@ -4456,6 +4474,8 @@ function renderHiveNeuralSubstrateReplayDrilldown() {
         <span><strong>${escapeHtml(layerBlockStackChain.length)}</strong><small>blocks</small></span>
         <span><strong>${escapeHtml(distillationLoopChain.length)}</strong><small>teach</small></span>
         <span><strong>${escapeHtml(federatedInfluenceChain.length)}</strong><small>fed</small></span>
+        <span><strong>${escapeHtml(federatedSyncStatus)}</strong><small>federation plane sync</small></span>
+        <span><strong>${escapeHtml(federatedPlaneCount)}</strong><small>sync planes</small></span>
         <span><strong>${escapeHtml(executableDreamCycleChain.length)}</strong><small>dream</small></span>
         <span><strong>${escapeHtml(deepReplayDrilldownChain.length)}</strong><small>replay</small></span>
         <span><strong>${escapeHtml(durableStorageChain.length)}</strong><small>store</small></span>
@@ -5458,8 +5478,11 @@ async function loadControlPanel() {
 }
 
 async function loadReleaseWrapperStatusCard(session) {
-  const url = `/ops/wrapper/status-card?session_id=${encodeURIComponent(session)}`;
-  const card = await fetchJSON(url);
+  const sessionRef = encodeURIComponent(session);
+  const [card, federatedPeerDelivery] = await Promise.all([
+    fetchJSON(`/ops/wrapper/status-card?session_id=${sessionRef}`),
+    fetchJSON(`/ops/wrapper/federated-deliveries?session_id=${sessionRef}`),
+  ]);
   state.releaseWrapperStatus = card;
   state.autonomousUpdates = card.autonomous_updates || state.autonomousUpdates;
   state.releaseWrapperRuntime = card.runtime || state.releaseWrapperRuntime;
@@ -5469,6 +5492,7 @@ async function loadReleaseWrapperStatusCard(session) {
     || state.cluster9TeacherReconciliation;
   state.releaseWrapperTelemetry = card.runtime?.live_wrapper_telemetry || state.releaseWrapperTelemetry;
   state.releaseWrapperReadiness = card.readiness || state.releaseWrapperReadiness;
+  state.federatedPeerDelivery = federatedPeerDelivery;
   return card;
 }
 
@@ -5496,9 +5520,14 @@ function releaseWrapperAdminActionPayload(action, lane) {
     || {};
   const sandboxEvidence = proposal.latest_sandbox_test_evidence || state.autonomousUpdates?.latest_sandbox_test_evidence || {};
   if (action === "admin_approval") {
+    return {};
+  }
+  if (action === "run_governed_lifecycle") {
     return {
-      approved_by: "admin",
-      approval_ref: "control-panel::release-wrapper-admin-action-lane",
+      session_id: dom.sessionInput.value || sessionId(),
+      approval_decision_id: lane.stored_approval_ref || "",
+      command: default_sandbox_command,
+      timeout_seconds: 60,
     };
   }
   if (action === "sandbox_tests") {
@@ -5622,6 +5651,7 @@ async function runReleaseWrapperAdminAction(event) {
   const lane = state.releaseWrapperStatus?.operator_action_lane || {};
   const refByAction = {
     admin_approval: "admin_approval_ref",
+    run_governed_lifecycle: "run_governed_lifecycle_ref",
     sandbox_tests: "sandbox_tests_ref",
     apply: "apply_ref",
     rollback: "rollback_ref",
@@ -5641,10 +5671,26 @@ async function runReleaseWrapperAdminAction(event) {
   try {
     button.disabled = true;
     setConnection("", `Running Release Harness ${pretty(action)}`);
+    let actionPayload = releaseWrapperAdminActionPayload(action, lane);
+    if (action === "admin_approval") {
+      const approvalEndpoint = lane.approval_request_ref || "/ops/approvals";
+      const storedApproval = await fetchJSON(approvalEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: "release-wrapper-autonomous-update",
+          decision: "approved",
+          approver: "control-panel",
+          rationale: "Control-panel approval for a sandbox-only autonomous update lifecycle.",
+          metadata: { update_id: lane.proposal_update_id || "" },
+        }),
+      });
+      actionPayload = { approval_decision_id: storedApproval.decision_id };
+    }
     const payload = await fetchJSON(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(releaseWrapperAdminActionPayload(action, lane)),
+      body: JSON.stringify(actionPayload),
     });
     state.releaseWrapperLastAction = payload;
     await refreshReleaseWrapperStatusCard();

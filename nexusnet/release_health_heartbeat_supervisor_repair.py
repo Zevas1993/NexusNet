@@ -14,6 +14,7 @@ def build_release_health_heartbeat_supervisor_repair_run_plan(
     registered_suite_ids: set[str],
     default_command: str,
     digest: Callable[[str], str],
+    resolve_command: Callable[[str], str] | None = None,
 ) -> dict[str, Any]:
     latest_pulse = supervisor.get("latest_pulse") if isinstance(supervisor.get("latest_pulse"), dict) else {}
     loop = latest_pulse.get("loop") if isinstance(latest_pulse.get("loop"), dict) else {}
@@ -64,6 +65,8 @@ def build_release_health_heartbeat_supervisor_repair_run_plan(
         or proposal.get("monitoring_plan")
         or default_command
     )
+    if callable(resolve_command):
+        command = str(resolve_command(command))
     timeout_seconds = int(payload.get("timeout_seconds") or 60)
     approved_by = str(payload.get("approved_by") or "admin")
     approval_ref = str(payload.get("approval_ref") or "operator-review::heartbeat-supervisor-repair")

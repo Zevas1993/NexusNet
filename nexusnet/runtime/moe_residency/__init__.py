@@ -5,6 +5,14 @@ from .execution import (
     attach_tiered_moe_runtime,
     compute_model_identity,
 )
+from .architecture import (
+    ArchitectureTierHardware,
+    GPUAccelerationPolicy,
+    MoEArchitectureDescriptor,
+    MoEArchitectureTierPlan,
+    MoEArchitectureTierPlanner,
+    MoEResidencyTelemetry,
+)
 from .evidence import ExpertResidencyEvidence
 from .heat import ExpertHeatPolicy
 from .manifest import (
@@ -26,6 +34,7 @@ from .store import TieredExpertStore
 
 __all__ = [
     "AdaptiveSpeculationController",
+    "ArchitectureTierHardware",
     "ColibriAssimilationProvenance",
     "ExpertExecutionBackend",
     "ExpertHeatPolicy",
@@ -33,10 +42,15 @@ __all__ = [
     "ExpertResidencyEvidence",
     "ExpertTensorManifest",
     "ExpertTensorRecord",
+    "GPUAccelerationPolicy",
     "HardwareMemorySnapshot",
     "MoEResidencyPlan",
     "MoEResidencyPlanner",
     "MoEResidencyRequest",
+    "MoEArchitectureDescriptor",
+    "MoEArchitectureTierPlan",
+    "MoEArchitectureTierPlanner",
+    "MoEResidencyTelemetry",
     "RouteTransitionPrefetcher",
     "SpeculationProfileState",
     "TieredExpertStore",

@@ -103,9 +103,16 @@ class _OffloadedExpertStub(nn.Module):
 class TieredSwiGLUExecutionBackend:
     """Inference-only functional SwiGLU execution backed by tiered tensors."""
 
-    def __init__(self, store: TieredExpertStore, *, heat_policy: ExpertHeatPolicy) -> None:
+    def __init__(
+        self,
+        store: TieredExpertStore,
+        *,
+        heat_policy: ExpertHeatPolicy,
+        expert_device: str | torch.device | None = None,
+    ) -> None:
         self.store = store
         self.heat_policy = heat_policy
+        self.expert_device = torch.device(expert_device) if expert_device is not None else None
         self._resident_released = False
         self._route_callback: (
             Callable[[tuple[int, ...], torch.device, torch.dtype], None] | None
@@ -126,6 +133,7 @@ class TieredSwiGLUExecutionBackend:
         ram_slots: int,
         hot_slots: int,
         release_resident: bool = False,
+        expert_device: str | torch.device | None = None,
     ) -> "TieredSwiGLUExecutionBackend":
         if layer.training:
             raise RuntimeError("tiered expert packaging is inference-only")
@@ -139,6 +147,7 @@ class TieredSwiGLUExecutionBackend:
         backend = cls(
             TieredExpertStore(manifest, ram_slots=ram_slots, hot_slots=hot_slots),
             heat_policy=ExpertHeatPolicy(slot_count=hot_slots),
+            expert_device=expert_device,
         )
         if release_resident:
             backend.release_resident(layer)
@@ -156,6 +165,7 @@ class TieredSwiGLUExecutionBackend:
         ram_slots: int,
         hot_slots: int,
         release_resident: bool = False,
+        expert_device: str | torch.device | None = None,
     ) -> "TieredSwiGLUExecutionBackend":
         if layer.training:
             raise RuntimeError("tiered expert attachment is inference-only")
@@ -169,23 +179,28 @@ class TieredSwiGLUExecutionBackend:
         backend = cls(
             TieredExpertStore(manifest, ram_slots=ram_slots, hot_slots=hot_slots),
             heat_policy=ExpertHeatPolicy(slot_count=hot_slots),
+            expert_device=expert_device,
         )
         if release_resident:
             backend.release_resident(layer)
         return backend
 
     def execute(self, expert_id: int, inputs: torch.Tensor) -> torch.Tensor:
-        self._last_device = inputs.device
+        caller_device = inputs.device
+        execution_device = self.expert_device or caller_device
+        execution_inputs = inputs.to(execution_device)
+        self._last_device = execution_device
         self._last_dtype = inputs.dtype
         self.heat_policy.touch(
             f"{self.store.manifest.layer_id}:expert{expert_id}",
             count=max(1, int(inputs.shape[0])),
         )
-        with self.store.lease(expert_id, inputs.device, inputs.dtype) as tensors:
-            gate = F.linear(inputs, tensors["w_gate.weight"], tensors.get("w_gate.bias"))
-            value = F.linear(inputs, tensors["w_value.weight"], tensors.get("w_value.bias"))
+        with self.store.lease(expert_id, execution_device, inputs.dtype) as tensors:
+            gate = F.linear(execution_inputs, tensors["w_gate.weight"], tensors.get("w_gate.bias"))
+            value = F.linear(execution_inputs, tensors["w_value.weight"], tensors.get("w_value.bias"))
             hidden = F.silu(gate) * value
-            return F.linear(hidden, tensors["w_out.weight"], tensors.get("w_out.bias"))
+            output = F.linear(hidden, tensors["w_out.weight"], tensors.get("w_out.bias"))
+        return output.to(caller_device)
 
     def set_route_callback(
         self,
@@ -200,7 +215,7 @@ class TieredSwiGLUExecutionBackend:
         dtype: torch.dtype,
     ) -> None:
         if self._route_callback is not None:
-            self._route_callback(selected_experts, device, dtype)
+            self._route_callback(selected_experts, self.expert_device or device, dtype)
 
     def repin(self) -> tuple[str, ...]:
         pinned = self.heat_policy.repin()
@@ -448,6 +463,17 @@ def attach_tiered_moe_runtime(
         raise RuntimeError("model_ref does not match residency plan")
     if plan.admission_state != "admitted":
         raise RuntimeError(f"residency plan is blocked: {', '.join(plan.blockers)}")
+    expert_device: torch.device | None = None
+    if plan.gpu_acceleration_enabled:
+        expert_device = torch.device(plan.expert_device)
+        if expert_device.type != "cuda":
+            raise RuntimeError("gpu acceleration requires a CUDA expert device")
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA execution is unavailable in the active PyTorch runtime")
+        if expert_device.index is not None and expert_device.index >= torch.cuda.device_count():
+            raise RuntimeError("configured CUDA expert device is unavailable")
+    elif plan.gpu_mode == "on":
+        raise RuntimeError("gpu acceleration was forced on but is not enabled by the plan")
     if model.training:
         raise RuntimeError("tiered model attachment is inference-only")
     if plan.model_digest is None:
@@ -491,6 +517,7 @@ def attach_tiered_moe_runtime(
                 ram_slots=ram_slots,
                 hot_slots=hot_slots,
                 release_resident=release_resident,
+                expert_device=expert_device,
             )
             layer.set_execution_backend(backend)
             bindings.append((layer, backend))

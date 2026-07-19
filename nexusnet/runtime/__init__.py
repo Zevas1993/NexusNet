@@ -7,16 +7,24 @@ __all__ = [
     "HardwareScanner",
     "InferenceEconomyRouter",
     "InferenceRouteRequest",
+    "GrammarConstrainedDecoder",
+    "LearnedCascadeRouter",
     "ManifestAdapter",
     "ManifestAdapterConfig",
     "ModelPassportRequest",
     "RuntimeDecisionLedger",
     "RuntimeScorecardService",
     "RuntimeWorkloadScorecardRegistry",
+    "SpeculativeDecoder",
+    "VerifiedSemanticCache",
 ]
 
 
 def __getattr__(name: str):
+    if name in {"GrammarConstrainedDecoder", "LearnedCascadeRouter", "SpeculativeDecoder", "VerifiedSemanticCache"}:
+        from . import advanced_inference
+
+        return getattr(advanced_inference, name)
     if name == "AdaptiveSystemProfiler":
         from .adaptive_system_profiler import AdaptiveSystemProfiler
 
@@ -74,3 +82,4 @@ def __getattr__(name: str):
 
         return RuntimeWorkloadScorecardRegistry
     raise AttributeError(name)
+from .model_attach_harness import ModelAttachInferenceHarness

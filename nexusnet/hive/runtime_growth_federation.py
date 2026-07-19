@@ -13,6 +13,121 @@ FEDERATED_LEARNING_CONTRACT_ID = "mandatory-sanitized-federated-learning-v0"
 RUNTIME_GROWTH_FEDERATION_SURFACE_ID = "hive-runtime-growth-federation-cycle"
 
 
+def canonical_per_plane_sync_receipt() -> dict[str, Any]:
+    """Return the C29 federation boundary without exporting plane content."""
+    planes = [
+        ("episodic", False, "none", "privacy-excluded"),
+        ("semantic", True, "compressed-embedding-digest-only", "awaiting-plane-producer"),
+        ("temporal", True, "causal-graph-digest-only", "awaiting-plane-producer"),
+        ("tool-reliability", True, "sanitized-reliability-statistics-only", "awaiting-plane-producer"),
+        ("personality", True, "sanitized-preference-vector-only", "awaiting-plane-producer"),
+        ("safety", True, "safe-mode-correction-metadata-only", "awaiting-plane-producer"),
+        ("dreams", True, "distilled-summary-only", "awaiting-plane-producer"),
+    ]
+    return {
+        "schema_version": "nexusnet-federated-per-plane-sync-v1",
+        "surface_id": "hive-federated-per-plane-sync",
+        "policy_ref": "canon::C29M0037",
+        "status": "live-policy-enforced-awaiting-plane-producers",
+        "planes": [
+            {
+                "canonical_plane": plane,
+                "sync_allowed": allowed,
+                "payload_mode": mode,
+                "producer_status": producer_status,
+                "raw_content_included": False,
+                "contains_personal_data": False,
+            }
+            for plane, allowed, mode, producer_status in planes
+        ],
+        "raw_content_included": False,
+        "contains_personal_data": False,
+        "active_production_mutation_allowed": False,
+        "active_production_mutated": False,
+    }
+
+
+def attach_per_plane_sync_producers(
+    receipt: dict[str, Any],
+    *,
+    embedding_ref: str,
+    temporal_ref: str,
+    tool_action_count: int,
+    ungated_write_count: int,
+    hard_fail_count: int,
+    immune_finding_count: int,
+    dream_cycle_ref: str | None = None,
+    dream_candidate_count: int | None = None,
+    critic_review_count: int | None = None,
+    personality_preference_ref: str | None = None,
+    personality_preference_feature_count: int | None = None,
+    personality_federation_allowed: bool = False,
+) -> dict[str, Any]:
+    """Attach only sanitized producer references available in a forward pass."""
+    attached = {**receipt, "planes": [dict(item) for item in receipt.get("planes") or []]}
+    for plane in attached["planes"]:
+        if plane.get("canonical_plane") == "semantic":
+            plane.update({"producer_status": "live-sanitized-producer", "producer_ref": f"embedding::{embedding_ref}"})
+        elif plane.get("canonical_plane") == "temporal":
+            plane.update({"producer_status": "live-sanitized-producer", "producer_ref": f"temporal::{temporal_ref}"})
+        elif plane.get("canonical_plane") == "tool-reliability":
+            plane.update(
+                {
+                    "producer_status": "live-sanitized-producer",
+                    "action_count": max(0, int(tool_action_count)),
+                    "ungated_write_count": max(0, int(ungated_write_count)),
+                }
+            )
+        elif plane.get("canonical_plane") == "personality":
+            plane["personal_data_federation_allowed"] = bool(personality_federation_allowed)
+            plane["raw_content_included"] = False
+            plane["contains_personal_data"] = False
+            if (
+                personality_federation_allowed
+                and personality_preference_ref
+                and int(personality_preference_feature_count or 0) > 0
+            ):
+                plane.update(
+                    {
+                        "producer_status": "live-sanitized-producer",
+                        "producer_ref": f"preference-vector::{personality_preference_ref}",
+                        "preference_feature_count": max(
+                            0,
+                            int(personality_preference_feature_count or 0),
+                        ),
+                        "preference_vector_scope": "explicit-consent-derived-federated-preference-only",
+                    }
+                )
+            else:
+                plane.pop("producer_ref", None)
+                plane.update(
+                    {
+                        "producer_status": "live-local-only-consent-required",
+                        "preference_feature_count": 0,
+                        "preference_vector_scope": "local-only-until-explicit-federation-consent",
+                    }
+                )
+        elif plane.get("canonical_plane") == "safety":
+            plane.update(
+                {
+                    "producer_status": "live-sanitized-producer",
+                    "hard_fail_count": max(0, int(hard_fail_count)),
+                    "immune_finding_count": max(0, int(immune_finding_count)),
+                }
+            )
+        elif plane.get("canonical_plane") == "dreams" and dream_cycle_ref:
+            plane.update(
+                {
+                    "producer_status": "live-sanitized-producer",
+                    "producer_ref": f"dream-cycle::{dream_cycle_ref}",
+                    "dream_candidate_count": max(0, int(dream_candidate_count or 0)),
+                    "critic_review_count": max(0, int(critic_review_count or 0)),
+                }
+            )
+    attached["status"] = "partial-live-producer-evidence"
+    return attached
+
+
 @dataclass(frozen=True)
 class RuntimeGrowthFederationCycle:
     surface_id: str
@@ -214,6 +329,7 @@ def sanitized_federated_learning_packet(
             "final_confidence": round(final_confidence, 3),
             "eligible_for_global_prior_update": True,
         },
+        "per_plane_sync": canonical_per_plane_sync_receipt(),
         "federated_destination_policy": {
             "owner_host_receives_packet": True,
             "global_hive_receives_sanitized_aggregate": True,

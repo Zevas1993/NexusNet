@@ -21,6 +21,7 @@ from ..experts import InternalExpertExecutionService
 from ..hive.substrate import HiveForwardPassRequest
 from ..memory import MemoryNode, NeuralMemoryCortex
 from ..moe import MoEFusionScaffoldService
+from ..runtime.model_attach_harness import ModelAttachInferenceHarness
 from ..schemas import BrainGenerateResult, BrainGenerateRequest, InferenceTrace, SessionContext
 from ..telemetry import BrainTelemetryLogger
 from ..traces import build_product_trace_event
@@ -100,6 +101,7 @@ class NexusBrain:
         self.native_execution_planner = native_execution_planner or NativeExecutionPlanner()
         self.internal_expert_execution = internal_expert_execution or InternalExpertExecutionService()
         self.telemetry = BrainTelemetryLogger(paths)
+        self.model_attach_harness = ModelAttachInferenceHarness(artifacts_dir=paths.artifacts_dir)
         self.adapters: dict[str, BaseModelAdapter] = {}
         self.attachment_records: dict[str, dict] = {}
         self.benchmarks = BenchmarkHarness(telemetry=self.telemetry, memory=self.memory, artifact_writer=self.store.write_artifact)
@@ -109,6 +111,7 @@ class NexusBrain:
             telemetry=self.telemetry,
             adapter_cache=self.adapters,
             attachment_cache=self.attachment_records,
+            model_attach_harness=self.model_attach_harness,
         )
         self.lifecycle_trace = CoreExecutionTraceRecorder(trace_name="nexusnet-brain")
         self._wake_state: dict | None = None
@@ -146,11 +149,21 @@ class NexusBrain:
             attached.append(registration.model_id)
         return attached
 
-    def attach_base_model(self, model_hint: str | None = None, *, role: str = "teacher", runtime_override: str | None = None) -> BaseModelAdapter:
+    def attach_base_model(
+        self,
+        model_hint: str | None = None,
+        *,
+        role: str = "teacher",
+        runtime_override: str | None = None,
+        usage_intent: str = "inference",
+        teacher_rights_attestation: dict[str, Any] | None = None,
+    ) -> BaseModelAdapter:
         adapter, _ = self._attach_base_model(
             model_hint=model_hint,
             role=role,
             runtime_override=runtime_override,
+            usage_intent=usage_intent,
+            teacher_rights_attestation=teacher_rights_attestation,
         )
         return adapter
 
@@ -209,6 +222,7 @@ class NexusBrain:
             "startup": self._wake_state,
             "attached_models": self.list_attached_models(),
             "attachment_records": self.model_ingestion.attachments(),
+            "model_attach_inference_harness": self.model_attach_harness.summary(),
             "memory_node": self.memory_node.summary() if self.memory_node is not None else {},
             "runtime_execution_plan": execution_plan,
             "fusion_scaffold": fusion_scaffold,
@@ -438,21 +452,48 @@ class NexusBrain:
             fallback_chain=fallback_chain,
             allow_mock_runtime=allow_mock_runtime,
         )
+        layer11_route = self.model_attach_harness.open_route(
+            trace_id=session_context.trace_id,
+            session_id=session_context.session_id,
+            registration=registration,
+            requested_runtime=requested_runtime_name,
+            runtime_ladder=planned_runtimes,
+            task_type=session_context.task_type,
+            hardware_posture=core_execution_plan.get("hardware_profile", {}),
+        )
         for runtime_name in planned_runtimes:
             attempted_runtimes.append(runtime_name)
             try:
                 runtime_backend = self.runtime_registry.get_adapter(runtime_name)
             except Exception:
+                self.model_attach_harness.record_attempt(
+                    trace_id=session_context.trace_id,
+                    runtime_name=runtime_name,
+                    status="contained-skip",
+                    reason_code="adapter-not-registered",
+                )
                 continue
             profile = runtime_backend.profile()
             if runtime_name == "mock" and not allow_mock_runtime:
+                self.model_attach_harness.record_attempt(
+                    trace_id=session_context.trace_id,
+                    runtime_name=runtime_name,
+                    status="contained-block",
+                    reason_code="mock-runtime-disabled",
+                )
                 continue
             if not profile.available and runtime_name != "mock":
+                self.model_attach_harness.record_attempt(
+                    trace_id=session_context.trace_id,
+                    runtime_name=runtime_name,
+                    status="contained-skip",
+                    reason_code="runtime-profile-unavailable",
+                )
                 continue
             try:
                 adapter, attachment_record = self._attach_base_model(
                     model_hint=registration.model_id,
-                    role="teacher",
+                    role="inference-tool",
                     runtime_override=runtime_name,
                     runtime_decision=core_execution_plan,
                     session_context=session_context,
@@ -460,6 +501,7 @@ class NexusBrain:
                     native_execution=native_execution,
                     promotion_linkage=promotion_linkage,
                     compatibility_provenance=compatibility_provenance,
+                    runtime_ladder=planned_runtimes,
                 )
                 execution_recorder.record(
                     "attach-base-model",
@@ -485,35 +527,55 @@ class NexusBrain:
                     prompt=execution_prompt,
                     messages=request.messages or [Message(role="user", content=raw_prompt)],
                 )
+                self.model_attach_harness.record_attempt(
+                    trace_id=session_context.trace_id,
+                    runtime_name=runtime_name,
+                    status="served",
+                    reason_code="runtime-generate-completed",
+                )
                 fallback_used = runtime_name != registration.runtime_name
                 break
             except Exception as exc:
                 status = "warning"
                 error = str(exc)
                 adapter = None
+                self.model_attach_harness.record_attempt(
+                    trace_id=session_context.trace_id,
+                    runtime_name=runtime_name,
+                    status="contained-error",
+                    reason_code=f"runtime-error-{exc.__class__.__name__}",
+                )
         if adapter is None:
             if not allow_mock_runtime:
+                blocked_reasons = ["mock-runtime-disabled", "no-live-runtime-available"]
+                if product_mode:
+                    blocked_reasons.append("product-evidence-required")
                 raise RuntimeUnavailableError(
-                    {
-                        "error": "runtime-unavailable",
-                        "message": "No live runtime can serve the requested model and mock fallback is disabled.",
-                        "requested_model_id": registration.model_id,
-                        "requested_runtime": requested_runtime_name,
-                        "selected_runtime": selected_runtime_name,
-                        "served_model_id": None,
-                        "served_runtime": None,
-                        "runtime_lane": None,
-                        "fallback_used": False,
-                        "fallback_reason": None,
-                        "compatibility_plan_id": runtime_selection_payload.get("compatibility_plan_id"),
-                        "attempted_runtimes": attempted_runtimes,
-                        "blocked_reasons": ["mock-runtime-disabled", "no-live-runtime-available"],
-                        "product_mode": product_mode,
-                    }
+                    self._runtime_unavailable_detail_with_hive_evidence(
+                        session_context=session_context,
+                        model_id=registration.model_id,
+                        runtime_name=selected_runtime_name,
+                        detail={
+                            "error": "runtime-unavailable",
+                            "message": "No live runtime can serve the requested model and mock fallback is disabled.",
+                            "requested_model_id": registration.model_id,
+                            "requested_runtime": requested_runtime_name,
+                            "selected_runtime": selected_runtime_name,
+                            "served_model_id": None,
+                            "served_runtime": None,
+                            "runtime_lane": None,
+                            "fallback_used": False,
+                            "fallback_reason": None,
+                            "compatibility_plan_id": runtime_selection_payload.get("compatibility_plan_id"),
+                            "attempted_runtimes": attempted_runtimes,
+                            "blocked_reasons": blocked_reasons,
+                            "product_mode": product_mode,
+                        },
+                    )
                 )
             adapter, attachment_record = self._attach_base_model(
                 model_hint="mock/default",
-                role="teacher",
+                role="inference-tool",
                 runtime_override="mock",
                 runtime_decision=core_execution_plan,
                 session_context=session_context,
@@ -521,6 +583,7 @@ class NexusBrain:
                 native_execution=native_execution,
                 promotion_linkage=promotion_linkage,
                 compatibility_provenance=compatibility_provenance,
+                runtime_ladder=planned_runtimes,
             )
             execution_recorder.record(
                 "attach-base-model",
@@ -539,6 +602,12 @@ class NexusBrain:
                 session_context=session_context,
                 prompt=execution_prompt,
                 messages=request.messages or [Message(role="user", content=raw_prompt)],
+            )
+            self.model_attach_harness.record_attempt(
+                trace_id=session_context.trace_id,
+                runtime_name="mock",
+                status="served",
+                reason_code="contained-terminal-fallback",
             )
             fallback_used = True
         latency_ms = int((time.perf_counter() - start_time) * 1000)
@@ -580,27 +649,58 @@ class NexusBrain:
             }
         if product_mode and fallback_used and compatibility_provenance.get("product_evidence") is not True:
             raise RuntimeUnavailableError(
-                {
-                    "error": "runtime-unavailable",
-                    "message": "Product mode requires requested-runtime service or explicit product-grade compatibility evidence for fallback.",
-                    "requested_model_id": registration.model_id,
-                    "requested_runtime": requested_runtime_name,
-                    "selected_runtime": selected_runtime_name,
-                    "served_model_id": None,
-                    "served_runtime": None,
-                    "runtime_lane": None,
-                    "fallback_used": False,
-                    "fallback_reason": None,
-                    "compatibility_plan_id": runtime_selection_payload.get("compatibility_plan_id"),
-                    "attempted_runtimes": attempted_runtimes,
-                    "blocked_reasons": [
-                        "mock-runtime-disabled",
-                        "requested-runtime-unavailable",
-                        "product-evidence-required",
-                    ],
-                    "product_mode": product_mode,
-                }
+                self._runtime_unavailable_detail_with_hive_evidence(
+                    session_context=session_context,
+                    model_id=registration.model_id,
+                    runtime_name=selected_runtime_name,
+                    detail={
+                        "error": "runtime-unavailable",
+                        "message": "Product mode requires requested-runtime service or explicit product-grade compatibility evidence for fallback.",
+                        "requested_model_id": registration.model_id,
+                        "requested_runtime": requested_runtime_name,
+                        "selected_runtime": selected_runtime_name,
+                        "served_model_id": None,
+                        "served_runtime": None,
+                        "runtime_lane": None,
+                        "fallback_used": False,
+                        "fallback_reason": None,
+                        "compatibility_plan_id": runtime_selection_payload.get("compatibility_plan_id"),
+                        "attempted_runtimes": attempted_runtimes,
+                        "blocked_reasons": [
+                            "mock-runtime-disabled",
+                            "requested-runtime-unavailable",
+                            "product-evidence-required",
+                        ],
+                        "product_mode": product_mode,
+                    },
+                )
             )
+
+        layer11_output_evidence = self.model_attach_harness.record_output(
+            trace_id=session_context.trace_id,
+            output=output,
+            latency_ms=latency_ms,
+            requested_model_id=registration.model_id,
+            requested_runtime=requested_runtime_name,
+            served_model_id=served_model_id,
+            served_runtime=served_runtime_name,
+            fallback_used=fallback_used,
+            fallback_reason_code=fallback_reason,
+        )
+        layer11_harness = self.model_attach_harness.receipt(trace_id=session_context.trace_id)
+        runtime_selection_payload["layer11_harness"] = layer11_harness
+        execution_recorder.record(
+            "model-attach-inference-harness",
+            {
+                "route_id": layer11_route.get("route_id"),
+                "attach_contract_id": ((layer11_harness.get("attach_contract") or {}).get("contract_id")),
+                "output_packet_id": layer11_output_evidence.get("packet_id"),
+                "fallback_contained": ((layer11_output_evidence.get("fallback_containment") or {}).get("contained")),
+                "training_use_authorized": (
+                    (((layer11_harness.get("attach_contract") or {}).get("rights_gate") or {}).get("training_use_authorized"))
+                ),
+            },
+        )
 
         critique = self.critique.assess(
             trace_id=session_context.trace_id,
@@ -643,6 +743,13 @@ class NexusBrain:
                 "federated_packet_id": native_hive_forward_pass.get("federated_packet_id"),
             },
         )
+        genesis_memory_admission = (
+            native_hive_forward_pass.get("genesis_memory_admission")
+            if isinstance(native_hive_forward_pass.get("genesis_memory_admission"), dict)
+            else {}
+        )
+        memory_write_allowed = genesis_memory_admission.get("memory_write_allowed") is True
+        retrieval_truth_allowed = genesis_memory_admission.get("retrieval_truth_allowed") is True
         product_trace = build_product_trace_event(
             trace_id=session_context.trace_id,
             input_id=f"{session_context.session_id}:{session_context.trace_id}",
@@ -650,7 +757,7 @@ class NexusBrain:
             model_id=served_model_id,
             runtime_name=served_runtime_name,
             memory_retrieval_count=len(recent_memory),
-            memory_write_planned=True,
+            memory_write_planned=memory_write_allowed,
             fallback_used=fallback_used,
             critique_id=critique.critique_id,
             critique_status=critique.status,
@@ -681,6 +788,7 @@ class NexusBrain:
                 "attempted_runtimes": attempted_runtimes,
                 "fallback_used": fallback_used,
                 "native_hive_forward_pass": native_hive_forward_pass,
+                "genesis_memory_admission": genesis_memory_admission,
                 "retrieval_policy": retrieval_policy_decision["policy_mode"],
                 "retrieval_effective_policy": retrieval_policy_decision.get("effective_policy_mode"),
                 "graph_store_health": retrieval_policy_decision["graph_store_health"],
@@ -738,14 +846,21 @@ class NexusBrain:
             **dict(trace.metrics.get("core_execution", {})),
             **core_execution_artifact,
         }
-        trace.memory_records_written = self.memory.record_inference(
-            session_context=session_context,
-            prompt=raw_prompt,
-            output=output,
-            trace=trace,
-            retrieval_hits=len(retrieval_hits),
-        )
-        if retrieval_hits:
+        if memory_write_allowed:
+            trace.memory_records_written = self.memory.record_inference(
+                session_context=session_context,
+                prompt=raw_prompt,
+                output=output,
+                trace=trace,
+                retrieval_hits=len(retrieval_hits),
+            )
+        else:
+            trace.memory_records_written = self.memory.record_admission_receipt(
+                session_context=session_context,
+                trace=trace,
+                admission_decision=genesis_memory_admission,
+            )
+        if retrieval_hits and memory_write_allowed and retrieval_truth_allowed:
             self.memory.memory.record_semantic(
                 session_context.session_id,
                 fact=retrieval_hits[0].content[:240],
@@ -903,6 +1018,8 @@ class NexusBrain:
             metadata={
                 "trace_ref": f"trace::{session_context.trace_id}",
                 "source": "nexusbrain-generate",
+                "brain_generate_status": status,
+                "critique_status": critique_status,
                 "requested_action_count": len(requested_actions),
                 "raw_content_included": False,
             },
@@ -919,33 +1036,614 @@ class NexusBrain:
                 "active_production_mutated": False,
             }
 
-        receipt = result.get("runtime_growth_receipt") if isinstance(result.get("runtime_growth_receipt"), dict) else {}
-        packet = (
-            result.get("runtime_growth_federated_packet")
-            if isinstance(result.get("runtime_growth_federated_packet"), dict)
-            else {}
-        )
-        runtime_growth_dream_research = self._queue_native_runtime_growth_review(
+        return self._project_native_hive_result(
             session_id=session_context.session_id,
+            trace_id=session_context.trace_id,
+            model_id=model_id,
+            runtime_name=runtime_name,
+            status=status,
+            critique_status=critique_status,
             hive_result=result,
+            activation_source="nexusbrain-generate",
+        )
+
+    def _runtime_unavailable_detail_with_hive_evidence(
+        self,
+        *,
+        session_context: SessionContext,
+        model_id: str,
+        runtime_name: str,
+        detail: dict[str, Any],
+    ) -> dict[str, Any]:
+        native_hive_forward_pass = self._record_native_hive_forward_pass(
+            session_context=session_context,
+            model_id=model_id,
+            runtime_name=runtime_name,
+            status="runtime-unavailable",
+            critique_status="not-run",
         )
         return {
+            **detail,
+            "native_hive_forward_pass": native_hive_forward_pass,
+        }
+
+    def record_wrapped_model_hive_result(
+        self,
+        *,
+        session_id: str,
+        trace_id: str,
+        model_id: str,
+        runtime_name: str,
+        status: str,
+        critique_status: str,
+        hive_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        if not isinstance(hive_result, dict):
+            return {
+                "surface_id": "nexusbrain-native-hive-forward-pass",
+                "activation_source": "wrapped-model-interaction",
+                "status": "degraded",
+                "error_type": "invalid-hive-result",
+                "raw_content_included": False,
+                "contains_personal_data": False,
+                "active_production_mutated": False,
+            }
+        return self._project_native_hive_result(
+            session_id=session_id,
+            trace_id=trace_id,
+            model_id=model_id,
+            runtime_name=runtime_name,
+            status=status,
+            critique_status=critique_status,
+            hive_result=hive_result,
+            activation_source="wrapped-model-interaction",
+        )
+
+    def _project_native_hive_result(
+        self,
+        *,
+        session_id: str,
+        trace_id: str,
+        model_id: str,
+        runtime_name: str,
+        status: str,
+        critique_status: str,
+        hive_result: dict[str, Any],
+        activation_source: str,
+    ) -> dict[str, Any]:
+        receipt = (
+            hive_result.get("runtime_growth_receipt")
+            if isinstance(hive_result.get("runtime_growth_receipt"), dict)
+            else {}
+        )
+        packet = (
+            hive_result.get("runtime_growth_federated_packet")
+            if isinstance(hive_result.get("runtime_growth_federated_packet"), dict)
+            else {}
+        )
+        federated_learning_packet = (
+            hive_result.get("federated_learning_packet")
+            if isinstance(hive_result.get("federated_learning_packet"), dict)
+            else {}
+        )
+        native_federated_peer_delivery = self._dispatch_native_hive_federated_packet(
+            session_id=session_id,
+            hive_result=hive_result,
+        )
+        runtime_growth_dream_research = self._queue_native_runtime_growth_review(
+            session_id=session_id,
+            hive_result=hive_result,
+        )
+        genesis_heartbeat = self._record_genesis_heartbeat(
+            session_id=session_id,
+            hive_result=hive_result,
+        )
+        genesis_self_repair = self._observe_genesis_self_repair(
+            session_id=session_id,
+            heartbeat_record=genesis_heartbeat,
+        )
+        genesis_dream_research = self._observe_genesis_dream_research(
+            session_id=session_id,
+            heartbeat_record=genesis_heartbeat,
+        )
+        genesis_evidence = self._record_genesis_evidence_spine(session_id=session_id)
+        genesis_sensory = self._record_genesis_sensory(
+            session_id=session_id,
+            hive_result=hive_result,
+            heartbeat_record=genesis_heartbeat,
+            evidence_record=genesis_evidence,
+        )
+        genesis_memory_admission = self._record_genesis_memory_admission(
+            session_id=session_id,
+            hive_result=hive_result,
+            sensory_event_id=genesis_sensory.get("event_id"),
+            heartbeat_record_id=genesis_heartbeat.get("record_id"),
+        )
+        genesis_context_graph = self._record_genesis_context_graph_projection(session_id=session_id)
+        return {
             "surface_id": "nexusbrain-native-hive-forward-pass",
-            "status": result.get("lifecycle_state") or "unknown",
-            "hive_run_id": result.get("run_id"),
-            "hive_task_id": result.get("task_id"),
-            "project_heartbeat_id": ((result.get("project_heartbeat") or {}).get("heartbeat_id")),
+            "activation_source": activation_source,
+            "status": hive_result.get("lifecycle_state") or "unknown",
+            "hive_run_id": hive_result.get("run_id"),
+            "hive_task_id": hive_result.get("task_id"),
+            "project_heartbeat_id": ((hive_result.get("project_heartbeat") or {}).get("heartbeat_id")),
             "runtime_growth_receipt_id": receipt.get("receipt_id"),
             "federated_packet_id": packet.get("packet_id"),
             "federated_packet_surface_id": packet.get("surface_id"),
+            "federated_learning_packet_id": federated_learning_packet.get("packet_id"),
+            "native_federated_peer_delivery": native_federated_peer_delivery,
+            "runtime_growth_federated_packet_id": packet.get("packet_id"),
             "runtime_growth_dream_research": runtime_growth_dream_research,
+            "genesis_heartbeat_record_id": genesis_heartbeat.get("record_id"),
+            "genesis_heartbeat_status": genesis_heartbeat.get("status"),
+            "genesis_self_repair_proposal_id": genesis_self_repair.get("proposal_id"),
+            "genesis_self_repair_status": genesis_self_repair.get("status"),
+            "genesis_dream_research_proposal_id": genesis_dream_research.get("dream_proposal_id"),
+            "genesis_dream_research_status": genesis_dream_research.get("status"),
+            "genesis_operation_receipt_id": genesis_evidence.get("operation_receipt_id"),
+            "genesis_operation_receipt_status": genesis_evidence.get("status"),
+            "genesis_evidence_checkpoint_id": genesis_evidence.get("checkpoint_id"),
+            "genesis_sensory_event_id": genesis_sensory.get("event_id"),
+            "genesis_sensory_status": genesis_sensory.get("status"),
+            "genesis_memory_admission_decision_id": genesis_memory_admission.get("decision_id"),
+            "genesis_memory_admission_status": genesis_memory_admission.get("status"),
+            "genesis_memory_admission": genesis_memory_admission,
+            "genesis_context_graph_projection_id": genesis_context_graph.get("projection_id"),
+            "genesis_context_graph_status": genesis_context_graph.get("status"),
             "model_id": model_id,
             "runtime_name": runtime_name,
-            "trace_ref": f"trace::{session_context.trace_id}",
+            "trace_ref": f"trace::{trace_id}",
             "critique_status": critique_status,
             "brain_generate_status": status,
             "raw_content_included": False,
             "contains_personal_data": False,
+            "active_production_mutated": False,
+        }
+
+    def _dispatch_native_hive_federated_packet(
+        self,
+        *,
+        session_id: str,
+        hive_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        native_packet = (
+            hive_result.get("federated_learning_packet")
+            if isinstance(hive_result.get("federated_learning_packet"), dict)
+            else {}
+        )
+        bridge = getattr(self, "native_federated_peer_delivery_bridge", None)
+        if not callable(bridge):
+            return {
+                "surface_id": "nexusbrain-native-hive-federated-peer-delivery-bridge",
+                "status": "not-configured",
+                "packet_ref": (
+                    f"federated-packet::{native_packet.get('packet_id')}"
+                    if native_packet.get("packet_id")
+                    else None
+                ),
+                "delivery_count": 0,
+                "raw_content_included": False,
+                "contains_personal_data": False,
+                "active_production_mutation_allowed": False,
+            }
+        try:
+            delivery = bridge(session_id=session_id, hive_result=hive_result)
+        except Exception as exc:  # pragma: no cover - live product degraded-status guard
+            return {
+                "surface_id": "nexusbrain-native-hive-federated-peer-delivery-bridge",
+                "status": "degraded",
+                "packet_ref": (
+                    f"federated-packet::{native_packet.get('packet_id')}"
+                    if native_packet.get("packet_id")
+                    else None
+                ),
+                "delivery_count": 0,
+                "error_type": type(exc).__name__,
+                "raw_content_included": False,
+                "contains_personal_data": False,
+                "active_production_mutation_allowed": False,
+            }
+        if not isinstance(delivery, dict):
+            return {
+                "surface_id": "nexusbrain-native-hive-federated-peer-delivery-bridge",
+                "status": "degraded",
+                "packet_ref": None,
+                "delivery_count": 0,
+                "raw_content_included": False,
+                "contains_personal_data": False,
+                "active_production_mutation_allowed": False,
+            }
+        return {
+            "surface_id": str(
+                delivery.get("surface_id")
+                or "nexusbrain-native-hive-federated-peer-delivery-bridge"
+            ),
+            "status": str(delivery.get("status") or "degraded"),
+            "source_hive_run_id": delivery.get("source_hive_run_id"),
+            "packet_ref": delivery.get("packet_ref"),
+            "privacy_consent_record_id": delivery.get("privacy_consent_record_id"),
+            "delivery_count": int(delivery.get("delivery_count") or 0),
+            "delivery_refs": [
+                str(delivery_ref)
+                for delivery_ref in delivery.get("delivery_refs", [])
+                if str(delivery_ref)
+            ],
+            "raw_content_included": False,
+            "contains_personal_data": False,
+            "active_production_mutation_allowed": False,
+        }
+
+    def _record_genesis_evidence_spine(self, *, session_id: str) -> dict[str, Any]:
+        bridge = getattr(self, "genesis_evidence_spine_bridge", None)
+        if not callable(bridge):
+            return {
+                "surface_id": "nexusbrain-genesis-evidence-spine-bridge",
+                "status": "not-configured",
+                "operation_receipt_id": None,
+                "operation_content_ref": None,
+                "checkpoint_id": None,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        try:
+            evidence = bridge(session_id=session_id)
+        except Exception as exc:  # pragma: no cover - degraded runtime bridge boundary
+            return {
+                "surface_id": "nexusbrain-genesis-evidence-spine-bridge",
+                "status": "degraded",
+                "operation_receipt_id": None,
+                "operation_content_ref": None,
+                "checkpoint_id": None,
+                "error_type": type(exc).__name__,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        if isinstance(evidence, dict):
+            return {
+                "surface_id": "nexusbrain-genesis-evidence-spine-bridge",
+                "status": str(evidence.get("status") or "unknown"),
+                "operation_receipt_id": evidence.get("operation_receipt_id"),
+                "operation_content_ref": evidence.get("operation_content_ref"),
+                "checkpoint_id": evidence.get("checkpoint_id"),
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        return {
+            "surface_id": "nexusbrain-genesis-evidence-spine-bridge",
+            "status": "degraded",
+            "operation_receipt_id": None,
+            "operation_content_ref": None,
+            "checkpoint_id": None,
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "active_production_mutated": False,
+        }
+
+    def _record_genesis_context_graph_projection(self, *, session_id: str) -> dict[str, Any]:
+        status_provider = getattr(self, "genesis_foundation_status_provider", None)
+        bridge = getattr(self, "genesis_context_graph_bridge", None)
+        if not callable(status_provider) or not callable(bridge):
+            return {
+                "surface_id": "nexusbrain-genesis-context-graph-bridge",
+                "status": "not-configured",
+                "projection_id": None,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        try:
+            foundation_status = status_provider(session_id=session_id)
+            projection = bridge(foundation_status, session_id=session_id)
+        except Exception as exc:  # pragma: no cover - degraded runtime bridge boundary
+            return {
+                "surface_id": "nexusbrain-genesis-context-graph-bridge",
+                "status": "degraded",
+                "projection_id": None,
+                "error_type": type(exc).__name__,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        if isinstance(projection, dict):
+            return {
+                "surface_id": "nexusbrain-genesis-context-graph-bridge",
+                "status": str(projection.get("status") or "unknown"),
+                "projection_id": projection.get("projection_id"),
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        return {
+            "surface_id": "nexusbrain-genesis-context-graph-bridge",
+            "status": "degraded",
+            "projection_id": None,
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "active_production_mutated": False,
+        }
+
+    def _record_genesis_memory_admission(
+        self,
+        *,
+        session_id: str,
+        hive_result: dict[str, Any],
+        sensory_event_id: str | None,
+        heartbeat_record_id: str | None,
+    ) -> dict[str, Any]:
+        bridge = getattr(self, "genesis_memory_admission_bridge", None)
+        if not callable(bridge):
+            return {
+                "surface_id": "nexusbrain-genesis-memory-admission-bridge",
+                "status": "not-configured",
+                "decision_id": None,
+                "memory_write_allowed": True,
+                "retrieval_truth_allowed": False,
+                "training_allowed": False,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        try:
+            decision = bridge(
+                session_id=session_id,
+                hive_result=hive_result,
+                sensory_event_id=sensory_event_id,
+                heartbeat_record_id=heartbeat_record_id,
+            )
+        except Exception as exc:  # pragma: no cover - degraded runtime bridge boundary
+            return {
+                "surface_id": "nexusbrain-genesis-memory-admission-bridge",
+                "status": "degraded",
+                "decision_id": None,
+                "error_type": type(exc).__name__,
+                "memory_write_allowed": False,
+                "retrieval_truth_allowed": False,
+                "training_allowed": False,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        if isinstance(decision, dict):
+            return {
+                "surface_id": "nexusbrain-genesis-memory-admission-bridge",
+                "status": str(decision.get("status") or "unknown"),
+                "decision_id": decision.get("decision_id"),
+                "decision": decision.get("decision"),
+                "operation_receipt_id": decision.get("operation_receipt_id"),
+                "evidence_checkpoint_id": decision.get("evidence_checkpoint_id"),
+                "source_brain_generate_status": decision.get("source_brain_generate_status"),
+                "memory_write_allowed": decision.get("memory_write_allowed") is True,
+                "retrieval_truth_allowed": decision.get("retrieval_truth_allowed") is True,
+                "training_allowed": decision.get("training_allowed") is True,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        return {
+            "surface_id": "nexusbrain-genesis-memory-admission-bridge",
+            "status": "degraded",
+            "decision_id": None,
+            "memory_write_allowed": False,
+            "retrieval_truth_allowed": False,
+            "training_allowed": False,
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "active_production_mutated": False,
+        }
+
+    def _record_genesis_sensory(
+        self,
+        *,
+        session_id: str,
+        hive_result: dict[str, Any],
+        heartbeat_record: dict[str, Any],
+        evidence_record: dict[str, Any],
+    ) -> dict[str, Any]:
+        bridge = getattr(self, "genesis_sensory_bridge", None)
+        if not callable(bridge):
+            return {
+                "surface_id": "nexusbrain-genesis-sensory-bridge",
+                "status": "not-configured",
+                "event_id": None,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        try:
+            record = bridge(
+                session_id=session_id,
+                hive_result=hive_result,
+                heartbeat_record=heartbeat_record,
+                evidence_record=evidence_record,
+            )
+        except Exception as exc:  # pragma: no cover - degraded runtime bridge boundary
+            return {
+                "surface_id": "nexusbrain-genesis-sensory-bridge",
+                "status": "degraded",
+                "event_id": None,
+                "error_type": type(exc).__name__,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        if isinstance(record, dict):
+            return {
+                "surface_id": "nexusbrain-genesis-sensory-bridge",
+                "status": str(record.get("status") or "unknown"),
+                "event_id": record.get("event_id"),
+                "operation_receipt_id": record.get("operation_receipt_id"),
+                "evidence_checkpoint_id": record.get("evidence_checkpoint_id"),
+                "source_brain_generate_status": record.get("source_brain_generate_status"),
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        return {
+            "surface_id": "nexusbrain-genesis-sensory-bridge",
+            "status": "degraded",
+            "event_id": None,
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "active_production_mutated": False,
+        }
+
+    def _record_genesis_heartbeat(self, *, session_id: str, hive_result: dict[str, Any]) -> dict[str, Any]:
+        bridge = getattr(self, "genesis_heartbeat_bridge", None)
+        if not callable(bridge):
+            return {
+                "surface_id": "nexusbrain-genesis-heartbeat-bridge",
+                "status": "not-configured",
+                "record_id": None,
+                "shared_event_ref": None,
+                "source_brain_generate_status": None,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        try:
+            record = bridge(session_id=session_id, hive_result=hive_result)
+        except Exception as exc:  # pragma: no cover - degraded runtime bridge boundary
+            return {
+                "surface_id": "nexusbrain-genesis-heartbeat-bridge",
+                "status": "degraded",
+                "record_id": None,
+                "shared_event_ref": None,
+                "source_brain_generate_status": None,
+                "error_type": type(exc).__name__,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        if isinstance(record, dict):
+            shared_event_spine = record.get("shared_event_spine")
+            return {
+                "surface_id": "nexusbrain-genesis-heartbeat-bridge",
+                "status": str(record.get("status") or "unknown"),
+                "record_id": record.get("record_id"),
+                "shared_event_ref": (
+                    shared_event_spine.get("event_ref")
+                    if isinstance(shared_event_spine, dict)
+                    else None
+                ),
+                "shared_event_spine": {
+                    "event_ref": (
+                        shared_event_spine.get("event_ref")
+                        if isinstance(shared_event_spine, dict)
+                        else None
+                    ),
+                    "raw_content_included": False,
+                    "active_production_mutation_allowed": False,
+                    "active_production_mutated": False,
+                },
+                "source_brain_generate_status": record.get("source_brain_generate_status"),
+                "degraded_lane_count": int(record.get("degraded_lane_count") or 0),
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        return {
+            "surface_id": "nexusbrain-genesis-heartbeat-bridge",
+            "status": "degraded",
+            "record_id": None,
+            "shared_event_ref": None,
+            "source_brain_generate_status": None,
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "active_production_mutated": False,
+        }
+
+    def _observe_genesis_self_repair(
+        self,
+        *,
+        session_id: str,
+        heartbeat_record: dict[str, Any],
+    ) -> dict[str, Any]:
+        bridge = getattr(self, "genesis_self_repair_observer_bridge", None)
+        if not callable(bridge):
+            return {
+                "surface_id": "nexusbrain-genesis-self-repair-observer-bridge",
+                "status": "not-configured",
+                "proposal_id": None,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        try:
+            observation = bridge(session_id=session_id, heartbeat_record=heartbeat_record)
+        except Exception as exc:  # pragma: no cover - degraded runtime bridge boundary
+            return {
+                "surface_id": "nexusbrain-genesis-self-repair-observer-bridge",
+                "status": "degraded",
+                "proposal_id": None,
+                "error_type": type(exc).__name__,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        if isinstance(observation, dict):
+            return {
+                "surface_id": "nexusbrain-genesis-self-repair-observer-bridge",
+                "status": str(observation.get("status") or "unknown"),
+                "proposal_id": observation.get("proposal_id"),
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        return {
+            "surface_id": "nexusbrain-genesis-self-repair-observer-bridge",
+            "status": "degraded",
+            "proposal_id": None,
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "active_production_mutated": False,
+        }
+
+    def _observe_genesis_dream_research(
+        self,
+        *,
+        session_id: str,
+        heartbeat_record: dict[str, Any],
+    ) -> dict[str, Any]:
+        bridge = getattr(self, "genesis_dream_research_observer_bridge", None)
+        if not callable(bridge):
+            return {
+                "surface_id": "nexusbrain-genesis-dream-research-observer-bridge",
+                "status": "not-configured",
+                "dream_proposal_id": None,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        try:
+            observation = bridge(session_id=session_id, heartbeat_record=heartbeat_record)
+        except Exception as exc:  # pragma: no cover - degraded runtime bridge boundary
+            return {
+                "surface_id": "nexusbrain-genesis-dream-research-observer-bridge",
+                "status": "degraded",
+                "dream_proposal_id": None,
+                "error_type": type(exc).__name__,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        if isinstance(observation, dict):
+            return {
+                "surface_id": "nexusbrain-genesis-dream-research-observer-bridge",
+                "status": str(observation.get("status") or "unknown"),
+                "dream_proposal_id": observation.get("dream_proposal_id"),
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "active_production_mutated": False,
+            }
+        return {
+            "surface_id": "nexusbrain-genesis-dream-research-observer-bridge",
+            "status": "degraded",
+            "dream_proposal_id": None,
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
             "active_production_mutated": False,
         }
 
@@ -1131,6 +1829,9 @@ class NexusBrain:
         native_execution: dict[str, Any] | None = None,
         promotion_linkage: dict[str, Any] | None = None,
         compatibility_provenance: dict[str, Any] | None = None,
+        runtime_ladder: list[str] | None = None,
+        usage_intent: str = "inference",
+        teacher_rights_attestation: dict[str, Any] | None = None,
     ) -> tuple[BaseModelAdapter, dict]:
         if self._wake_state is None:
             self.wake()
@@ -1174,6 +1875,10 @@ class NexusBrain:
             promotion_decision_id=((promotion_linkage or {}).get("decision_id")),
             startup_log_path=(self._wake_state or {}).get("log_path"),
             compatibility_provenance=compatibility_provenance,
+            trace_id=(session_context.trace_id if session_context else None),
+            runtime_ladder=runtime_ladder,
+            usage_intent=usage_intent,
+            teacher_rights_attestation=teacher_rights_attestation,
         )
         self.lifecycle_trace.record(
             "attach-base-model",

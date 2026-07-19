@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
+import math
 import shutil
+from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
+from functools import wraps
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 from nexus.schemas import Message, OperatorRequest, utcnow
 from nexusnet.core import AutonomousUpdateController
@@ -30,6 +37,7 @@ from nexusnet.growth import NexusNetProductionSpine
 from nexusnet.experts import build_default_cluster9_teacher_reconciliation_registry
 from nexusnet.hive.dreaming import run_dream_episode
 from nexusnet.hive import HiveForwardPassRequest, HiveNeuralSubstrate
+from nexusnet.hive.substrate import PERSONALITY_PREFERENCE_KEY_ALLOWLIST
 from nexusnet.hive.continuous_assimilation import ContinuousAssimilationLoop
 from nexusnet.hive.multi_user_growth import MultiUserGrowthCoordinator
 from nexusnet.release_health_heartbeat_loop import (
@@ -119,9 +127,39 @@ def _pytest_command_has_existing_target(command: str, *, project_root: Path) -> 
         if not target_path.startswith("tests/") or not target_path.endswith(".py"):
             return False
         saw_target = True
-        if not (project_root / target_path).exists():
+        if not _pytest_target_has_existing_node(arg, project_root=project_root):
             return False
     return saw_target
+
+
+def _pytest_target_has_existing_node(target: str, *, project_root: Path) -> bool:
+    target_parts = str(target or "").split("::")
+    target_path = target_parts[0].replace("\\", "/")
+    path = project_root / target_path
+    if not path.is_file():
+        return False
+    selectors = [part.split("[", 1)[0] for part in target_parts[1:] if part]
+    if not selectors:
+        return True
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    except (OSError, SyntaxError, UnicodeError):
+        return False
+    nodes: list[ast.stmt] = list(tree.body)
+    for selector in selectors:
+        match = next(
+            (
+                node
+                for node in nodes
+                if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name == selector
+            ),
+            None,
+        )
+        if match is None:
+            return False
+        nodes = list(match.body) if isinstance(match, ast.ClassDef) else []
+    return True
 
 
 def _release_wrapper_sandbox_command_for_project(project_root: Path | str, preferred_command: str) -> str:
@@ -282,6 +320,32 @@ def release_wrapper_runtime_summary_from_artifacts(
     return summary
 
 
+def _batch_release_wrapper_summary_persistence(method):
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        batch = self._summary_persistence_batch.get()
+        token = None
+        if batch is None:
+            batch = {"depth": 0, "pending_summary": None}
+            token = self._summary_persistence_batch.set(batch)
+        batch["depth"] += 1
+        result: dict[str, Any] | None = None
+        try:
+            result = method(self, *args, **kwargs)
+            return result
+        finally:
+            batch["depth"] -= 1
+            if batch["depth"] == 0:
+                final_summary = result if isinstance(result, dict) else batch["pending_summary"]
+                batch["pending_summary"] = None
+                if isinstance(final_summary, dict):
+                    self._persist_summary(final_summary, force=True)
+                if token is not None:
+                    self._summary_persistence_batch.reset(token)
+
+    return wrapped
+
+
 class ReleaseWrapperRuntime:
     """Live release-wrapper coordinator for chat usage, growth, federation, and safe update proposals."""
 
@@ -341,6 +405,8 @@ class ReleaseWrapperRuntime:
             self.runtime_dir / "production-spine-release-lifecycle-rollbacks.jsonl"
         )
         self.federated_import_log_path = self.runtime_dir / "federated-packet-imports.jsonl"
+        self.federated_peer_registry_path = self.runtime_dir / "federated-peer-registry.json"
+        self.federated_delivery_log_path = self.runtime_dir / "federated-packet-deliveries.jsonl"
         self.native_hive_heartbeat_log_path = self.runtime_dir / "native-hive-heartbeats.jsonl"
         self.native_hive_heartbeat_watchdog_path = self.runtime_dir / "native-hive-heartbeat-watchdog.json"
         self.project_heartbeat_log_path = self.runtime_dir / "project-heartbeats.jsonl"
@@ -377,6 +443,10 @@ class ReleaseWrapperRuntime:
         self.runtime_decision_ledger = runtime_decision_ledger
         self.quantization_catalog = quantization_catalog
         self._interactions: list[dict[str, Any]] = []
+        self._summary_persistence_batch: ContextVar[dict[str, Any] | None] = ContextVar(
+            "release_wrapper_summary_persistence_batch",
+            default=None,
+        )
         self._whole_system_heartbeat_live_tick_count = 0
         self._native_hive_heartbeats: list[dict[str, Any]] = self._load_native_hive_heartbeats()
         self._project_heartbeats: list[dict[str, Any]] = self._load_project_heartbeats()
@@ -390,6 +460,13 @@ class ReleaseWrapperRuntime:
         )
         self._federated_packets: list[dict[str, Any]] = []
         self._federated_packet_imports: list[dict[str, Any]] = self._load_federated_packet_imports()
+        self._federated_peers: list[dict[str, Any]] = self._load_federated_peers()
+        self._federated_packet_deliveries: list[dict[str, Any]] = self._load_federated_packet_deliveries()
+        self._federated_delivery_replay_status = {
+            "status": "replayed" if self._federated_packet_deliveries else "no-persisted-deliveries",
+            "delivery_count": len(self._federated_packet_deliveries),
+            "artifact_ref": "release-wrapper-runtime/federated-packet-deliveries.jsonl",
+        }
         self._production_spine_packets: list[dict[str, Any]] = []
         self._dream_research_episodes: list[dict[str, Any]] = self._load_dream_research_episodes()
         self._self_repair_actions: list[dict[str, Any]] = self._load_self_repair_actions()
@@ -452,6 +529,7 @@ class ReleaseWrapperRuntime:
         self._privacy_retention_growth_replay_status = self._replay_privacy_retention_growth_state()
         self._federated_packet_import_replay_status = self._replay_federated_packet_import_learning()
 
+    @_batch_release_wrapper_summary_persistence
     def record_chat_turn(self, *, request: Any, result: Any) -> dict[str, Any]:
         if getattr(result, "status", None) == "error" or not getattr(result, "selected_expert", None):
             return self._record_degraded_forward_pass_interaction(
@@ -477,6 +555,14 @@ class ReleaseWrapperRuntime:
         expert_node = f"expert.{getattr(result, 'selected_expert', None) or 'general'}"
         output_digest = _privacy_digest(str(getattr(result, "output", "") or ""))
         quality = 0.5 if getattr(result, "approval_required", False) else (0.7 if getattr(result, "critique", None) else 0.9)
+        privacy_consent_policy = _privacy_consent_policy_for_packet(
+            self._latest_privacy_consent_record_for_session(session_ref_digest)
+        )
+        personality_preference_keys = _sanitized_personality_preference_keys_from_request(request)
+        if privacy_consent_policy["personal_data_federation_allowed"]:
+            personality_preference_keys = sorted(
+                {"federation-opt-in", *personality_preference_keys}
+            )
         metadata = {
             "runtime": getattr(result, "runtime_name", None),
             "wrapper_mode": getattr(result, "wrapper_mode", None),
@@ -549,7 +635,11 @@ class ReleaseWrapperRuntime:
                     session_id=session_id,
                     task_id=f"wrapper-chat::{getattr(result, 'trace_id', 'trace')}",
                     intent=_sanitized_intent_label(result),
-                    source_ref=f"trace::{getattr(result, 'trace_id', 'unknown')}",
+                    source_ref=(
+                        f"nexusbrain-wrapped-model::{getattr(result, 'trace_id', 'unknown')}"
+                        if getattr(result, "provider_id", None)
+                        else f"trace::{getattr(result, 'trace_id', 'unknown')}"
+                    ),
                     requested_capabilities=[
                         str(getattr(result, "selected_expert", "") or "general"),
                         "wrapper",
@@ -569,6 +659,11 @@ class ReleaseWrapperRuntime:
                         "wrapper_mode": getattr(result, "wrapper_mode", None),
                         "source_model": source_model,
                         "output_digest": f"sha256:{output_digest}",
+                        "personality_preference_keys": personality_preference_keys,
+                        "personal_data_federation_allowed": privacy_consent_policy[
+                            "personal_data_federation_allowed"
+                        ],
+                        "privacy_consent_record_id": privacy_consent_policy["record_id"],
                     },
                 )
             )
@@ -579,7 +674,13 @@ class ReleaseWrapperRuntime:
                 "federated_prior_update": {},
             }
             stage_results["federated_packet"] = _degraded_forward_pass_stage("federated_packet", exc)
-        federated_packet = hive_result.get("federated_learning_packet") or {}
+        nexusbrain_genesis_activation = self._record_nexusbrain_genesis_activation(
+            session_id=session_id,
+            result=result,
+            hive_result=hive_result,
+            source_model=source_model,
+            provider_id=provider_id,
+        )
         privacy_consent_record = self._record_privacy_consent(
             session_id=session_id,
             session_ref_digest=session_ref_digest,
@@ -587,11 +688,36 @@ class ReleaseWrapperRuntime:
             created_at=created_at,
         )
         privacy_consent_policy = _privacy_consent_policy_for_packet(privacy_consent_record)
+        federated_packet = hive_result.get("federated_learning_packet") or {}
+        personality_preference_ledger = (
+            hive_result.get("personality_preference_ledger")
+            if isinstance(hive_result.get("personality_preference_ledger"), dict)
+            else None
+        )
         if federated_packet:
             _attach_privacy_consent_to_federated_packet(federated_packet, privacy_consent_record)
+            _attach_personality_consent_to_federated_packet(
+                federated_packet,
+                privacy_consent_record,
+                personality_preference_ledger=personality_preference_ledger,
+            )
+            packet_id = str(federated_packet.get("packet_id") or "")
+            for existing_packet in self._federated_packets:
+                if packet_id and str(existing_packet.get("packet_id") or "") == packet_id:
+                    _attach_privacy_consent_to_federated_packet(existing_packet, privacy_consent_record)
+                    _attach_personality_consent_to_federated_packet(
+                        existing_packet,
+                        privacy_consent_record,
+                        personality_preference_ledger=personality_preference_ledger,
+                    )
         if federated_packet:
-            self._federated_packets.insert(0, federated_packet)
-            self._federated_packets = self._federated_packets[:50]
+            packet_id = str(federated_packet.get("packet_id") or "")
+            if not packet_id or not any(
+                str(existing.get("packet_id") or "") == packet_id
+                for existing in self._federated_packets
+            ):
+                self._federated_packets.insert(0, federated_packet)
+                self._federated_packets = self._federated_packets[:50]
             stage_results["federated_packet"] = {
                 "status": "covered",
                 "evidence_refs": [f"federated-packet::{federated_packet.get('packet_id') or 'unknown'}"],
@@ -628,9 +754,21 @@ class ReleaseWrapperRuntime:
             "personal_data_dream_training_allowed": privacy_consent_policy["personal_data_dream_training_allowed"],
             "sanitized_metadata_federation_allowed": privacy_consent_policy["sanitized_metadata_federation_allowed"],
             "sanitized_dream_research_allowed": privacy_consent_policy["sanitized_dream_research_allowed"],
+            "personality_preference_ledger_id": (
+                personality_preference_ledger.get("preference_ledger_id")
+                if personality_preference_ledger
+                else None
+            ),
+            "personality_preference_feature_count": (
+                personality_preference_ledger.get("preference_feature_count")
+                if personality_preference_ledger
+                else 0
+            ),
             "raw_content_included": False,
             "created_at": created_at,
         }
+        if nexusbrain_genesis_activation:
+            interaction["nexusbrain_genesis_activation"] = nexusbrain_genesis_activation
         if project_heartbeat:
             project_heartbeat, project_heartbeat_replay = self._observe_project_heartbeat(
                 project_heartbeat,
@@ -835,8 +973,6 @@ class ReleaseWrapperRuntime:
             update_id=safe_runtime_update_id,
             command=DEFAULT_RELEASE_WRAPPER_SANDBOX_COMMAND,
             timeout_seconds=60,
-            approved_by="admin",
-            approval_ref="operator-review::release-wrapper-runtime-auto-governance",
         )
         interaction["autonomous_update_lifecycle_run_id"] = autonomous_update_lifecycle.get("run_id")
         interaction["autonomous_update_lifecycle_status"] = autonomous_update_lifecycle.get("status")
@@ -1093,6 +1229,10 @@ class ReleaseWrapperRuntime:
                 "active_production_mutation_allowed": False,
                 "active_production_mutated": False,
             }
+        peer_delivery = self._dispatch_federated_packet_to_approved_peers(
+            packet=packet,
+            session_id=session_id,
+        )
         try:
             imported = self.import_federated_packet(
                 packet=packet,
@@ -1101,6 +1241,7 @@ class ReleaseWrapperRuntime:
                     "release-wrapper-live-shadow::"
                     f"{_privacy_digest(str(provider_id or packet.get('packet_id') or 'wrapped-model'))}"
                 ),
+                import_provenance="local-loopback-readiness",
             )
             readiness_run: dict[str, Any] = {}
             proposal_update_id = str(imported.get("dream_research_proposal_ref") or "")
@@ -1110,8 +1251,6 @@ class ReleaseWrapperRuntime:
                     update_id=proposal_update_id,
                     command=DEFAULT_RELEASE_WRAPPER_SANDBOX_COMMAND,
                     timeout_seconds=60,
-                    approved_by="admin",
-                    approval_ref="operator-review::release-wrapper-live-federated-import-auto-readiness",
                 )
             operation_receipt = (
                 imported.get("operation_receipt")
@@ -1139,6 +1278,8 @@ class ReleaseWrapperRuntime:
                 "readiness_run_status": readiness_run.get("status"),
                 "proposal_update_id": proposal_update_id or None,
                 "governed_update_status": governed_update_path.get("status"),
+                "peer_delivery_status": peer_delivery.get("status"),
+                "peer_delivery_count": peer_delivery.get("delivery_count", 0),
                 "raw_content_included": False,
                 "active_production_mutation_allowed": False,
                 "active_production_mutated": False,
@@ -1148,6 +1289,8 @@ class ReleaseWrapperRuntime:
                 "surface_id": "release-wrapper-live-federated-import-readiness",
                 "status": "degraded",
                 "blocker": f"live_federated_import_failed::{type(exc).__name__}",
+                "peer_delivery_status": peer_delivery.get("status"),
+                "peer_delivery_count": peer_delivery.get("delivery_count", 0),
                 "raw_content_included": False,
                 "active_production_mutation_allowed": False,
                 "active_production_mutated": False,
@@ -1211,9 +1354,9 @@ class ReleaseWrapperRuntime:
                 f"{_privacy_digest('|'.join([session_ref_digest, str(interaction.get('trace_id') or ''), created_at]))}"
             ),
             "subject": "release-wrapper-production-spine-release-lifecycle",
-            "decision": "approved",
-            "approved_by": "release-wrapper-live-supervisor",
-            "rationale": "Live wrapper product use triggered bounded shadow production-spine lifecycle evidence.",
+            "decision": "pending-admin-approval",
+            "approved_by": "",
+            "rationale": "Live wrapper product use prepared a bounded shadow production-spine lifecycle proposal.",
             "metadata": {
                 "source": "release-wrapper-live-release-supervisor-product-lifecycle",
                 "session_ref_digest": session_ref_digest,
@@ -1682,6 +1825,41 @@ class ReleaseWrapperRuntime:
             except Exception:
                 continue
 
+    def _record_nexusbrain_genesis_activation(
+        self,
+        *,
+        session_id: str,
+        result: Any,
+        hive_result: dict[str, Any],
+        source_model: str,
+        provider_id: str,
+    ) -> dict[str, Any]:
+        if not isinstance(hive_result, dict) or not hive_result.get("run_id"):
+            return {}
+        projector = getattr(self.brain, "record_wrapped_model_hive_result", None)
+        if not callable(projector):
+            return {}
+        try:
+            return projector(
+                session_id=session_id,
+                trace_id=str(getattr(result, "trace_id", None) or hive_result.get("run_id") or "trace"),
+                model_id=source_model,
+                runtime_name=str(getattr(result, "runtime_name", None) or f"provider:{provider_id}"),
+                status=str(getattr(result, "status", None) or "unknown"),
+                critique_status=str(getattr(getattr(result, "critique", None), "status", None) or "not-run"),
+                hive_result=hive_result,
+            )
+        except Exception as exc:  # pragma: no cover - degraded NexusBrain projection boundary
+            return {
+                "surface_id": "nexusbrain-native-hive-forward-pass",
+                "activation_source": "wrapped-model-interaction",
+                "status": "degraded",
+                "error_type": type(exc).__name__,
+                "raw_content_included": False,
+                "contains_personal_data": False,
+                "active_production_mutated": False,
+            }
+
     def _record_degraded_forward_pass_interaction(self, *, request: Any, result: Any, reason: str) -> dict[str, Any]:
         session_id = str(getattr(result, "session_id", None) or getattr(request, "session_id", None) or "default")
         source_model = str(
@@ -1726,7 +1904,11 @@ class ReleaseWrapperRuntime:
                     session_id=session_id,
                     task_id=f"wrapper-degraded::{_safe_ref(trace_id)}",
                     intent=f"release wrapper degraded forward-pass heartbeat::{_safe_ref(reason)}",
-                    source_ref=f"trace::{_safe_ref(trace_id)}",
+                    source_ref=(
+                        f"nexusbrain-generate::wrapped-provider::{_safe_ref(trace_id)}"
+                        if getattr(result, "provider_id", None)
+                        else f"trace::{_safe_ref(trace_id)}"
+                    ),
                     requested_capabilities=[
                         "runtime",
                         "failure",
@@ -1756,6 +1938,7 @@ class ReleaseWrapperRuntime:
                         "wrapper_mode": getattr(result, "wrapper_mode", None),
                         "source_model": source_model,
                         "provider_id": provider_id,
+                        "brain_generate_status": "error",
                         "failure_stage": _safe_ref(reason),
                         "failure_ref": failure_ref,
                         "raw_content_included": False,
@@ -1768,6 +1951,13 @@ class ReleaseWrapperRuntime:
             hive_result.get("project_heartbeat")
             if isinstance(hive_result.get("project_heartbeat"), dict)
             else {}
+        )
+        nexusbrain_genesis_activation = self._record_nexusbrain_genesis_activation(
+            session_id=session_id,
+            result=result,
+            hive_result=hive_result,
+            source_model=source_model,
+            provider_id=provider_id,
         )
         interaction = {
             "trace_id": trace_id,
@@ -1798,6 +1988,8 @@ class ReleaseWrapperRuntime:
             "raw_content_included": False,
             "created_at": created_at,
         }
+        if nexusbrain_genesis_activation:
+            interaction["nexusbrain_genesis_activation"] = nexusbrain_genesis_activation
         if project_heartbeat:
             project_heartbeat, project_heartbeat_replay = self._observe_project_heartbeat(
                 project_heartbeat,
@@ -2015,8 +2207,6 @@ class ReleaseWrapperRuntime:
                     update_id=str(proposal_update_id),
                     command=DEFAULT_RELEASE_WRAPPER_SANDBOX_COMMAND,
                     timeout_seconds=60,
-                    approved_by="admin",
-                    approval_ref="operator-review::release-wrapper-degraded-forward-pass",
                 )
                 interaction["autonomous_update_lifecycle_run_id"] = autonomous_update_lifecycle.get("run_id")
                 interaction["autonomous_update_lifecycle_status"] = autonomous_update_lifecycle.get("status")
@@ -2239,6 +2429,7 @@ class ReleaseWrapperRuntime:
         output: str,
         ok: bool,
         wrapper_mode: str = "openai-compatible",
+        metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         prompt_hint = _last_user_content(messages)
         trace_seed = f"{session_id}|{provider_id}|{model_id}|{_privacy_digest(output)}|{utcnow().isoformat()}"
@@ -2267,7 +2458,11 @@ class ReleaseWrapperRuntime:
         if ao_receipt is not None:
             result.selected_ao = ao_receipt.get("ao_name")
             result.ao_execution_receipt = ao_receipt
-        request = SimpleNamespace(session_id=session_id, messages=messages)
+        request = SimpleNamespace(
+            session_id=session_id,
+            messages=messages,
+            metadata=dict(metadata or {}),
+        )
         return self.record_chat_turn(request=request, result=result)
 
     def _bind_wrapper_forward_pass_ao_evidence(
@@ -3111,6 +3306,29 @@ class ReleaseWrapperRuntime:
         run = self.eval_registry.run_shadow(suite_id, replay_payload)
         return self.autonomous_updates.attach_eval_replay(update_id, run)
 
+    def resolve_sandbox_command(self, preferred_command: str) -> str:
+        return _release_wrapper_sandbox_command_for_project(
+            self.artifacts_dir.parent.parent,
+            preferred_command,
+        )
+
+    def run_autonomous_update_governance_lifecycle(
+        self,
+        *,
+        session_id: str,
+        update_id: str,
+        command: str = DEFAULT_RELEASE_WRAPPER_SANDBOX_COMMAND,
+        timeout_seconds: int = 60,
+        admin_approval: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return self._record_autonomous_update_governance_lifecycle(
+            session_id=session_id,
+            update_id=update_id,
+            command=command,
+            timeout_seconds=timeout_seconds,
+            admin_approval=admin_approval,
+        )
+
     def _record_autonomous_update_governance_lifecycle(
         self,
         *,
@@ -3118,14 +3336,37 @@ class ReleaseWrapperRuntime:
         update_id: str,
         command: str = DEFAULT_RELEASE_WRAPPER_SANDBOX_COMMAND,
         timeout_seconds: int = 60,
-        approved_by: str = "admin",
-        approval_ref: str = "operator-review::release-wrapper-runtime-auto-governance",
+        approved_by: str = "",
+        approval_ref: str = "",
+        admin_approval: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        if self._autonomous_update_proposal(update_id) is None:
+        proposal = self._autonomous_update_proposal(update_id)
+        if proposal is None:
             return {
                 "surface_id": "release-wrapper-readiness-evidence-run",
                 "status": "blocked-missing-proposal",
                 "update_id": update_id,
+                "raw_content_included": False,
+                "active_production_mutated": False,
+            }
+        proposal_session_ref_digest = self._self_repair_session_ref_digest(proposal)
+        requested_session_ref_digest = _session_ref_digest(session_id)
+        if not proposal_session_ref_digest:
+            return {
+                "surface_id": "release-wrapper-readiness-evidence-run",
+                "status": "blocked-missing-session-binding",
+                "update_id": update_id,
+                "session_binding": {"status": "missing-proposal-binding"},
+                "raw_content_included": False,
+                "active_production_mutated": False,
+            }
+        if proposal_session_ref_digest not in {requested_session_ref_digest, session_id}:
+            return {
+                "surface_id": "release-wrapper-readiness-evidence-run",
+                "status": "blocked-session-binding-mismatch",
+                "update_id": update_id,
+                "session_ref_digest": requested_session_ref_digest,
+                "session_binding": {"status": "mismatch", "proposal_binding_present": True},
                 "raw_content_included": False,
                 "active_production_mutated": False,
             }
@@ -3154,10 +3395,22 @@ class ReleaseWrapperRuntime:
                 actions=actions,
                 status="blocked-admin-approval-ao-guard",
             )
+        approval_record = _autonomous_update_admin_approval_record(
+            update_id=update_id,
+            approval=admin_approval,
+        )
+        if approval_record.get("status") != "approved":
+            actions["admin_approval"] = approval_record
+            return self.record_release_readiness_evidence_run(
+                session_id=session_id,
+                update_id=update_id,
+                command=command,
+                actions=actions,
+                status="pending-admin-approval",
+            )
         approval = self.autonomous_updates.approve(
             update_id,
-            approved_by=approved_by,
-            approval_ref=approval_ref,
+            approval_evidence=approval_record,
         )
         approval["linked_improvement_queue"] = self._sync_linked_improvement_queue(
             update_id,
@@ -3261,6 +3514,43 @@ class ReleaseWrapperRuntime:
                 status="blocked-sandbox-failed",
             )
 
+        immune_governance = getattr(self, "immune_governance", None)
+        if immune_governance is None:
+            actions["immune_governance"] = {
+                "surface_id": "genesis-immune-governance-mutation-binding",
+                "status": "blocked-not-configured",
+                "promotion_allowed": False,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+            }
+            return self.record_release_readiness_evidence_run(
+                session_id=session_id,
+                update_id=update_id,
+                command=command,
+                actions=actions,
+                status="blocked-immune-governance-not-configured",
+            )
+        proposal = self._autonomous_update_proposal(update_id) or {}
+        immune_evaluation = immune_governance.attest_sandbox_evidence(
+            candidate_ref=update_id,
+            candidate_kind="autonomous-update-safe-apply",
+            sandbox_evidence=sandbox,
+            baseline_ref=f"baseline::{update_id}",
+            rollback_proof_ref=str(proposal.get("rollback_plan") or f"rollback::{update_id}"),
+            artifact_trust_refs=[str(ref) for ref in proposal.get("artifact_trust_refs") or []],
+        )
+        immune_decision = immune_governance.decide(
+            str(immune_evaluation.get("candidate_id") or ""),
+            {
+                "decision": "approve",
+                "approved_by": f"approval::{approval_record.get('approval_ref')}",
+                "human_review_ref": str(approval_record.get("approval_ref") or ""),
+                "domain_check_ref": f"domain-check::{update_id}",
+                "governance_ref": f"governance::{update_id}",
+            },
+        )
+        actions["immune_governance"] = immune_decision
+
         endpoint_ref = f"/ops/brain/autonomous-updates/{update_id}/apply"
         apply_guard = self.guard_self_repair_action(update_id=update_id, action="apply", endpoint_ref=endpoint_ref)
         if apply_guard.get("passed") is not True:
@@ -3285,6 +3575,7 @@ class ReleaseWrapperRuntime:
             test_refs=[command],
             test_evidence_refs=[evidence_ref] if evidence_ref else [],
             ao_guard=apply_guard,
+            immune_governance_decision_id=str(immune_decision.get("decision_id") or ""),
         )
         applied["linked_improvement_queue"] = self._sync_linked_improvement_queue(
             update_id,
@@ -3517,11 +3808,8 @@ class ReleaseWrapperRuntime:
             (
                 run
                 for run in reversed(runs)
-                if str(run.get("status") or "") == "completed"
-                and isinstance(run.get("actions"), dict)
-                and {"admin_approval", "sandbox_tests", "apply", "rollback"}.issubset(
-                    set((run.get("actions") or {}).keys())
-                )
+                if isinstance(run.get("actions"), dict)
+                and "admin_approval" in (run.get("actions") or {})
             ),
             None,
         )
@@ -4020,6 +4308,40 @@ class ReleaseWrapperRuntime:
         )
         student_id = str(safe_overrides.get("student_id") or f"student:rwps:{run_token}")
         target_node_ref = str(safe_overrides.get("target_node_ref") or "node:rwps_runtime")
+        requested_handoff_id = str(safe_overrides.get("domain_growth_handoff_id") or "").strip()
+        domain_growth_handoff = self._resolve_domain_growth_handoff_lifecycle_binding(
+            session_ref_digest=session_ref_digest,
+            handoff_id=requested_handoff_id,
+            approval_record=approval_record,
+        )
+        if requested_handoff_id and domain_growth_handoff.get("status") != "admin-approved-bound":
+            return {
+                "schema_version": "nexusnet-release-wrapper-production-spine-release-lifecycle-run-v1",
+                "surface_id": "release-wrapper-production-spine-release-lifecycle-run",
+                "run_id": f"production-spine-release-lifecycle::blocked::{_privacy_digest(created_at)}",
+                "created_at": created_at,
+                "status": "blocked-domain-growth-handoff",
+                "honest_status_label": "blocked-domain-growth-handoff",
+                "product_surface": "wrapper",
+                "product_scope": "whole-system",
+                "session_ref_digest": session_ref_digest,
+                "admin_approval_required": True,
+                "admin_approval": approval_record,
+                "domain_growth_handoff": _public_domain_growth_handoff_receipt(domain_growth_handoff),
+                "steps": [],
+                "step_counts": {"total": 0, "passed": 0, "blocked": 1},
+                "release_manifest_status_rollup": self._release_manifest_status_rollup(),
+                "release_mutation_allowed": False,
+                "buyer_release_allowed": False,
+                "evidence_refs": ["/ops/approvals", "/ops/wrapper/production-spine-release-lifecycle/run"],
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+                "privacy_boundary": "sanitized-handoff-status-and-digests-only-no-local-paths-secrets-prompts-or-session-ids",
+                "mutation_boundary": "stored-admin-approval-must-bind-a-valid-domain-growth-handoff-before-sandbox-execution",
+            }
+        if domain_growth_handoff.get("status") == "admin-approved-bound":
+            student_id = str(domain_growth_handoff.get("student_id") or student_id)
+            target_node_ref = str(domain_growth_handoff.get("target_node_ref") or target_node_ref)
         export_dir = self.runtime_dir / "ps-release-lifecycle" / _safe_ref(run_token) / "exports"
         export_dir.mkdir(parents=True, exist_ok=True)
 
@@ -4036,8 +4358,13 @@ class ReleaseWrapperRuntime:
             lifecycle_id=lifecycle_id,
             student_id=student_id,
             target_node_ref=target_node_ref,
+            domain_growth_handoff=domain_growth_handoff,
         )
         lifecycle = self.production_spine.run_growth_lifecycle(lifecycle_request)
+        domain_growth_handoff_receipt = _public_domain_growth_handoff_receipt(
+            domain_growth_handoff,
+            lifecycle=lifecycle,
+        )
         steps.append(
             _production_spine_lifecycle_step_summary(
                 "growth_lifecycle",
@@ -4344,6 +4671,7 @@ class ReleaseWrapperRuntime:
             "target_node_ref": target_node_ref,
             "admin_approval_required": True,
             "admin_approval": approval_record,
+            "domain_growth_handoff": domain_growth_handoff_receipt,
             "steps": steps,
             "step_counts": {
                 "total": len(steps),
@@ -4361,6 +4689,11 @@ class ReleaseWrapperRuntime:
                 f"authority-decision::{authority_evidence_tool_governance.get('authority_decision_id') or 'missing'}",
                 f"evidence::{authority_evidence_tool_governance.get('evidence_record_id') or 'missing'}",
                 f"eval-federation::{authority_evidence_tool_governance.get('eval_federation_event_id') or 'missing'}",
+                (
+                    f"domain-growth-handoff::{domain_growth_handoff_receipt.get('handoff_id')}"
+                    if domain_growth_handoff_receipt.get("handoff_id")
+                    else ""
+                ),
                 f"tool-action::{authority_evidence_tool_governance.get('tool_action_plan_id') or 'missing'}",
                 "/ops/brain/canon/production-spine",
                 f"cycle::{cycle_id}",
@@ -4379,6 +4712,117 @@ class ReleaseWrapperRuntime:
         summary = self.summary(session_id=session_id)
         self._persist_summary(summary)
         return run
+
+    def _resolve_domain_growth_handoff_lifecycle_binding(
+        self,
+        *,
+        session_ref_digest: str | None,
+        handoff_id: str,
+        approval_record: dict[str, Any],
+    ) -> dict[str, Any]:
+        requested_handoff_id = str(handoff_id or "").strip()
+        if not requested_handoff_id:
+            return {"status": "not-requested"}
+        safe_handoff_id = _safe_ref(requested_handoff_id)
+        approved_handoff_id = str(approval_record.get("approved_domain_growth_handoff_id") or "").strip()
+        if approved_handoff_id != requested_handoff_id:
+            return {
+                "status": "blocked-admin-approval-handoff-mismatch",
+                "handoff_id": requested_handoff_id,
+                "blockers": ["admin_approval_does_not_bind_requested_domain_growth_handoff"],
+            }
+        if not session_ref_digest:
+            return {
+                "status": "blocked-missing-session-evidence",
+                "handoff_id": requested_handoff_id,
+                "blockers": ["domain_growth_handoff_requires_session_evidence"],
+            }
+
+        handoff: dict[str, Any] | None = None
+        for interaction in self._interactions_for_session(session_ref_digest):
+            candidate = interaction.get("domain_teacher_eval_handoff")
+            if isinstance(candidate, dict) and str(candidate.get("handoff_id") or "") == requested_handoff_id:
+                handoff = candidate
+                break
+        if handoff is None:
+            return {
+                "status": "blocked-domain-growth-handoff-not-found",
+                "handoff_id": requested_handoff_id,
+                "blockers": ["persisted_domain_growth_handoff_not_found"],
+            }
+
+        growth_candidate = (
+            handoff.get("expert_growth_candidate")
+            if isinstance(handoff.get("expert_growth_candidate"), dict)
+            else {}
+        )
+        growth_cycle_ref = (
+            growth_candidate.get("growth_cycle_ref")
+            if isinstance(growth_candidate.get("growth_cycle_ref"), dict)
+            else {}
+        )
+        promotion_candidate_ref = (
+            growth_candidate.get("promotion_candidate_ref")
+            if isinstance(growth_candidate.get("promotion_candidate_ref"), dict)
+            else {}
+        )
+        eval_registry_ref = handoff.get("eval_registry_ref") if isinstance(handoff.get("eval_registry_ref"), dict) else {}
+        teacher_registry = handoff.get("teacher_registry") if isinstance(handoff.get("teacher_registry"), dict) else {}
+        teacher_refs = _dedupe_strings(
+            [
+                *[str(value) for value in (teacher_registry.get("selected_teachers") or [])],
+                str(teacher_registry.get("selected_teacher_id") or ""),
+            ]
+        )
+        blockers: list[str] = []
+        if handoff.get("passed") is not True:
+            blockers.append("domain_growth_handoff_not_passed")
+        if growth_candidate.get("status") != "recorded-shadow":
+            blockers.append("domain_growth_candidate_not_recorded_shadow")
+        if not growth_cycle_ref.get("cycle_id"):
+            blockers.append("domain_growth_cycle_missing")
+        if not promotion_candidate_ref.get("candidate_id"):
+            blockers.append("domain_growth_promotion_candidate_missing")
+        if eval_registry_ref.get("status") != "registered" or not eval_registry_ref.get("suite_id"):
+            blockers.append("domain_growth_eval_suite_missing")
+        if not teacher_refs:
+            blockers.append("domain_growth_teacher_refs_missing")
+        if blockers:
+            return {
+                "status": "blocked-invalid-domain-growth-handoff",
+                "handoff_id": requested_handoff_id,
+                "blockers": blockers,
+            }
+
+        candidate_id = str(promotion_candidate_ref.get("candidate_id"))
+        domain_ao = _safe_ref(str(handoff.get("domain_ao") or "DomainAO"))
+        return {
+            "status": "admin-approved-bound",
+            "handoff_id": requested_handoff_id,
+            "domain_ao": domain_ao,
+            "teacher_subject": _safe_ref(str(handoff.get("teacher_subject") or "teacher")),
+            "growth_cycle_id": _safe_ref(str(growth_cycle_ref.get("cycle_id"))),
+            "promotion_candidate_id": _safe_ref(candidate_id),
+            "eval_suite_id": _safe_ref(str(eval_registry_ref.get("suite_id"))),
+            "teacher_refs": [_safe_ref(ref) for ref in teacher_refs],
+            "student_id": f"student:domain-growth:{_safe_ref(candidate_id)}",
+            "target_node_ref": f"node:domain-growth:{domain_ao}",
+            "_teacher_outputs": [
+                {
+                    "teacher_ref": f"teacher:{_safe_ref(ref)}",
+                    "license_state": "internal",
+                    "score": 0.9,
+                    "output_ref": f"out:domain-growth:{_privacy_digest(f'{safe_handoff_id}:{ref}')}",
+                }
+                for ref in teacher_refs
+            ],
+            "_validator_results": [
+                {"validator_ref": f"eval-suite:{_safe_ref(str(eval_registry_ref.get('suite_id')))}", "passed": True, "score": 1.0},
+                {"validator_ref": "validator:privacy-redaction", "passed": True, "score": 1.0},
+            ],
+            "_eval_refs": [f"eval-suite:{_safe_ref(str(eval_registry_ref.get('suite_id')))}"],
+            "_rollback_ref": f"rollback:domain-growth:{safe_handoff_id}",
+        }
 
     def rollback_production_spine_release_lifecycle_run(
         self,
@@ -4437,6 +4881,11 @@ class ReleaseWrapperRuntime:
             "run_id": str(run.get("run_id") or run_id),
             "session_ref_digest": str(run.get("session_ref_digest") or session_ref_digest or ""),
             "reason_digest": f"sha256:{_privacy_digest(str(reason or ''))}",
+            "domain_growth_handoff": (
+                run.get("domain_growth_handoff")
+                if isinstance(run.get("domain_growth_handoff"), dict)
+                else _public_domain_growth_handoff_receipt({"status": "not-requested"})
+            ),
             "artifact_cleanup": cleanup,
             "authority_evidence_tool_governance": authority_evidence_tool_governance,
             "rollback_restored": bool(restored),
@@ -4575,6 +5024,7 @@ class ReleaseWrapperRuntime:
         status_card: dict[str, Any],
         session_lifecycle: dict[str, Any],
         control_panel: dict[str, Any],
+        manifest_overrides: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         session_ref = _session_ref_digest(session_id)
         session_ref_digest = f"sha256:{session_ref}" if session_ref else None
@@ -4608,7 +5058,12 @@ class ReleaseWrapperRuntime:
         checks = [
             _release_product_smoke_check(
                 "initial-release-supervisor",
-                initial_release_supervisor.get("status") == "initial-release-go"
+                initial_release_supervisor.get("status")
+                in {
+                    "initial-release-go",
+                    "initial-release-governed-update-completed",
+                    "initial-release-governed-shadow-lifecycle-completed",
+                }
                 and initial_release_supervisor.get("raw_content_included") is False
                 and initial_release_supervisor.get("active_production_mutation_allowed") is False,
                 "/ops/wrapper/initial-release-supervisor/run",
@@ -4808,6 +5263,8 @@ class ReleaseWrapperRuntime:
             "privacy_boundary": "sanitized-release-product-smoke-status-counts-digests-and-endpoint-refs-only-no-prompts-outputs-session-ids-or-local-paths",
             "mutation_boundary": "release-product-smoke-evidence-only-no-active-production-mutation",
         }
+        if isinstance(manifest_overrides, dict):
+            manifest.update(json.loads(json.dumps(manifest_overrides, default=str)))
         release_run = _release_run_record_from_product_smoke(
             manifest=manifest,
             run_sequence=run_sequence,
@@ -5694,8 +6151,7 @@ class ReleaseWrapperRuntime:
             payload={
                 "update_id": update_id,
                 "command": command,
-                "approval_ref": "operator-review::automatic-wrapper-interaction-repair",
-                "approved_by": "admin",
+                "approval_ref": "/ops/approvals",
             },
             supervisor=supervisor,
             proposal=proposal,
@@ -5768,8 +6224,6 @@ class ReleaseWrapperRuntime:
             update_id=update_id,
             command=str(repair_plan.get("command") or command),
             timeout_seconds=60,
-            approved_by="admin",
-            approval_ref="operator-review::automatic-wrapper-interaction-repair",
         )
         actions = dict(lifecycle_run.get("actions") or {})
         admin_approval = actions.get("admin_approval") if isinstance(actions.get("admin_approval"), dict) else {}
@@ -5978,8 +6432,6 @@ class ReleaseWrapperRuntime:
             update_id=update_id,
             command=command,
             timeout_seconds=60,
-            approved_by="admin",
-            approval_ref="operator-review::whole-system-heartbeat-degraded-stage-repair",
         )
         actions = dict(lifecycle_run.get("actions") or {})
         lifecycle_status = str(lifecycle_run.get("status") or "blocked")
@@ -6889,10 +7341,6 @@ class ReleaseWrapperRuntime:
                     update_id=self_repair_lifecycle_update_id,
                     command=DEFAULT_RELEASE_WRAPPER_SANDBOX_COMMAND,
                     timeout_seconds=60,
-                    approved_by="admin",
-                    approval_ref=(
-                        "operator-review::whole-system-heartbeat-post-repair-self-repair-governance"
-                    ),
                 )
                 self_repair_actions = (
                     self_repair_lifecycle.get("actions")
@@ -8411,6 +8859,12 @@ class ReleaseWrapperRuntime:
         accepted_import_count = sum(
             1 for record in imports if record.get("status") == "quarantined-shadow-accepted"
         )
+        accepted_peer_imports = [
+            record
+            for record in imports
+            if record.get("status") == "quarantined-shadow-accepted"
+            and record.get("independent_peer_evidence") is True
+        ]
         rejected_import_count = sum(
             1 for record in imports if record.get("status") == "quarantined-rejected"
         )
@@ -8428,10 +8882,12 @@ class ReleaseWrapperRuntime:
             "import_ref": "/ops/wrapper/federated-packets/import",
             "import_count": len(imports),
             "accepted_import_count": accepted_import_count,
+            "accepted_peer_import_count": len(accepted_peer_imports),
             "rejected_import_count": rejected_import_count,
             "degraded_import_count": degraded_import_count,
             "global_import_count": len(self._federated_packet_imports),
             "latest_import": latest_import,
+            "latest_peer_import": accepted_peer_imports[0] if accepted_peer_imports else None,
             "imports": imports[:20],
             "privacy_consent_enforcement": self._privacy_consent_enforcement_summary(
                 session_ref_digest=session_ref_digest
@@ -8455,6 +8911,7 @@ class ReleaseWrapperRuntime:
         packet: dict[str, Any],
         session_id: str | None = None,
         peer_node_id: str | None = None,
+        import_provenance: str = "external-peer",
     ) -> dict[str, Any]:
         packet_payload = packet if isinstance(packet, dict) else {}
         session_ref_digest = _session_ref_digest(session_id)
@@ -8462,6 +8919,11 @@ class ReleaseWrapperRuntime:
         packet_id = str(packet_payload.get("packet_id") or "")
         packet_digest = _privacy_digest(json.dumps(packet_payload, sort_keys=True, default=str))
         peer_node_ref_digest = f"sha256:{_privacy_digest(str(peer_node_id or packet_id or 'anonymous-peer'))}"
+        normalized_import_provenance = (
+            "local-loopback-readiness"
+            if import_provenance == "local-loopback-readiness"
+            else "external-peer"
+        )
         source_packet_ref = f"federated-packet::{packet_id or packet_digest}"
         route_metadata = (
             packet_payload.get("route_metadata") if isinstance(packet_payload.get("route_metadata"), dict) else {}
@@ -8512,6 +8974,8 @@ class ReleaseWrapperRuntime:
             and signed_packet_clear
             and privacy_audit_clear
         )
+        poisoning_anomaly_gate = _federated_packet_poisoning_anomaly_gate(packet_payload)
+        federated_packet_verified = security_envelope_verified and poisoning_anomaly_gate["passed"] is True
         selected_terms = [
             _safe_ref(str(term))
             for term in (route_metadata.get("selected_capability_terms") or [])
@@ -8535,7 +8999,7 @@ class ReleaseWrapperRuntime:
         assimilation_shadow_captured = False
         global_growth_shadow_captured = False
         shadow_error: str | None = None
-        if security_envelope_verified and not privacy_consent_blocks_personal_data_import:
+        if federated_packet_verified and not privacy_consent_blocks_personal_data_import:
             try:
                 self.continuous_assimilation.assimilate(
                     source_model=source_model,
@@ -8564,12 +9028,12 @@ class ReleaseWrapperRuntime:
                 shadow_error = type(exc).__name__
         status = (
             "quarantined-shadow-blocked-by-consent-revocation"
-            if security_envelope_verified and privacy_consent_blocks_personal_data_import
+            if federated_packet_verified and privacy_consent_blocks_personal_data_import
             else
             "quarantined-shadow-accepted"
-            if security_envelope_verified and assimilation_shadow_captured and global_growth_shadow_captured
+            if federated_packet_verified and assimilation_shadow_captured and global_growth_shadow_captured
             else "quarantined-shadow-degraded"
-            if security_envelope_verified
+            if federated_packet_verified
             else "quarantined-rejected"
         )
         record = {
@@ -8582,12 +9046,16 @@ class ReleaseWrapperRuntime:
             "status_label": "LOCKED CANON",
             "session_ref_digest": session_ref_digest,
             "peer_node_ref_digest": peer_node_ref_digest,
+            "import_provenance": normalized_import_provenance,
+            "independent_peer_evidence": normalized_import_provenance == "external-peer",
             "source_packet_ref": source_packet_ref,
             "packet_digest": f"sha256:{packet_digest}",
             "source_model": source_model,
             "expert_node": expert_node,
             "quality": quality,
             "security_envelope_verified": security_envelope_verified,
+            "poisoning_anomaly_gate": poisoning_anomaly_gate,
+            "federated_packet_verified": federated_packet_verified,
             "consent_policy": consent_policy,
             "privacy_consent_record_id": consent_policy.get("record_id"),
             "consent_basis": consent_policy.get("consent_basis"),
@@ -8622,7 +9090,7 @@ class ReleaseWrapperRuntime:
                 "blocked-by-revocation"
                 if privacy_consent_blocks_personal_data_import
                 else "shadow-only"
-                if security_envelope_verified
+                if federated_packet_verified
                 else "blocked"
             ),
             "assimilation_shadow_captured": assimilation_shadow_captured,
@@ -8647,6 +9115,13 @@ class ReleaseWrapperRuntime:
                     "status": "covered" if security_envelope_verified else "degraded",
                     "evidence_refs": [source_packet_ref, f"packet-digest::sha256:{packet_digest}"],
                     "blocker": "" if security_envelope_verified else "security_envelope_not_verified",
+                },
+                "poisoning_anomaly_gate": {
+                    "status": "covered" if poisoning_anomaly_gate["passed"] is True else "blocked",
+                    "evidence_refs": [poisoning_anomaly_gate["gate_id"]],
+                    "blocker": ""
+                    if poisoning_anomaly_gate["passed"] is True
+                    else "federated_packet_poisoning_or_anomaly_detected",
                 },
                 "shadow_quarantine": {
                     "status": "covered" if status == "quarantined-shadow-accepted" else "degraded",
@@ -9999,8 +10474,8 @@ class ReleaseWrapperRuntime:
             else self._federated_packet_inbox_summary(session_ref_digest=session_ref_digest, imports=[])
         )
         latest_import = (
-            federated_packet_inbox.get("latest_import")
-            if isinstance(federated_packet_inbox.get("latest_import"), dict)
+            federated_packet_inbox.get("latest_peer_import")
+            if isinstance(federated_packet_inbox.get("latest_peer_import"), dict)
             else None
         )
         peer_import_accepted = (
@@ -10016,7 +10491,14 @@ class ReleaseWrapperRuntime:
         peer_shadow_proposal = _latest_peer_shadow_proposal(
             autonomous_updates=autonomous_updates,
             dream_queue=dream_queue,
+            federated_packet_import_id=str((latest_import or {}).get("import_id") or ""),
         )
+        if (
+            latest_import is None
+            or peer_shadow_proposal is None
+            or peer_shadow_proposal.get("federated_packet_import_id") != latest_import.get("import_id")
+        ):
+            peer_shadow_proposal = None
         production_spine = runtime.get("production_spine") if isinstance(runtime.get("production_spine"), dict) else {}
         latest_production_packet = (
             production_spine.get("latest_packet") if isinstance(production_spine.get("latest_packet"), dict) else None
@@ -10676,7 +11158,7 @@ class ReleaseWrapperRuntime:
                 and federated_packet_inbox.get("raw_content_included") is False
                 and federated_packet_inbox.get("contains_personal_data") is False
                 and federated_packet_inbox.get("active_production_mutation_allowed") is False
-                and int(federated_packet_inbox.get("accepted_import_count") or 0) > 0
+                and int(federated_packet_inbox.get("accepted_peer_import_count") or 0) > 0
                 and peer_import_accepted,
                 _compact_refs(latest_import, ["import_id", "source_packet_ref", "status"])
                 or [f"import_count::{int(federated_packet_inbox.get('import_count') or 0)}"],
@@ -10686,6 +11168,8 @@ class ReleaseWrapperRuntime:
                 "peer-shadow-proposal",
                 "Accepted inbound federated packet is routed into dream/research and autonomous proposal lanes.",
                 peer_shadow_proposal is not None
+                and latest_import is not None
+                and peer_shadow_proposal.get("federated_packet_import_id") == latest_import.get("import_id")
                 and peer_shadow_proposal.get("raw_content_included") is False
                 and peer_shadow_proposal.get("active_production_mutation_allowed") is False,
                 _compact_refs(
@@ -11654,6 +12138,7 @@ class ReleaseWrapperRuntime:
                 governance_proposal,
                 latest_release_health_repair_proposal,
                 latest_dream_research_proposal,
+                *proposals,
             )
             if isinstance(proposal, dict)
         ]
@@ -11667,6 +12152,13 @@ class ReleaseWrapperRuntime:
             ),
             latest_release_admin_proposal,
         )
+        if isinstance(latest_action_status_proposal, dict) and (
+            latest_action_status_proposal.get("operator_approved") is True
+            or isinstance(latest_action_status_proposal.get("latest_eval_replay"), dict)
+            or isinstance(latest_action_status_proposal.get("latest_sandbox_test_evidence"), dict)
+        ):
+            latest_release_admin_proposal = latest_action_status_proposal
+            governance_update_id = str(latest_action_status_proposal.get("update_id") or governance_update_id)
         proposal_update_id = str(
             governance_update_id
             or ((latest_release_admin_proposal or {}).get("update_id") if isinstance(latest_release_admin_proposal, dict) else "")
@@ -11689,6 +12181,63 @@ class ReleaseWrapperRuntime:
         release_readiness_evidence_runner = self.release_readiness_evidence_runner(
             session_ref_digest=session_ref_digest
         )
+        latest_governed_run = (
+            release_readiness_evidence_runner.get("latest_autonomous_update_lifecycle_run")
+            if isinstance(release_readiness_evidence_runner.get("latest_autonomous_update_lifecycle_run"), dict)
+            else {}
+        )
+        latest_governed_actions = (
+            latest_governed_run.get("actions")
+            if str(latest_governed_run.get("update_id") or "") == _safe_ref(proposal_update_id)
+            and isinstance(latest_governed_run.get("actions"), dict)
+            else {}
+        )
+        latest_governed_admin_approval = (
+            latest_governed_actions.get("admin_approval")
+            if isinstance(latest_governed_actions.get("admin_approval"), dict)
+            else {}
+        )
+        latest_governed_eval_replay = (
+            latest_governed_admin_approval.get("linked_eval_replay")
+            if isinstance(latest_governed_admin_approval.get("linked_eval_replay"), dict)
+            else {}
+        )
+        latest_governed_proposal = next(
+            (
+                proposal
+                for proposal in proposals
+                if isinstance(proposal, dict)
+                and str(latest_governed_run.get("update_id") or "")
+                == _safe_ref(str(proposal.get("update_id") or ""))
+            ),
+            None,
+        )
+        if isinstance(latest_governed_proposal, dict) and (
+            not proposal_update_id
+            or _safe_ref(str(latest_governed_proposal.get("update_id") or ""))
+            == _safe_ref(proposal_update_id)
+        ):
+            proposal_update_id = str(latest_governed_proposal.get("update_id") or proposal_update_id)
+            latest_release_admin_proposal = latest_governed_proposal
+            latest_action_status_proposal = latest_governed_proposal
+            latest_sandbox = (
+                latest_governed_actions.get("sandbox_tests")
+                if isinstance(latest_governed_actions.get("sandbox_tests"), dict)
+                else latest_governed_proposal.get("latest_sandbox_test_evidence")
+                if isinstance(latest_governed_proposal.get("latest_sandbox_test_evidence"), dict)
+                else latest_sandbox
+            )
+            latest_applied = (
+                latest_governed_actions.get("apply")
+                if isinstance(latest_governed_actions.get("apply"), dict)
+                else latest_applied
+            )
+            latest_rollback = (
+                latest_governed_actions.get("rollback")
+                if isinstance(latest_governed_actions.get("rollback"), dict)
+                else latest_rollback
+            )
+            latest_eval_replay = latest_governed_eval_replay or latest_eval_replay
         safe_file_scope = (
             ((latest_action_status_proposal or {}).get("metadata") or {}).get("safe_file_scope")
             if isinstance(((latest_action_status_proposal or {}).get("metadata") or {}).get("safe_file_scope"), list)
@@ -11722,6 +12271,14 @@ class ReleaseWrapperRuntime:
             or proposal_metadata.get("developmental_promotion_case_ref")
             or proposal_safe_payload.get("developmental_promotion_case_ref")
         )
+        latest_stored_admin_approval = (
+            latest_governed_admin_approval
+            or (
+                (latest_action_status_proposal or {}).get("admin_approval")
+                if isinstance((latest_action_status_proposal or {}).get("admin_approval"), dict)
+                else {}
+            )
+        )
         operator_action_lane = {
             "surface_id": "release-wrapper-admin-action-lane",
             "status_label": "LOCKED CANON",
@@ -11730,10 +12287,21 @@ class ReleaseWrapperRuntime:
             "developmental_cortex_assessment_ref": developmental_assessment_ref,
             "developmental_growth_candidate_ref": developmental_growth_candidate_ref,
             "developmental_promotion_case_ref": developmental_promotion_case_ref,
-            "admin_approval_ref": governance.get("admin_approval_ref"),
-            "sandbox_tests_ref": governance.get("sandbox_tests_ref"),
-            "apply_ref": governance.get("apply_ref"),
-            "rollback_ref": governance.get("rollback_ref"),
+            "admin_approval_ref": (
+                f"/ops/brain/autonomous-updates/{proposal_update_id}/admin-approval" if proposal_update_id else None
+            ),
+            "sandbox_tests_ref": (
+                f"/ops/brain/autonomous-updates/{proposal_update_id}/sandbox-tests" if proposal_update_id else None
+            ),
+            "apply_ref": f"/ops/brain/autonomous-updates/{proposal_update_id}/apply" if proposal_update_id else None,
+            "rollback_ref": (
+                f"/ops/brain/autonomous-updates/{proposal_update_id}/rollback" if proposal_update_id else None
+            ),
+            "approval_request_ref": "/ops/approvals",
+            "stored_approval_ref": latest_stored_admin_approval.get("approval_ref") or None,
+            "run_governed_lifecycle_ref": (
+                f"/ops/wrapper/autonomous-updates/{proposal_update_id}/run" if proposal_update_id else None
+            ),
             "domain_expert_growth_admin_replay_ref": "/ops/wrapper/domain-expert-growth/admin-replay",
             "run_readiness_evidence_ref": "/ops/wrapper/release-readiness/run",
             "run_boot_supervisor_ref": "/ops/wrapper/boot-supervisor/run",
@@ -11759,20 +12327,41 @@ class ReleaseWrapperRuntime:
                     if isinstance(latest_action_status_proposal, dict)
                     else governance.get("proposal_status") or "not-generated"
                 ),
-                "admin_approval": "admin-approved"
-                if isinstance(latest_action_status_proposal, dict)
-                and latest_action_status_proposal.get("operator_approved") is True
-                else "pending-admin-approval",
-                "shadow_eval_replay": (latest_eval_replay or {}).get("status") or "not-run",
+                "admin_approval": (
+                    latest_governed_admin_approval.get("status")
+                    or (
+                        "admin-approved"
+                        if isinstance(latest_action_status_proposal, dict)
+                        and latest_action_status_proposal.get("operator_approved") is True
+                        else "pending-admin-approval"
+                    )
+                ),
+                "shadow_eval_replay": (
+                    latest_governed_eval_replay.get("status")
+                    or (latest_eval_replay or {}).get("status")
+                    or "not-run"
+                ),
                 "domain_expert_growth_admin_replay": (
                     domain_teacher_eval_handoff.get("latest_admin_eval_replay_status") or "not-run"
                 ),
                 "domain_expert_growth_sandbox_takeover_evidence": (
                     domain_teacher_eval_handoff.get("latest_sandbox_takeover_evidence_status") or "not-run"
                 ),
-                "sandbox_tests": (latest_sandbox or {}).get("status") or "not-run",
-                "apply": (latest_applied or {}).get("status") or "not-applied",
-                "rollback": (latest_rollback or {}).get("status") or "not-rolled-back",
+                "sandbox_tests": (
+                    (latest_governed_actions.get("sandbox_tests") or {}).get("status")
+                    or (latest_sandbox or {}).get("status")
+                    or "not-run"
+                ),
+                "apply": (
+                    (latest_governed_actions.get("apply") or {}).get("status")
+                    or (latest_applied or {}).get("status")
+                    or "not-applied"
+                ),
+                "rollback": (
+                    (latest_governed_actions.get("rollback") or {}).get("status")
+                    or (latest_rollback or {}).get("status")
+                    or "not-rolled-back"
+                ),
                 "readiness_runner": release_readiness_evidence_runner.get("latest_status") or "not-run",
                 "release_product_smoke": release_product_smoke.get("latest_status") or "not-run",
                 "release_health_heartbeat_loop": release_health_heartbeat_loop.get("status") or "not-run",
@@ -11784,6 +12373,7 @@ class ReleaseWrapperRuntime:
             },
             "action_order": [
                 "admin_approval",
+                "run_governed_lifecycle",
                 "domain_expert_growth_admin_replay",
                 "domain_expert_growth_sandbox_takeover_evidence",
                 "sandbox_tests",
@@ -11913,6 +12503,464 @@ class ReleaseWrapperRuntime:
             session_ref_digest=session_ref_digest,
             imports=imports,
         )
+
+    def register_federated_peer(
+        self,
+        *,
+        peer_node_id: str,
+        import_url: str,
+        approval: dict[str, Any],
+    ) -> dict[str, Any]:
+        normalized_peer_node_id = str(peer_node_id or "").strip()
+        normalized_import_url = self._validated_federated_peer_import_url(import_url)
+        if not normalized_peer_node_id:
+            raise ValueError("peer_node_id is required for federated peer registration")
+        approval_ref = str(approval.get("approval_ref") or "").strip()
+        if not approval_ref or approval.get("decision") != "approved":
+            raise ValueError("approved governance record is required for federated peer registration")
+        peer_node_ref_digest = f"sha256:{_privacy_digest(normalized_peer_node_id)}"
+        import_url_digest = f"sha256:{_privacy_digest(normalized_import_url)}"
+        record = {
+            "schema_version": "nexusnet-release-wrapper-federated-peer-v1",
+            "peer_node_id": normalized_peer_node_id,
+            "import_url": normalized_import_url,
+            "peer_node_ref_digest": peer_node_ref_digest,
+            "import_url_digest": import_url_digest,
+            "approval_ref": approval_ref,
+            "approval_subject": str(approval.get("approval_subject") or ""),
+            "registered_at": utcnow().isoformat(),
+            "status": "active-admin-approved",
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+        }
+        self._federated_peers = [
+            existing
+            for existing in self._federated_peers
+            if str(existing.get("peer_node_ref_digest") or "") != peer_node_ref_digest
+        ]
+        self._federated_peers.insert(0, record)
+        self._persist_federated_peers()
+        return {
+            "surface_id": "release-wrapper-federated-peer-registration",
+            "status": "admin-approved-peer-registered",
+            "peer_node_ref_digest": peer_node_ref_digest,
+            "import_url_digest": import_url_digest,
+            "approval_ref": approval_ref,
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+            "mutation_boundary": "local-admin-approved-peer-registry-only-no-production-routing-or-model-mutation",
+        }
+
+    def revoke_federated_peer(self, *, peer_node_id: str) -> dict[str, Any]:
+        normalized_peer_node_id = str(peer_node_id or "").strip()
+        peer_node_ref_digest = f"sha256:{_privacy_digest(normalized_peer_node_id)}"
+        changed = False
+        revised: list[dict[str, Any]] = []
+        for peer in self._federated_peers:
+            updated = dict(peer)
+            if str(peer.get("peer_node_ref_digest") or "") == peer_node_ref_digest:
+                updated["status"] = "revoked-local-admin"
+                updated["revoked_at"] = utcnow().isoformat()
+                changed = True
+            revised.append(updated)
+        if not changed:
+            return {
+                "surface_id": "release-wrapper-federated-peer-revocation",
+                "status": "blocked-peer-not-found",
+                "peer_node_ref_digest": peer_node_ref_digest,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+            }
+        self._federated_peers = revised
+        self._persist_federated_peers()
+        return {
+            "surface_id": "release-wrapper-federated-peer-revocation",
+            "status": "revoked-local-admin",
+            "peer_node_ref_digest": peer_node_ref_digest,
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+        }
+
+    def federated_peer_delivery_status(self, *, session_id: str | None = None) -> dict[str, Any]:
+        session_ref_digest = _session_ref_digest(session_id)
+        deliveries = self._federated_packet_deliveries_for_session(session_ref_digest)
+        active_peers = self._active_federated_peers()
+        acknowledged = [
+            delivery
+            for delivery in deliveries
+            if delivery.get("status") == "acknowledged-shadow-accepted"
+        ]
+        pending = [delivery for delivery in deliveries if delivery.get("status") == "pending-retry"]
+        quarantined = [
+            delivery
+            for delivery in deliveries
+            if delivery.get("status") == "acknowledged-peer-quarantine"
+        ]
+        if acknowledged:
+            status = "live-shadow-delivery-active"
+        elif pending:
+            status = "pending-retry"
+        elif not active_peers:
+            status = "not-configured-no-admin-approved-peer"
+        elif quarantined:
+            status = "peer-quarantine-acknowledged"
+        else:
+            status = "idle-admin-approved-peer"
+        latest_delivery = deliveries[0] if deliveries else None
+        return {
+            "schema_version": "nexusnet-release-wrapper-federated-peer-delivery-v1",
+            "surface_id": "release-wrapper-federated-peer-delivery",
+            "authority": "NexusBrain",
+            "status_label": "LOCAL-ADMIN-APPROVED-SHADOW-DELIVERY",
+            "status": status,
+            "session_ref_digest": session_ref_digest,
+            "peer_count": len(active_peers),
+            "delivery_count": len(deliveries),
+            "acknowledged_delivery_count": len(acknowledged),
+            "pending_retry_count": len(pending),
+            "peer_quarantine_count": len(quarantined),
+            "latest_delivery": self._public_federated_delivery_record(latest_delivery),
+            "deliveries": [self._public_federated_delivery_record(item) for item in deliveries[:20]],
+            "peer_refs": [str(peer.get("peer_node_ref_digest") or "") for peer in active_peers],
+            "endpoint_refs": {
+                "peers": "/ops/wrapper/federated-peers",
+                "deliveries": "/ops/wrapper/federated-deliveries",
+                "retry": "/ops/wrapper/federated-deliveries/retry",
+                "peer_import": "/ops/wrapper/federated-packets/import",
+            },
+            "artifact_ref": "release-wrapper-runtime/federated-packet-deliveries.jsonl",
+            "artifact_path_digest": f"sha256:{_privacy_digest(str(self.federated_delivery_log_path))}",
+            "replay": dict(self._federated_delivery_replay_status),
+            "raw_content_included": False,
+            "contains_personal_data": False,
+            "active_production_mutation_allowed": False,
+            "privacy_boundary": "sanitized-delivery-digests-refs-and-status-only-no-peer-urls-prompts-outputs-or-session-ids",
+        }
+
+    def retry_federated_packet_deliveries(
+        self,
+        *,
+        session_id: str | None = None,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        session_ref_digest = _session_ref_digest(session_id)
+        packet_by_id = {
+            str(packet.get("packet_id") or ""): packet
+            for packet in self._federated_packets
+            if str(packet.get("packet_id") or "")
+        }
+        peers_by_ref = {
+            str(peer.get("peer_node_ref_digest") or ""): peer
+            for peer in self._active_federated_peers()
+        }
+        attempted = 0
+        for delivery in list(self._federated_packet_deliveries_for_session(session_ref_digest)):
+            if delivery.get("status") != "pending-retry":
+                continue
+            if not force and not self._federated_delivery_retry_due(delivery):
+                continue
+            packet = packet_by_id.get(str(delivery.get("packet_id") or ""))
+            peer = peers_by_ref.get(str(delivery.get("peer_node_ref_digest") or ""))
+            if not packet or not peer:
+                continue
+            self._attempt_federated_packet_delivery(
+                packet=packet,
+                session_ref_digest=session_ref_digest,
+                peer=peer,
+                existing_delivery=delivery,
+                force=force,
+                allow_pending_retry=True,
+            )
+            attempted += 1
+        summary = self.federated_peer_delivery_status(session_id=session_id)
+        summary["retry_attempt_count"] = attempted
+        summary["retry_forced"] = bool(force)
+        return summary
+
+    def dispatch_native_hive_federated_packet(
+        self,
+        *,
+        session_id: str,
+        hive_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        native_packet = (
+            hive_result.get("federated_learning_packet")
+            if isinstance(hive_result.get("federated_learning_packet"), dict)
+            else {}
+        )
+        source_hive_run_id = str(hive_result.get("run_id") or "") or None
+        if not native_packet.get("packet_id"):
+            return {
+                "surface_id": "native-hive-approved-peer-federated-delivery",
+                "status": "not-available-no-native-federated-packet",
+                "source_hive_run_id": source_hive_run_id,
+                "packet_ref": None,
+                "privacy_consent_record_id": None,
+                "delivery_count": 0,
+                "raw_content_included": False,
+                "contains_personal_data": False,
+                "active_production_mutation_allowed": False,
+            }
+
+        session_ref_digest = _session_ref_digest(session_id)
+        created_at = utcnow().isoformat()
+        privacy_consent = self._record_privacy_consent(
+            session_id=session_id,
+            session_ref_digest=session_ref_digest,
+            trace_id=(
+                "native-hive-federated-delivery::"
+                f"{_privacy_digest(str(native_packet.get('packet_id') or source_hive_run_id or created_at))}"
+            ),
+            created_at=created_at,
+        )
+        packet = json.loads(json.dumps(native_packet, sort_keys=True, default=str))
+        _attach_privacy_consent_to_federated_packet(packet, privacy_consent)
+        self._federated_packets.insert(0, packet)
+        self._federated_packets = self._federated_packets[:50]
+        delivery = self._dispatch_federated_packet_to_approved_peers(
+            packet=packet,
+            session_id=session_id,
+        )
+        return {
+            "surface_id": "native-hive-approved-peer-federated-delivery",
+            "status": str(delivery.get("status") or "degraded"),
+            "source_hive_run_id": source_hive_run_id,
+            "packet_ref": f"federated-packet::{packet.get('packet_id')}",
+            "privacy_consent_record_id": privacy_consent.get("record_id"),
+            "delivery_count": int(delivery.get("delivery_count") or 0),
+            "delivery_refs": [
+                str(delivery_ref)
+                for delivery_ref in delivery.get("delivery_refs", [])
+                if str(delivery_ref)
+            ],
+            "raw_content_included": False,
+            "contains_personal_data": False,
+            "active_production_mutation_allowed": False,
+        }
+
+    def _dispatch_federated_packet_to_approved_peers(
+        self,
+        *,
+        packet: dict[str, Any],
+        session_id: str,
+    ) -> dict[str, Any]:
+        if not self._federated_packet_delivery_allowed(packet):
+            return {
+                "status": "blocked-unsafe-federated-packet",
+                "delivery_count": 0,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+            }
+        active_peers = self._active_federated_peers()
+        if not active_peers:
+            return {
+                "status": "not-configured-no-admin-approved-peer",
+                "delivery_count": 0,
+                "raw_content_included": False,
+                "active_production_mutation_allowed": False,
+            }
+        session_ref_digest = _session_ref_digest(session_id)
+        delivered: list[dict[str, Any]] = []
+        for peer in active_peers:
+            delivered.append(
+                self._attempt_federated_packet_delivery(
+                    packet=packet,
+                    session_ref_digest=session_ref_digest,
+                    peer=peer,
+                )
+            )
+        return {
+            "status": (
+                "live-shadow-delivery-active"
+                if any(item.get("status") == "acknowledged-shadow-accepted" for item in delivered)
+                else "pending-retry"
+                if any(item.get("status") == "pending-retry" for item in delivered)
+                else "peer-quarantine-acknowledged"
+            ),
+            "delivery_count": len(delivered),
+            "delivery_refs": [str(item.get("delivery_id") or "") for item in delivered],
+            "raw_content_included": False,
+            "active_production_mutation_allowed": False,
+        }
+
+    def _attempt_federated_packet_delivery(
+        self,
+        *,
+        packet: dict[str, Any],
+        session_ref_digest: str | None,
+        peer: dict[str, Any],
+        existing_delivery: dict[str, Any] | None = None,
+        force: bool = False,
+        allow_pending_retry: bool = False,
+    ) -> dict[str, Any]:
+        packet_id = str(packet.get("packet_id") or "")
+        peer_node_ref_digest = str(peer.get("peer_node_ref_digest") or "")
+        delivery_id = f"fed-delivery::{_privacy_digest('|'.join([packet_id, peer_node_ref_digest]))}"
+        existing = existing_delivery or next(
+            (
+                item
+                for item in self._federated_packet_deliveries
+                if str(item.get("delivery_id") or "") == delivery_id
+            ),
+            None,
+        )
+        if existing and existing.get("status") in {
+            "acknowledged-shadow-accepted",
+            "acknowledged-peer-quarantine",
+        }:
+            return existing
+        if (
+            existing
+            and existing.get("status") == "pending-retry"
+            and not allow_pending_retry
+            and not force
+        ):
+            return existing
+        if (
+            existing
+            and existing.get("status") == "pending-retry"
+            and not force
+            and not self._federated_delivery_retry_due(existing)
+        ):
+            return existing
+        attempt_count = int((existing or {}).get("attempt_count") or 0) + 1
+        record = {
+            "schema_version": "nexusnet-release-wrapper-federated-delivery-v1",
+            "surface_id": "release-wrapper-federated-packet-delivery",
+            "delivery_id": delivery_id,
+            "packet_id": packet_id,
+            "packet_ref": f"federated-packet::{packet_id}",
+            "packet_digest": f"sha256:{_privacy_digest(json.dumps(packet, sort_keys=True, default=str))}",
+            "session_ref_digest": session_ref_digest,
+            "peer_node_ref_digest": peer_node_ref_digest,
+            "import_url_digest": str(peer.get("import_url_digest") or ""),
+            "approval_ref": str(peer.get("approval_ref") or ""),
+            "attempt_count": attempt_count,
+            "last_attempt_at": utcnow().isoformat(),
+            "status": "pending-retry",
+            "raw_content_included": False,
+            "contains_personal_data": False,
+            "active_production_mutation_allowed": False,
+            "mutation_boundary": "sanitized-shadow-peer-import-only-no-active-routing-training-or-production-mutation",
+        }
+        try:
+            payload = json.dumps(
+                {
+                    "peer_node_id": str(peer.get("peer_node_id") or ""),
+                    "packet": packet,
+                },
+                sort_keys=True,
+            ).encode("utf-8")
+            request = Request(
+                str(peer.get("import_url") or ""),
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urlopen(request, timeout=3) as response:  # nosec B310 - URL is admin-approved and validated on registration
+                response_body = response.read(65536)
+                remote = json.loads(response_body.decode("utf-8")) if response_body else {}
+            remote_status = str(remote.get("status") or "") if isinstance(remote, dict) else ""
+            remote_import_id = str(remote.get("import_id") or "") if isinstance(remote, dict) else ""
+            record["remote_import_ref_digest"] = (
+                f"sha256:{_privacy_digest(remote_import_id)}" if remote_import_id else None
+            )
+            if remote_status == "quarantined-shadow-accepted":
+                record["status"] = "acknowledged-shadow-accepted"
+                record["next_retry_at"] = None
+            elif remote_status in {
+                "quarantined-rejected",
+                "quarantined-shadow-blocked-by-consent-revocation",
+            }:
+                record["status"] = "acknowledged-peer-quarantine"
+                record["peer_quarantine_status"] = remote_status
+                record["next_retry_at"] = None
+            else:
+                record["transport_error_class"] = "unexpected-peer-response"
+                record["next_retry_at"] = self._federated_delivery_next_retry_at(attempt_count)
+        except HTTPError as exc:
+            record["transport_error_class"] = f"http-{int(exc.code)}"
+            record["next_retry_at"] = self._federated_delivery_next_retry_at(attempt_count)
+        except (URLError, OSError, ValueError, json.JSONDecodeError) as exc:
+            record["transport_error_class"] = f"transport-{type(exc).__name__}"
+            record["next_retry_at"] = self._federated_delivery_next_retry_at(attempt_count)
+        self._upsert_federated_packet_delivery(record)
+        return record
+
+    def _active_federated_peers(self) -> list[dict[str, Any]]:
+        return [peer for peer in self._federated_peers if peer.get("status") == "active-admin-approved"]
+
+    def _federated_packet_delivery_allowed(self, packet: dict[str, Any]) -> bool:
+        if packet.get("raw_content_included") is not False or packet.get("contains_personal_data") is not False:
+            return False
+        security_envelope = packet.get("security_envelope") if isinstance(packet.get("security_envelope"), dict) else {}
+        signed_packet = security_envelope.get("signed_packet") if isinstance(security_envelope.get("signed_packet"), dict) else {}
+        consent_policy = packet.get("consent_policy") if isinstance(packet.get("consent_policy"), dict) else {}
+        return bool(
+            packet.get("packet_id")
+            and signed_packet.get("raw_private_data_exported") is False
+            and consent_policy.get("sanitized_metadata_federation_allowed") is True
+        )
+
+    def _federated_delivery_next_retry_at(self, attempt_count: int) -> str:
+        delay_seconds = min(300, max(1, 2 ** max(0, attempt_count - 1)))
+        return (utcnow() + timedelta(seconds=delay_seconds)).isoformat()
+
+    def _federated_delivery_retry_due(self, delivery: dict[str, Any]) -> bool:
+        next_retry_at = str(delivery.get("next_retry_at") or "")
+        if not next_retry_at:
+            return True
+        try:
+            return datetime.fromisoformat(next_retry_at.replace("Z", "+00:00")) <= utcnow()
+        except ValueError:
+            return True
+
+    def _federated_packet_deliveries_for_session(self, session_ref_digest: str | None) -> list[dict[str, Any]]:
+        if not session_ref_digest:
+            return list(self._federated_packet_deliveries)
+        return [
+            delivery
+            for delivery in self._federated_packet_deliveries
+            if str(delivery.get("session_ref_digest") or "") == session_ref_digest
+        ]
+
+    def _public_federated_delivery_record(self, delivery: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not isinstance(delivery, dict):
+            return None
+        return {
+            key: delivery.get(key)
+            for key in (
+                "delivery_id",
+                "packet_ref",
+                "packet_digest",
+                "peer_node_ref_digest",
+                "import_url_digest",
+                "approval_ref",
+                "attempt_count",
+                "last_attempt_at",
+                "next_retry_at",
+                "status",
+                "transport_error_class",
+                "peer_quarantine_status",
+                "remote_import_ref_digest",
+                "raw_content_included",
+                "contains_personal_data",
+                "active_production_mutation_allowed",
+            )
+            if key in delivery
+        }
+
+    def _validated_federated_peer_import_url(self, import_url: str) -> str:
+        normalized = str(import_url or "").strip()
+        parsed = urlparse(normalized)
+        hostname = str(parsed.hostname or "").lower()
+        loopback_hosts = {"127.0.0.1", "localhost", "::1"}
+        valid_scheme = parsed.scheme == "https" or (parsed.scheme == "http" and hostname in loopback_hosts)
+        if not valid_scheme or not hostname or parsed.username or parsed.password or parsed.fragment:
+            raise ValueError("federated peer import_url must be HTTPS or loopback HTTP without credentials or fragments")
+        if not parsed.path.endswith("/ops/wrapper/federated-packets/import"):
+            raise ValueError("federated peer import_url must target the sanitized packet import endpoint")
+        return normalized
 
     def session_lifecycle(self, *, session_id: str | None = None) -> dict[str, Any]:
         status_card = json.loads(json.dumps(self.status_card(session_id=session_id)))
@@ -12221,6 +13269,7 @@ class ReleaseWrapperRuntime:
             "source_packet_ref": source_packet_ref,
             "peer_node_ref_digest": record.get("peer_node_ref_digest"),
             "federated_import_shadow": True,
+            "federated_import_provenance": record.get("import_provenance"),
             "runtime_growth_receipt_id": record.get("runtime_growth_receipt_id"),
             "runtime_growth_federated_packet_id": record.get("runtime_growth_federated_packet_id"),
             "native_runtime_growth_governance": (
@@ -12398,8 +13447,6 @@ class ReleaseWrapperRuntime:
                 update_id=proposal_update_id,
                 command=DEFAULT_RELEASE_WRAPPER_SANDBOX_COMMAND,
                 timeout_seconds=60,
-                approved_by="admin",
-                approval_ref="operator-review::direct-nexusbrain-native-growth",
             )
             lifecycle_actions = lifecycle.get("actions") if isinstance(lifecycle.get("actions"), dict) else {}
             lifecycle_proposal = self._autonomous_update_proposal(proposal_update_id) or {}
@@ -12446,6 +13493,7 @@ class ReleaseWrapperRuntime:
         source_label = str(interaction.get("dream_research_source") or "release-wrapper-runtime")
         source_packet_ref = str(interaction.get("source_packet_ref") or "")
         federated_import_shadow = bool(interaction.get("federated_import_shadow"))
+        federated_import_provenance = str(interaction.get("federated_import_provenance") or "")
         authority_evidence_tool_governance = (
             interaction.get("native_runtime_growth_governance")
             if isinstance(interaction.get("native_runtime_growth_governance"), dict)
@@ -12681,6 +13729,7 @@ class ReleaseWrapperRuntime:
                 "federated_packet_id": packet_id,
                 "federated_packet_import_id": federated_packet_import_id or None,
                 "federated_import_shadow": federated_import_shadow,
+                "federated_import_provenance": federated_import_provenance or None,
                 "source_packet_ref": source_packet_ref or None,
                 "peer_node_ref_digest": interaction.get("peer_node_ref_digest"),
                 "evals_ao_artifact_gate_ref": evals_ao_artifact_gate_ref or None,
@@ -12809,6 +13858,7 @@ class ReleaseWrapperRuntime:
         direct_nexusbrain_generate = bool(interaction.get("direct_nexusbrain_generate"))
         source_label = str(interaction.get("dream_research_source") or "release-wrapper-dream-research-queue")
         source_packet_ref = str(interaction.get("source_packet_ref") or "")
+        federated_import_provenance = str(interaction.get("federated_import_provenance") or "")
         authority_evidence_tool_governance = (
             interaction.get("native_runtime_growth_governance")
             if isinstance(interaction.get("native_runtime_growth_governance"), dict)
@@ -12904,6 +13954,7 @@ class ReleaseWrapperRuntime:
                 "failure_class": failure_class or None,
                 "policy_block_class": policy_block_class or None,
                 "confidence_bucket": confidence_bucket or None,
+                "federated_import_provenance": federated_import_provenance or None,
                 "developmental_cortex_assessment_ref": developmental_assessment_ref or None,
                 "developmental_growth_candidate_ref": developmental_growth_candidate_ref or None,
                 "developmental_promotion_case_ref": developmental_promotion_case_ref or None,
@@ -12925,6 +13976,7 @@ class ReleaseWrapperRuntime:
                     "policy_block_class": policy_block_class or None,
                     "confidence_bucket": confidence_bucket or None,
                     "peer_shadow_import": bool(interaction.get("federated_import_shadow")),
+                    "federated_import_provenance": federated_import_provenance or None,
                     "source_packet_ref": source_packet_ref or None,
                     "production_spine_packet_signature": production_signature,
                     "evals_ao_artifact_gate_ref": evals_ao_artifact_gate_ref or None,
@@ -13045,16 +14097,28 @@ class ReleaseWrapperRuntime:
                 or isinstance(proposal.get("latest_rollback"), dict)
             )
 
-        latest_actionable = next((item for item in reversed(items) if item.status in actionable_statuses), None)
+        actionable_items = [item for item in reversed(items) if item.status in actionable_statuses]
+        latest_actionable = next(
+            (
+                item
+                for item in actionable_items
+                if item.event.metadata.get("federated_import_provenance") != "local-loopback-readiness"
+            ),
+            None,
+        )
         if latest_actionable is None:
             lifecycle_items = [item for item in reversed(items) if has_lifecycle_evidence(item)]
             latest_actionable = next(
                 (
                     item
                     for item in lifecycle_items
-                    if item.event.metadata.get("federated_import_shadow") is not True
+                    if item.event.metadata.get("federated_import_provenance") != "local-loopback-readiness"
                 ),
-                lifecycle_items[0] if lifecycle_items else latest,
+                actionable_items[0]
+                if actionable_items
+                else lifecycle_items[0]
+                if lifecycle_items
+                else latest,
             )
 
         def summarize_item(item: Any) -> dict[str, Any]:
@@ -13079,6 +14143,7 @@ class ReleaseWrapperRuntime:
                     "federated_packet_id": item_metadata.get("federated_packet_id"),
                     "federated_packet_import_id": item_metadata.get("federated_packet_import_id"),
                     "federated_import_shadow": item_metadata.get("federated_import_shadow"),
+                    "federated_import_provenance": item_metadata.get("federated_import_provenance"),
                     "source_packet_ref": item_metadata.get("source_packet_ref"),
                     "production_spine_packet_signature": item_metadata.get("production_spine_packet_signature"),
                     "privacy_consent_record_id": item_metadata.get("privacy_consent_record_id"),
@@ -17196,7 +18261,12 @@ class ReleaseWrapperRuntime:
             return None
         return str(item.event.session_id or "") or None
 
-    def _persist_summary(self, summary: dict[str, Any]) -> None:
+    def _persist_summary(self, summary: dict[str, Any], *, force: bool = False) -> None:
+        batch = self._summary_persistence_batch.get()
+        if batch is not None and batch["depth"] and not force:
+            batch["pending_summary"] = summary
+            self._persisted_summary = summary
+            return
         path = self.runtime_dir / "summary.json"
         path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
         self._persisted_summary = summary
@@ -17269,6 +18339,28 @@ class ReleaseWrapperRuntime:
 
     def _persist_federated_packet_import(self, record: dict[str, Any]) -> None:
         with self.federated_import_log_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, sort_keys=True) + "\n")
+
+    def _persist_federated_peers(self) -> None:
+        payload = {
+            "schema_version": "nexusnet-release-wrapper-federated-peer-registry-v1",
+            "peers": self._federated_peers,
+        }
+        self.federated_peer_registry_path.write_text(
+            json.dumps(payload, sort_keys=True, indent=2),
+            encoding="utf-8",
+        )
+
+    def _upsert_federated_packet_delivery(self, record: dict[str, Any]) -> None:
+        delivery_id = str(record.get("delivery_id") or "")
+        self._federated_packet_deliveries = [
+            existing
+            for existing in self._federated_packet_deliveries
+            if str(existing.get("delivery_id") or "") != delivery_id
+        ]
+        self._federated_packet_deliveries.insert(0, record)
+        self._federated_packet_deliveries = self._federated_packet_deliveries[:200]
+        with self.federated_delivery_log_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, sort_keys=True) + "\n")
 
     def _persist_native_hive_heartbeat_record(self, record: dict[str, Any]) -> None:
@@ -17623,6 +18715,57 @@ class ReleaseWrapperRuntime:
                 latest_by_import_id.pop(import_id)
             latest_by_import_id[import_id] = record
         return list(reversed(list(latest_by_import_id.values())[-100:]))
+
+    def _load_federated_peers(self) -> list[dict[str, Any]]:
+        try:
+            payload = json.loads(self.federated_peer_registry_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return []
+        candidates = payload.get("peers") if isinstance(payload, dict) else []
+        peers: list[dict[str, Any]] = []
+        for candidate in candidates if isinstance(candidates, list) else []:
+            if not isinstance(candidate, dict):
+                continue
+            try:
+                normalized_import_url = self._validated_federated_peer_import_url(
+                    str(candidate.get("import_url") or "")
+                )
+            except ValueError:
+                continue
+            peer_node_id = str(candidate.get("peer_node_id") or "").strip()
+            if not peer_node_id or not str(candidate.get("approval_ref") or ""):
+                continue
+            peer = dict(candidate)
+            peer["peer_node_id"] = peer_node_id
+            peer["import_url"] = normalized_import_url
+            peer["peer_node_ref_digest"] = f"sha256:{_privacy_digest(peer_node_id)}"
+            peer["import_url_digest"] = f"sha256:{_privacy_digest(normalized_import_url)}"
+            peer["status"] = str(peer.get("status") or "active-admin-approved")
+            peers.append(peer)
+        return peers[:100]
+
+    def _load_federated_packet_deliveries(self) -> list[dict[str, Any]]:
+        try:
+            lines = self.federated_delivery_log_path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return []
+        latest_by_delivery_id: dict[str, dict[str, Any]] = {}
+        for line in lines:
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            delivery_id = str(record.get("delivery_id") or "")
+            packet_id = str(record.get("packet_id") or "")
+            peer_node_ref_digest = str(record.get("peer_node_ref_digest") or "")
+            if not delivery_id or not packet_id or not peer_node_ref_digest:
+                continue
+            if delivery_id in latest_by_delivery_id:
+                latest_by_delivery_id.pop(delivery_id)
+            latest_by_delivery_id[delivery_id] = record
+        return list(reversed(list(latest_by_delivery_id.values())[-200:]))
 
     def _load_native_hive_heartbeats(self) -> list[dict[str, Any]]:
         candidates = [self.native_hive_heartbeat_log_path]
@@ -20589,6 +21732,12 @@ def _whole_system_forward_pass_enforcement_matrix(
         and runner_evidence_run.get("raw_content_included") is False
         and runner_evidence_run.get("active_production_mutated") is False
     )
+    runner_pending = (
+        runner_evidence_run.get("status") == "pending-admin-approval"
+        and runner_evidence_run.get("raw_content_included") is False
+        and runner_evidence_run.get("active_production_mutated") is False
+    )
+    runner_status = "covered" if runner_covered else "partial" if runner_pending else "missing"
     admin_covered = admin_approval.get("status") == "admin-approved"
     sandbox_covered = sandbox_tests.get("status") == "passed" and sandbox_tests.get("passed") is True
     safe_apply_covered = (
@@ -20633,14 +21782,28 @@ def _whole_system_forward_pass_enforcement_matrix(
         and boot_supervisor.get("raw_content_included") is False
     )
     boot_covered = boot_manifest_covered or governed_release_path_covered
+    initial_release_latest_status = initial_release_supervisor.get("latest_status")
+    initial_release_runtime_state = initial_release_supervisor.get("runtime_state")
     initial_release_manifest_covered = (
-        initial_release_supervisor.get("latest_status")
-        in {"passed", "initial-release-supervisor-passed", "initial-release-go"}
-        and initial_release_supervisor.get("runtime_state") in {"replayed-evidence", "live-evidence"}
-        and (initial_release_supervisor.get("release_readiness") or {}).get("go_no_go") == "go"
-        and initial_release_supervisor.get("raw_content_included") is False
+        initial_release_supervisor.get("raw_content_included") is False
         and initial_release_supervisor.get("active_production_mutation_allowed") is False
         and initial_release_supervisor.get("active_production_mutated") is False
+        and (
+            (
+                initial_release_latest_status
+                in {"passed", "initial-release-supervisor-passed", "initial-release-go"}
+                and initial_release_runtime_state in {"replayed-evidence", "live-evidence"}
+                and (initial_release_supervisor.get("release_readiness") or {}).get("go_no_go") == "go"
+            )
+            or (
+                initial_release_latest_status == "initial-release-governed-update-completed"
+                and initial_release_runtime_state == "governed-update-completed"
+            )
+            or (
+                initial_release_latest_status == "initial-release-governed-shadow-lifecycle-completed"
+                and initial_release_runtime_state == "governed-shadow-lifecycle-completed"
+            )
+        )
     )
     initial_release_covered = (
         initial_release_manifest_covered
@@ -20771,13 +21934,19 @@ def _whole_system_forward_pass_enforcement_matrix(
             label="Release readiness evidence runner",
             endpoint_ref="/ops/wrapper/release-readiness/run",
             category="admin",
-            status="covered" if runner_covered else "missing",
-            capabilities=all_columns("covered" if runner_covered else "missing"),
+            status=runner_status,
+            capabilities=all_columns(runner_status),
             evidence_refs=[
                 *_compact_refs(runner_evidence_run, ["run_id", "status", "update_id"]),
                 "/ops/wrapper/release-readiness/run",
             ],
-            blockers=[] if runner_covered else ["readiness_evidence_runner_not_completed"],
+            blockers=(
+                []
+                if runner_covered
+                else ["stored_admin_approval_required"]
+                if runner_pending
+                else ["readiness_evidence_runner_not_completed"]
+            ),
         ),
         _forward_pass_enforcement_row(
             entrypoint_id="admin_approval",
@@ -21850,6 +23019,7 @@ def _production_spine_lifecycle_admin_approval_record(
     ).strip()
     decision = str(approval.get("decision") or approval.get("status") or "").strip().lower()
     metadata = approval.get("metadata") if isinstance(approval.get("metadata"), dict) else {}
+    approved_handoff_id = str(approval.get("approved_domain_growth_handoff_id") or "").strip()
     return {
         "schema_version": "nexusnet-release-wrapper-production-spine-lifecycle-approval-v1",
         "surface_id": "release-wrapper-production-spine-lifecycle-approval",
@@ -21867,11 +23037,58 @@ def _production_spine_lifecycle_admin_approval_record(
         "rationale_digest": f"sha256:{_privacy_digest(str(approval.get('rationale') or approval.get('approval_rationale') or ''))}",
         "metadata_digest": f"sha256:{_privacy_digest(json.dumps(metadata, sort_keys=True, default=str))}",
         "metadata_key_count": len(metadata),
+        "approved_domain_growth_handoff_id": approved_handoff_id or None,
         "created_at": str(approval.get("created_at") or ""),
         "raw_content_included": False,
         "active_production_mutation_allowed": False,
         "privacy_boundary": "approval-ids-statuses-and-digests-only-no-approver-rationale-metadata-session-id-or-secrets",
         "mutation_boundary": "admin-approved-shadow-release-lifecycle-only-no-active-production-or-buyer-release-mutation",
+    }
+
+
+def _autonomous_update_admin_approval_record(
+    *,
+    update_id: str,
+    approval: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if not isinstance(approval, dict):
+        return {
+            "surface_id": "release-wrapper-autonomous-update-approval",
+            "status": "pending-admin-approval",
+            "approval_ref": None,
+            "approval_subject": "release-wrapper-autonomous-update",
+            "approved_update_id": None,
+            "raw_content_included": False,
+            "active_production_mutated": False,
+            "mutation_boundary": "stored-admin-approval-bound-to-update-required-before-sandbox-apply-or-rollback",
+        }
+    approval_ref = str(
+        approval.get("approval_ref")
+        or approval.get("approval_decision_id")
+        or approval.get("decision_id")
+        or ""
+    ).strip()
+    subject = str(approval.get("approval_subject") or approval.get("subject") or "").strip()
+    decision = str(approval.get("decision") or approval.get("status") or "").strip().lower()
+    approved_update_id = str(approval.get("approved_update_id") or approval.get("update_id") or "").strip()
+    approved = bool(
+        approval_ref
+        and subject == "release-wrapper-autonomous-update"
+        and decision == "approved"
+        and approved_update_id == update_id
+    )
+    return {
+        "surface_id": "release-wrapper-autonomous-update-approval",
+        "status": "approved" if approved else "blocked-admin-approval",
+        "approval_ref": approval_ref or None,
+        "approval_subject": "release-wrapper-autonomous-update",
+        "approved_update_id": approved_update_id or None,
+        "approver_digest": str(approval.get("approver_digest") or ""),
+        "rationale_digest": str(approval.get("rationale_digest") or ""),
+        "metadata_digest": str(approval.get("metadata_digest") or ""),
+        "raw_content_included": False,
+        "active_production_mutated": False,
+        "mutation_boundary": "stored-admin-approval-bound-to-update-required-before-sandbox-apply-or-rollback",
     }
 
 
@@ -21924,8 +23141,9 @@ def _release_wrapper_shadow_growth_lifecycle_request(
     lifecycle_id: str,
     student_id: str,
     target_node_ref: str,
+    domain_growth_handoff: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    request = {
         "lifecycle_id": lifecycle_id,
         "cycle_id": cycle_id,
         "target_node_ref": target_node_ref,
@@ -22002,6 +23220,54 @@ def _release_wrapper_shadow_growth_lifecycle_request(
                 "kv_cache": "low_rank_kv",
             },
         ],
+    }
+    if isinstance(domain_growth_handoff, dict) and domain_growth_handoff.get("status") == "admin-approved-bound":
+        request.update(
+            {
+                "capabilities": _dedupe_strings(
+                    [*request["capabilities"], "domain_growth_handoff_sandbox_training"]
+                ),
+                "teacher_outputs": list(domain_growth_handoff.get("_teacher_outputs") or request["teacher_outputs"]),
+                "validator_results": list(
+                    domain_growth_handoff.get("_validator_results") or request["validator_results"]
+                ),
+                "eval_refs": list(domain_growth_handoff.get("_eval_refs") or []),
+                "dataset_manifest_ref": f"domain-growth-handoff::{domain_growth_handoff.get('handoff_id')}",
+                "rollback_ref": domain_growth_handoff.get("_rollback_ref"),
+                "training_input_boundary": "sanitized-handoff-provenance-plus-fixed-sandbox-fixture-no-raw-user-content",
+            }
+        )
+    return request
+
+
+def _public_domain_growth_handoff_receipt(
+    binding: dict[str, Any] | None,
+    *,
+    lifecycle: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    binding = binding if isinstance(binding, dict) else {}
+    lifecycle = lifecycle if isinstance(lifecycle, dict) else {}
+    training = lifecycle.get("training") if isinstance(lifecycle.get("training"), dict) else {}
+    training_replay = (
+        lifecycle.get("training_replay_evidence")
+        if isinstance(lifecycle.get("training_replay_evidence"), dict)
+        else {}
+    )
+    return {
+        "status": binding.get("status") or "not-requested",
+        "handoff_id": binding.get("handoff_id"),
+        "domain_ao": binding.get("domain_ao"),
+        "teacher_subject": binding.get("teacher_subject"),
+        "growth_cycle_id": binding.get("growth_cycle_id"),
+        "promotion_candidate_id": binding.get("promotion_candidate_id"),
+        "eval_suite_id": binding.get("eval_suite_id"),
+        "teacher_ref_count": len(binding.get("teacher_refs") or []),
+        "sandbox_training_status": training.get("status") if training else "not-run",
+        "sandbox_training_replay_status": training_replay.get("status") if training_replay else "not-run",
+        "sandbox_lifecycle_status": lifecycle.get("status") if lifecycle else "not-run",
+        "raw_content_included": False,
+        "active_production_mutation_allowed": False,
+        "mutation_boundary": "admin-approved-sandbox-training-and-rollback-evidence-only-no-active-production-mutation",
     }
 
 
@@ -22557,8 +23823,27 @@ def _initial_release_supervisor_summary_from_manifest(manifest_paths: list[Path]
     latest_status = str(manifest.get("status") or manifest.get("honest_status_label") or "unknown")
     readiness = _compact_initial_release_readiness(manifest.get("release_readiness"))
     boot_supervisor = _compact_initial_release_boot_supervisor(manifest.get("boot_supervisor") or actions.get("boot_supervisor"))
+    pending_governance = _compact_pending_update_governance(manifest)
+    governed_update_lifecycle = _compact_governed_update_lifecycle(
+        actions.get("autonomous_update_governance_lifecycle")
+    )
+    production_lifecycle = _compact_production_lifecycle(actions.get("production_spine_release_lifecycle"))
+    production_rollback = _compact_production_lifecycle(
+        actions.get("production_spine_release_lifecycle_rollback")
+    )
     runtime_state = (
-        "replayed-evidence"
+        "pending-admin-approval"
+        if latest_status == "initial-release-pending-admin-approval"
+        and pending_governance["status"] == "pending-admin-approval"
+        else "governed-shadow-lifecycle-completed"
+        if latest_status == "initial-release-governed-shadow-lifecycle-completed"
+        and governed_update_lifecycle["status"] == "completed"
+        and production_lifecycle["status"] == "approved-shadow-release-lifecycle"
+        and production_rollback["status"] == "rolled-back"
+        else "governed-update-completed"
+        if latest_status == "initial-release-governed-update-completed"
+        and governed_update_lifecycle["status"] == "completed"
+        else "replayed-evidence"
         if latest_status == "initial-release-go"
         and manifest.get("active_production_mutated") is False
         and readiness.get("go_no_go") == "go"
@@ -22581,6 +23866,11 @@ def _initial_release_supervisor_summary_from_manifest(manifest_paths: list[Path]
         "session_ref_digest": manifest.get("session_ref_digest")
         if isinstance(manifest.get("session_ref_digest"), str)
         else None,
+        "pending_update_id": pending_governance["update_id"],
+        "governance": pending_governance,
+        "governed_update_lifecycle": governed_update_lifecycle,
+        "production_lifecycle": production_lifecycle,
+        "production_rollback": production_rollback,
         "action_statuses": action_statuses,
         "actions": compact_actions,
         "release_readiness": readiness,
@@ -23203,6 +24493,11 @@ def _release_product_smoke_evidence(
             "matrix_coverage_status": matrix.get("coverage_status") or "partial",
             "covered_entrypoint_count": _safe_count(matrix.get("covered_entrypoint_count")),
             "missing_entrypoint_count": _safe_count(matrix.get("missing_entrypoint_count")),
+            "missing_entrypoint_ids": [
+                _safe_ref(str(entrypoint_id))
+                for entrypoint_id in (matrix.get("missing_entrypoint_ids") or [])
+                if str(entrypoint_id or "").strip()
+            ],
             "native_hive_heartbeat_freshness_status": native_hive_heartbeat_history.get("freshness_status"),
             "native_hive_heartbeat_latest_fresh": native_hive_heartbeat_history.get("latest_fresh") is True,
             "native_hive_heartbeat_history_artifact_ref": native_hive_heartbeat_history.get("artifact_ref"),
@@ -23351,8 +24646,23 @@ def _release_product_smoke_summary_from_manifest(manifest_paths: list[Path]) -> 
     pass_count = sum(1 for check in compact_checks if check.get("status") == "pass")
     failed_count = len(compact_checks) - pass_count
     latest_status = str(manifest.get("status") or "unknown")
+    pending_governance = _compact_pending_update_governance(manifest)
+    governed_update_lifecycle = _compact_governed_update_lifecycle(manifest.get("governed_update_lifecycle"))
+    production_lifecycle = _compact_production_lifecycle(manifest.get("production_lifecycle"))
+    production_rollback = _compact_production_lifecycle(manifest.get("production_rollback"))
     runtime_state = (
-        "live-evidence"
+        "pending-admin-approval"
+        if latest_status == "release-product-smoke-pending-admin-approval"
+        and pending_governance["status"] == "pending-admin-approval"
+        else "governed-shadow-lifecycle-completed"
+        if latest_status == "release-product-smoke-governed-shadow-lifecycle-completed"
+        and governed_update_lifecycle["status"] == "completed"
+        and production_lifecycle["status"] == "approved-shadow-release-lifecycle"
+        and production_rollback["status"] == "rolled-back"
+        else "governed-update-completed"
+        if latest_status == "release-product-smoke-governed-update-completed"
+        and governed_update_lifecycle["status"] == "completed"
+        else "live-evidence"
         if latest_status == "release-product-smoke-passed" and failed_count == 0
         else "degraded-evidence"
     )
@@ -23371,6 +24681,11 @@ def _release_product_smoke_summary_from_manifest(manifest_paths: list[Path]) -> 
         "session_ref_digest": manifest.get("session_ref_digest")
         if isinstance(manifest.get("session_ref_digest"), str)
         else None,
+        "pending_update_id": pending_governance["update_id"],
+        "governance": pending_governance,
+        "governed_update_lifecycle": governed_update_lifecycle,
+        "production_lifecycle": production_lifecycle,
+        "production_rollback": production_rollback,
         "check_count": len(compact_checks),
         "pass_count": pass_count,
         "failed_count": failed_count,
@@ -23392,6 +24707,46 @@ def _release_product_smoke_summary_from_manifest(manifest_paths: list[Path]) -> 
             manifest.get("mutation_boundary")
             or "release-product-smoke-evidence-only-no-active-production-mutation"
         ),
+    }
+
+
+def _compact_pending_update_governance(manifest: dict[str, Any]) -> dict[str, Any]:
+    governance = manifest.get("governance") if isinstance(manifest.get("governance"), dict) else {}
+    pending_update_id = str(manifest.get("pending_update_id") or governance.get("update_id") or "")
+    status = str(governance.get("status") or "not-required")
+    return {
+        "status": status,
+        "approval_subject": str(governance.get("approval_subject") or ""),
+        "update_id": pending_update_id or None,
+        "approval_endpoint": str(governance.get("approval_endpoint") or ""),
+        "execution_endpoint": str(governance.get("execution_endpoint") or ""),
+        "raw_content_included": False,
+        "active_production_mutation_allowed": False,
+    }
+
+
+def _compact_governed_update_lifecycle(value: Any) -> dict[str, Any]:
+    lifecycle = value if isinstance(value, dict) else {}
+    actions = lifecycle.get("actions") if isinstance(lifecycle.get("actions"), dict) else {}
+    return {
+        "status": str(lifecycle.get("status") or "not-run"),
+        "update_id": str(lifecycle.get("update_id") or "") or None,
+        "action_statuses": {
+            action: str((actions.get(action) or {}).get("status") or "not-run")
+            for action in ("admin_approval", "sandbox_tests", "immune_governance", "apply", "rollback")
+        },
+        "raw_content_included": False,
+        "active_production_mutation_allowed": False,
+        "active_production_mutated": False,
+    }
+
+
+def _compact_production_lifecycle(value: Any) -> dict[str, Any]:
+    lifecycle = value if isinstance(value, dict) else {}
+    return {
+        "status": str(lifecycle.get("status") or "not-run"),
+        "raw_content_included": False,
+        "active_production_mutation_allowed": False,
     }
 
 
@@ -25000,6 +26355,7 @@ def _latest_peer_shadow_proposal(
     *,
     autonomous_updates: dict[str, Any],
     dream_queue: dict[str, Any],
+    federated_packet_import_id: str,
 ) -> dict[str, Any] | None:
     proposals = autonomous_updates.get("proposals") if isinstance(autonomous_updates.get("proposals"), list) else []
     for proposal in proposals:
@@ -25008,6 +26364,8 @@ def _latest_peer_shadow_proposal(
         metadata = proposal.get("metadata") if isinstance(proposal.get("metadata"), dict) else {}
         safe_payload = metadata.get("safe_payload") if isinstance(metadata.get("safe_payload"), dict) else {}
         if safe_payload.get("peer_shadow_import") is not True:
+            continue
+        if safe_payload.get("federated_packet_import_id") != federated_packet_import_id:
             continue
         return {
             "update_id": proposal.get("update_id"),
@@ -25021,7 +26379,10 @@ def _latest_peer_shadow_proposal(
 
     latest_item = dream_queue.get("latest_item") if isinstance(dream_queue.get("latest_item"), dict) else {}
     latest_metadata = latest_item.get("metadata") if isinstance(latest_item.get("metadata"), dict) else {}
-    if latest_metadata.get("federated_import_shadow") is not True:
+    if (
+        latest_metadata.get("federated_import_shadow") is not True
+        or latest_metadata.get("federated_packet_import_id") != federated_packet_import_id
+    ):
         return None
     return {
         "update_id": None,
@@ -25340,6 +26701,68 @@ def _attach_privacy_consent_to_federated_packet(
     return packet
 
 
+def _attach_personality_consent_to_federated_packet(
+    packet: dict[str, Any],
+    record: dict[str, Any],
+    *,
+    personality_preference_ledger: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Bind the C29 personality plane to the wrapper's explicit-consent boundary."""
+    policy = _privacy_consent_policy_for_packet(record)
+    personal_data_federation_allowed = bool(policy["personal_data_federation_allowed"])
+    preference_ledger = personality_preference_ledger or {}
+    preference_ledger_id = str(preference_ledger.get("preference_ledger_id") or "")
+    preference_feature_count = max(0, _safe_count(preference_ledger.get("preference_feature_count")))
+    per_plane_sync = packet.get("per_plane_sync")
+    planes = per_plane_sync.get("planes") if isinstance(per_plane_sync, dict) else []
+    for plane in planes or []:
+        if not isinstance(plane, dict) or plane.get("canonical_plane") != "personality":
+            continue
+        plane["personal_data_federation_allowed"] = personal_data_federation_allowed
+        plane["raw_content_included"] = False
+        plane["contains_personal_data"] = False
+        if personal_data_federation_allowed and preference_ledger_id and preference_feature_count > 0:
+            plane.update(
+                {
+                    "producer_status": "live-sanitized-producer",
+                    "producer_ref": f"preference-vector::{preference_ledger_id}",
+                    "preference_feature_count": preference_feature_count,
+                    "preference_vector_scope": "explicit-consent-derived-federated-preference-only",
+                }
+            )
+        else:
+            plane.pop("producer_ref", None)
+            plane.update(
+                {
+                    "producer_status": (
+                        "live-local-only-consent-required"
+                        if not personal_data_federation_allowed
+                        else "degraded-personality-ledger-unavailable"
+                    ),
+                    "preference_feature_count": 0,
+                    "preference_vector_scope": (
+                        "local-only-until-explicit-federation-consent"
+                        if not personal_data_federation_allowed
+                        else "explicit-consent-present-but-durable-preference-ledger-unavailable"
+                    ),
+                }
+            )
+    return packet
+
+
+def _sanitized_personality_preference_keys_from_request(request: Any) -> list[str]:
+    metadata = getattr(request, "metadata", None)
+    supplied_keys = metadata.get("personality_preference_keys") if isinstance(metadata, dict) else []
+    raw_keys = supplied_keys if isinstance(supplied_keys, list) else []
+    return sorted(
+        {
+            str(value).strip().lower()
+            for value in raw_keys
+            if str(value).strip().lower() in PERSONALITY_PREFERENCE_KEY_ALLOWLIST
+        }
+    )
+
+
 def _sanitized_intent_label(result: Any) -> str:
     expert = str(getattr(result, "selected_expert", None) or "general")
     wrapper_mode = str(getattr(result, "wrapper_mode", None) or "standard-chat")
@@ -25407,3 +26830,124 @@ def _float_metric(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _federated_packet_poisoning_anomaly_gate(packet: dict[str, Any]) -> dict[str, Any]:
+    packet_id = str(packet.get("packet_id") or "")
+    route_metadata = packet.get("route_metadata") if isinstance(packet.get("route_metadata"), dict) else {}
+    learning_metadata = (
+        packet.get("learning_metadata") if isinstance(packet.get("learning_metadata"), dict) else {}
+    )
+    security_envelope = (
+        packet.get("security_envelope") if isinstance(packet.get("security_envelope"), dict) else {}
+    )
+    signed_packet = (
+        security_envelope.get("signed_packet")
+        if isinstance(security_envelope.get("signed_packet"), dict)
+        else {}
+    )
+    trust_scoring = (
+        security_envelope.get("trust_scoring")
+        if isinstance(security_envelope.get("trust_scoring"), dict)
+        else {}
+    )
+    claimed_scan = (
+        security_envelope.get("poisoning_anomaly_detection")
+        if isinstance(security_envelope.get("poisoning_anomaly_detection"), dict)
+        else {}
+    )
+    differential_privacy = (
+        security_envelope.get("differential_privacy")
+        if isinstance(security_envelope.get("differential_privacy"), dict)
+        else {}
+    )
+    findings: list[str] = []
+
+    if packet.get("contract_ref") != "mandatory-sanitized-federated-learning-v0":
+        findings.append("federated_contract_mismatch")
+    if security_envelope.get("contract_id") != "signed-secure-federation-packet-v0":
+        findings.append("security_envelope_contract_mismatch")
+    if not packet_id or signed_packet.get("packet_id") != packet_id:
+        findings.append("signed_packet_identity_mismatch")
+
+    expected_signature_seed = "|".join(
+        [
+            packet_id,
+            str(packet.get("run_ref_digest") or ""),
+            str(packet.get("session_ref_digest") or ""),
+            str(packet.get("task_ref_digest") or ""),
+            str(route_metadata.get("route_geometry_signature") or ""),
+            str(learning_metadata.get("final_confidence_bucket") or ""),
+        ]
+    )
+    expected_signature = "hive_sig_" + hashlib.sha256(expected_signature_seed.encode("utf-8")).hexdigest()[:32]
+    if signed_packet.get("signature") != expected_signature:
+        findings.append("sanitized_packet_signature_mismatch")
+
+    trust_score = _float_metric(trust_scoring.get("trust_score"))
+    minimum_trust_score = _float_metric(trust_scoring.get("minimum_trust_score"))
+    if (
+        trust_scoring.get("result_state") != "passed"
+        or not math.isfinite(trust_score)
+        or not math.isfinite(minimum_trust_score)
+        or not 0.0 <= minimum_trust_score <= trust_score <= 1.0
+    ):
+        findings.append("trust_score_gate_failed")
+
+    claimed_scan_passed = (
+        claimed_scan.get("result_state") == "passed"
+        and int(_float_metric(claimed_scan.get("detected_anomaly_count"))) == 0
+        and not claimed_scan.get("quarantine_refs")
+    )
+    if not claimed_scan_passed:
+        findings.append("claimed_poisoning_scan_not_clear")
+
+    epsilon = _float_metric(differential_privacy.get("epsilon"))
+    delta = _float_metric(differential_privacy.get("delta"))
+    if (
+        differential_privacy.get("result_state") != "passed"
+        or not math.isfinite(epsilon)
+        or not math.isfinite(delta)
+        or not 0.0 < epsilon <= 10.0
+        or not 0.0 <= delta <= 0.01
+    ):
+        findings.append("differential_privacy_budget_invalid")
+
+    final_confidence = _float_metric(learning_metadata.get("final_confidence"))
+    mean_resonance = _float_metric(route_metadata.get("mean_resonance_score"))
+    if not math.isfinite(final_confidence) or not 0.0 <= final_confidence <= 1.0:
+        findings.append("final_confidence_out_of_range")
+    if not math.isfinite(mean_resonance) or not 0.0 <= mean_resonance <= 1.0:
+        findings.append("mean_resonance_score_out_of_range")
+
+    selected_node_count = _float_metric(route_metadata.get("selected_node_count"))
+    loop_count = _float_metric(learning_metadata.get("loop_count"))
+    selected_terms = route_metadata.get("selected_capability_terms") or []
+    if not selected_node_count.is_integer() or not 0 <= selected_node_count <= 1024:
+        findings.append("selected_node_count_out_of_range")
+    if not loop_count.is_integer() or not 0 <= loop_count <= 1000:
+        findings.append("loop_count_out_of_range")
+    if not isinstance(selected_terms, list) or len(selected_terms) > 128:
+        findings.append("selected_capability_terms_out_of_range")
+
+    passed = not findings
+    packet_digest = _privacy_digest(json.dumps(packet, sort_keys=True, default=str))
+    return {
+        "gate_id": f"federated-anomaly::{packet_digest}",
+        "surface_id": "federated-packet-poisoning-anomaly-gate",
+        "status": "passed-sanitized-shadow-import" if passed else "blocked-poisoning-anomaly",
+        "passed": passed,
+        "claimed_scan_passed": claimed_scan_passed,
+        "observed_metric_ranges_valid": not any(
+            finding.endswith("_out_of_range") for finding in findings
+        ),
+        "signature_verified": "sanitized_packet_signature_mismatch" not in findings,
+        "trust_score_verified": "trust_score_gate_failed" not in findings,
+        "differential_privacy_budget_verified": "differential_privacy_budget_invalid" not in findings,
+        "findings": findings,
+        "quarantine_required": not passed,
+        "raw_content_included": False,
+        "contains_personal_data": False,
+        "active_production_mutation_allowed": False,
+        "mutation_boundary": "sanitized-statistical-verification-only-before-shadow-learning",
+    }

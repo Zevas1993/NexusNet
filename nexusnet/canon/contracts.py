@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+from copy import deepcopy
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -20,26 +22,6 @@ CANON_CONTRACT_SOURCE_REFS = (
     "docs/assimilation/NEXUSNET_ALL_ASSIMILATION_TARGETS_CONSOLIDATED_2026-05-31.md",
     "docs/assimilation/FULL_CHAT_SPEC_TO_CURRENT_STATE_GAP_REPORT_2026-05-06.md",
 )
-
-_KEYWORD_MAP = {
-    "wrapper": "wrapper",
-    "federated": "federated",
-    "federation": "federation",
-    "assimilation": "assimilation",
-    "dream": "dream",
-    "research": "research",
-    "self-repair": "self-repair",
-    "self repair": "self-repair",
-    "autonomous": "autonomous",
-    "context": "context",
-    "cache": "cache",
-    "expert": "expert",
-    "teacher": "teacher",
-    "ao": "ao",
-    "visualizer": "visualizer",
-    "control panel": "control-panel",
-}
-
 
 def build_canon_contract_ledger(
     project_root: Path | str,
@@ -91,9 +73,33 @@ def build_canon_contract_ledger(
 
 
 def build_canon_source_manifest(project_root: Path | str) -> dict[str, Any]:
-    root = Path(project_root)
+    root = Path(project_root).resolve()
     repo_root = Path(__file__).resolve().parents[2]
-    sources = [_source_record(source_ref, project_root=root, repo_root=repo_root) for source_ref in CANON_CONTRACT_SOURCE_REFS]
+    fingerprint = _canon_source_fingerprint(project_root=root, repo_root=repo_root)
+    return deepcopy(
+        _cached_canon_source_manifest(
+            str(root),
+            str(repo_root),
+            fingerprint,
+        )
+    )
+
+
+@lru_cache(maxsize=64)
+def _cached_canon_source_manifest(
+    project_root: str,
+    repo_root: str,
+    source_fingerprint: tuple[tuple[str, str, str, int, int, int], ...],
+) -> dict[str, Any]:
+    # source_fingerprint intentionally participates in the cache key. The source
+    # records are rebuilt only when a resolved file's identity or stat changes.
+    _ = source_fingerprint
+    root = Path(project_root)
+    resolved_repo_root = Path(repo_root)
+    sources = [
+        _source_record(source_ref, project_root=root, repo_root=resolved_repo_root)
+        for source_ref in CANON_CONTRACT_SOURCE_REFS
+    ]
     ingested_count = sum(1 for source in sources if source["status"] == "ingested")
     total_bytes = sum(int(source.get("byte_count") or 0) for source in sources)
     return {
@@ -108,6 +114,43 @@ def build_canon_source_manifest(project_root: Path | str) -> dict[str, Any]:
         "raw_content_included": False,
         "privacy_boundary": "source-refs-byte-counts-sha256-heading-samples-and-keyword-counts-only-no-raw-canon-text-or-local-paths",
     }
+
+
+def _canon_source_fingerprint(
+    *,
+    project_root: Path,
+    repo_root: Path,
+) -> tuple[tuple[str, str, str, int, int, int], ...]:
+    fingerprint: list[tuple[str, str, str, int, int, int]] = []
+    for source_ref in CANON_CONTRACT_SOURCE_REFS:
+        resolved: tuple[Path, str] | None = None
+        for candidate, resolved_from in (
+            (project_root / source_ref, "project-root"),
+            (repo_root / source_ref, "repo-root"),
+        ):
+            if candidate.is_file():
+                resolved = (candidate.resolve(), resolved_from)
+                break
+        if resolved is None:
+            fingerprint.append((source_ref, "missing", "", 0, 0, 0))
+            continue
+        path, resolved_from = resolved
+        try:
+            stat = path.stat()
+        except OSError:
+            fingerprint.append((source_ref, "missing", "", 0, 0, 0))
+            continue
+        fingerprint.append(
+            (
+                source_ref,
+                resolved_from,
+                str(path),
+                int(stat.st_size),
+                int(stat.st_mtime_ns),
+                int(stat.st_ctime_ns),
+            )
+        )
+    return tuple(fingerprint)
 
 
 def compact_canon_contract_ledger(ledger: dict[str, Any] | None) -> dict[str, Any]:
@@ -257,7 +300,25 @@ def _ingested_source_record(source_ref: str, *, path: Path, resolved_from: str) 
     byte_count = 0
     heading_count = 0
     sample_headings: list[str] = []
-    keyword_counts: dict[str, int] = {value: 0 for value in sorted(set(_KEYWORD_MAP.values()))}
+    keyword_pairs = (
+        ("wrapper", "wrapper"),
+        ("federated", "federated"),
+        ("federation", "federation"),
+        ("assimilation", "assimilation"),
+        ("dream", "dream"),
+        ("research", "research"),
+        ("self-repair", "self-repair"),
+        ("self repair", "self-repair"),
+        ("autonomous", "autonomous"),
+        ("context", "context"),
+        ("cache", "cache"),
+        ("expert", "expert"),
+        ("teacher", "teacher"),
+        ("ao", "ao"),
+        ("visualizer", "visualizer"),
+        ("control panel", "control-panel"),
+    )
+    keyword_counts: dict[str, int] = {value: 0 for _, value in keyword_pairs}
     with path.open("rb") as handle:
         for raw_line in handle:
             byte_count += len(raw_line)
@@ -269,7 +330,7 @@ def _ingested_source_record(source_ref: str, *, path: Path, resolved_from: str) 
                 if len(sample_headings) < 8:
                     sample_headings.append(_sanitize_heading(stripped))
             lowered = line.lower()
-            for needle, bucket in _KEYWORD_MAP.items():
+            for needle, bucket in keyword_pairs:
                 if needle in lowered:
                     keyword_counts[bucket] = keyword_counts.get(bucket, 0) + lowered.count(needle)
     return {
@@ -363,6 +424,14 @@ def _spec(contract_id: str, label: str, canonical_intent: str, runtime_keys: lis
 def _evidence_present(value: dict[str, Any]) -> bool:
     if value.get("raw_content_included") is True or value.get("active_production_mutation_allowed") is True:
         return False
+    if (
+        value.get("surface_id") == "native-runtime-growth-governance"
+        and value.get("status") == "not-triggered"
+        and value.get("native_hive_runtime_growth") is False
+        and value.get("active_production_mutated") is False
+        and value.get("raw_content_included") is False
+    ):
+        return True
     if (
         value.get("surface_id") == "release-wrapper-context-capability-envelope"
         and value.get("hardware_backed") is True

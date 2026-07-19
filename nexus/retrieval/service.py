@@ -76,8 +76,87 @@ class RetrievalService:
     def ingest(self, request: RetrievalIngestRequest) -> list[str]:
         doc_ids = []
         for document in request.documents:
+            gate = getattr(self, "genesis_memory_admission", None)
+            if gate is not None and hasattr(gate, "record_manual_ingress"):
+                decision = gate.record_manual_ingress(
+                    session_id=str(document.metadata.get("session_id") or "") or None,
+                    ingress_route="retrieval-document-ingest",
+                    content=document.text,
+                    metadata={
+                        "source_kind": document.metadata.get("source_kind", "retrieval-document"),
+                        "source_ref": document.source,
+                        "privacy_class": document.metadata.get("privacy_class", "unspecified"),
+                        "consent_status": document.metadata.get("consent_status", "not-declared"),
+                        "rights_license_status": document.metadata.get(
+                            "rights_license_status",
+                            document.metadata.get("license_status", "not-declared"),
+                        ),
+                    },
+                )
+                if decision.get("retrieval_truth_allowed") is not True:
+                    continue
+                doc_ids.append(self._quarantine_genesis_document(document, decision=decision))
+                continue
             doc_ids.append(self._ingest_document(document))
         return doc_ids
+
+    def activate_genesis_memory(
+        self,
+        *,
+        memory_id: str,
+        memory_ref: str,
+        session_ref_digest: str,
+        source_ref: str,
+        source_kind: str,
+        content: str,
+        content_ref: str,
+    ) -> dict[str, Any]:
+        document = RetrievalDocumentInput(
+            source=f"genesis-memory::{memory_id}",
+            title=f"Governed canon memory {memory_id}",
+            text=content,
+            metadata={
+                "backend": "genesis-canon-memory",
+                "genesis_memory_id": memory_id,
+                "genesis_memory_ref": memory_ref,
+                "session_ref_digest": session_ref_digest,
+                "source_ref": source_ref,
+                "source_kind": source_kind,
+                "content_ref": content_ref,
+                "genesis_truth_state": "active",
+            },
+        )
+        doc_id = self._ingest_document(document)
+        state_ref = self._write_genesis_runtime_state(
+            plane="retrieval",
+            memory_id=memory_id,
+            state="active",
+            runtime_ref=f"retrieval-doc::{doc_id}",
+        )
+        return {
+            "surface_id": "genesis-memory-lexical-retrieval-activation",
+            "status": "active",
+            "memory_id": memory_id,
+            "doc_id": doc_id,
+            "state_ref": state_ref,
+            "raw_content_included": False,
+        }
+
+    def deactivate_genesis_memory(self, *, memory_id: str, reason_ref: str) -> dict[str, Any]:
+        state_ref = self._write_genesis_runtime_state(
+            plane="retrieval",
+            memory_id=memory_id,
+            state="revoked",
+            reason_ref=reason_ref,
+        )
+        return {
+            "surface_id": "genesis-memory-lexical-retrieval-deactivation",
+            "status": "revoked",
+            "memory_id": memory_id,
+            "state_ref": state_ref,
+            "reason_ref": reason_ref,
+            "raw_content_included": False,
+        }
 
     def query(self, request: RetrievalRequest) -> list[RetrievalHit]:
         return self.query_with_policy(request)["hits"]
@@ -232,6 +311,13 @@ class RetrievalService:
             return []
         candidates = []
         for chunk in self.store.list_retrieval_chunks():
+            metadata = chunk.get("metadata") if isinstance(chunk.get("metadata"), dict) else {}
+            genesis_memory_id = str(metadata.get("genesis_memory_id") or "")
+            if genesis_memory_id and not self._genesis_memory_active(
+                plane="retrieval",
+                memory_id=genesis_memory_id,
+            ):
+                continue
             haystack_terms = _normalize(chunk["content"])
             overlap = sum(haystack_terms.count(term) for term in query_terms)
             if overlap <= 0:
@@ -311,9 +397,18 @@ class RetrievalService:
         if self.memory_service is None or not session_id:
             return []
         try:
-            records = self.memory_service.query(MemoryQuery(session_id=session_id, plane=None, limit=max(top_k * 4, 20)))
+            session_ref_digest = "sha256:" + hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:16]
+            records = [
+                *self.memory_service.query(
+                    MemoryQuery(session_id=session_id, plane=None, limit=max(top_k * 4, 20))
+                ),
+                *self.memory_service.query(
+                    MemoryQuery(session_id=session_ref_digest, plane=None, limit=max(top_k * 4, 20))
+                ),
+            ]
         except Exception:
             return []
+        records = list({record.memory_id: record for record in records}.values())
         query_terms = _normalize(query)
         hits: list[RetrievalHit] = []
         for record in records:
@@ -341,6 +436,83 @@ class RetrievalService:
             )
         hits.sort(key=lambda hit: hit.score, reverse=True)
         return hits[:top_k]
+
+    def _quarantine_genesis_document(
+        self,
+        document: RetrievalDocumentInput,
+        *,
+        decision: dict[str, Any],
+    ) -> str:
+        decision_id = str(decision.get("decision_id") or "")
+        candidate_id = f"genesis-retrieval-candidate::{hashlib.sha256(decision_id.encode('utf-8')).hexdigest()[:16]}"
+        candidate_key = hashlib.sha256(candidate_id.encode("utf-8")).hexdigest()[:24]
+        root = self.paths.artifacts_dir / "genesis" / "memory-foundation" / "quarantine" / "retrieval"
+        root.mkdir(parents=True, exist_ok=True)
+        content_ref = str(decision.get("content_ref") or "")
+        (root / f"{candidate_key}.txt").write_text(document.text, encoding="utf-8")
+        (root / f"{candidate_key}.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "nexusnet-genesis-retrieval-quarantine-candidate-v1",
+                    "surface_id": "genesis-retrieval-quarantine-candidate",
+                    "candidate_id": candidate_id,
+                    "decision_id": decision_id,
+                    "session_ref_digest": decision.get("session_ref_digest"),
+                    "source_ref": decision.get("source_ref"),
+                    "source_kind": decision.get("source_kind"),
+                    "content_ref": content_ref,
+                    "content_artifact_ref": (
+                        f"genesis/memory-foundation/quarantine/retrieval/{candidate_key}.txt"
+                    ),
+                    "status": "quarantined-awaiting-canonical-commit",
+                    "raw_content_included": False,
+                    "active_retrieval_truth": False,
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        return candidate_id
+
+    def _write_genesis_runtime_state(
+        self,
+        *,
+        plane: str,
+        memory_id: str,
+        state: str,
+        runtime_ref: str | None = None,
+        reason_ref: str | None = None,
+    ) -> str:
+        key = hashlib.sha256(memory_id.encode("utf-8")).hexdigest()[:24]
+        relative_ref = f"genesis/memory-foundation/runtime/{plane}/{key}.json"
+        path = self.paths.artifacts_dir / relative_ref
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "memory_id": memory_id,
+                    "state": state,
+                    "runtime_ref": runtime_ref,
+                    "reason_ref": reason_ref,
+                    "updated_at": _utcnow(),
+                    "raw_content_included": False,
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        return relative_ref
+
+    def _genesis_memory_active(self, *, plane: str, memory_id: str) -> bool:
+        key = hashlib.sha256(memory_id.encode("utf-8")).hexdigest()[:24]
+        path = self.paths.artifacts_dir / "genesis" / "memory-foundation" / "runtime" / plane / f"{key}.json"
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False
+        return payload.get("state") == "active"
 
     def _temporal_hits(self, *, query: str, top_k: int) -> list[RetrievalHit]:
         if self.temporal_retriever is None:

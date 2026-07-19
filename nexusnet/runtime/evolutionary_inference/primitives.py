@@ -6,7 +6,7 @@ import inspect
 
 from . import transfer as transfer_module
 
-from .schemas import InferencePrimitive
+from .schemas import InferenceMethodRecord, InferencePrimitive
 
 
 class InferencePrimitiveRegistry:
@@ -138,6 +138,56 @@ class InferencePrimitiveRegistry:
 
     def list_ids(self) -> list[str]:
         return sorted(self._primitives)
+
+    def method_records(self) -> list[InferenceMethodRecord]:
+        records: list[InferenceMethodRecord] = []
+        for primitive in self.list():
+            source_digest = primitive.implementation_digest or hashlib.sha256(
+                primitive.model_dump_json().encode("utf-8")
+            ).hexdigest()
+            if not source_digest.startswith("sha256:"):
+                source_digest = f"sha256:{source_digest}"
+            reproduced = (
+                sorted(primitive.effects)
+                if primitive.implementation_state == "available"
+                and primitive.evidence_state != "unverified"
+                else []
+            )
+            if primitive.implementation_state != "available" or primitive.evidence_state == "unverified":
+                maturity = "researched"
+            elif primitive.evidence_state == "portable-reference":
+                maturity = "reproduced"
+            else:
+                maturity = "primitive-extracted"
+            records.append(
+                InferenceMethodRecord(
+                    method_id=f"primitive::{primitive.primitive_id}",
+                    version="primitive-contract-v1",
+                    source_kind="primitive-family",
+                    source_digest=source_digest,
+                    rights={
+                        "inference": "allowed",
+                        "evaluation": "allowed",
+                        "derivative": "allowed",
+                        "redistribution": "allowed",
+                    },
+                    claimed_capabilities=sorted(primitive.effects),
+                    reproduced_capabilities=reproduced,
+                    supported_model_families=sorted(primitive.compatible_model_families),
+                    supported_operator_families=sorted(primitive.compatible_operator_families),
+                    supported_hardware=sorted(primitive.required_resources),
+                    tunable_controls=sorted(primitive.reversible_parameters),
+                    known_conflicts=sorted(primitive.conflicts),
+                    fallback_method_id=(
+                        f"primitive::{primitive.fallback_primitive_id}"
+                        if primitive.fallback_primitive_id
+                        else None
+                    ),
+                    maturity=maturity,
+                    assimilation_paths=["primitive"],
+                )
+            )
+        return records
 
     def validate_composition(self, primitive_ids: list[str]) -> list[str]:
         selected = set(primitive_ids)

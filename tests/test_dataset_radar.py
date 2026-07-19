@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
@@ -55,6 +56,9 @@ def test_dataset_radar_seed_registry_is_broad_freshness_and_license_gated():
 
 
 def test_dataset_radar_summary_surfaces_stale_source_refresh_due_counts(tmp_path):
+    today = datetime.now(timezone.utc).date()
+    fresh_last_checked = today.isoformat()
+    stale_last_checked = (today - timedelta(days=30)).isoformat()
     registry_path = tmp_path / "registry.yaml"
     registry_path.write_text(
         """
@@ -70,7 +74,7 @@ sources:
     student_targets: [coder]
     target_nodes: [Coder Expert]
     quality_signals: [test]
-    freshness: {tracking: last_modified, last_checked: "2026-05-04", cadence: monthly}
+    freshness: {tracking: last_modified, last_checked: "__FRESH_LAST_CHECKED__", cadence: monthly}
     blocked_reason: ""
     privacy_risk: low
   - dataset_id: stale-code
@@ -83,10 +87,12 @@ sources:
     student_targets: [coder]
     target_nodes: [Coder Expert]
     quality_signals: [test]
-    freshness: {tracking: release_page, last_checked: "2026-04-01", cadence: weekly}
+    freshness: {tracking: release_page, last_checked: "__STALE_LAST_CHECKED__", cadence: weekly}
     blocked_reason: ""
     privacy_risk: low
-""".strip(),
+""".strip()
+        .replace("__FRESH_LAST_CHECKED__", fresh_last_checked)
+        .replace("__STALE_LAST_CHECKED__", stale_last_checked),
         encoding="utf-8",
     )
     radar = DatasetRadar(artifacts_dir=tmp_path, registry_path=registry_path)

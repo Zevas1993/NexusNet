@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from nexus.schemas import new_id, utcnow
+from nexusnet.evals.high_risk_domains import HighRiskDomainEvaluator
 
 
 class EvalSuiteService:
@@ -22,6 +23,7 @@ class EvalSuiteService:
         self.artifacts_dir = Path(artifacts_dir)
         self.output_dir = self.artifacts_dir / "eval-suites"
         self.events = events
+        self.high_risk_domains = HighRiskDomainEvaluator()
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -33,7 +35,16 @@ class EvalSuiteService:
             "mutation_allowed": False,
             "suites": [self._suite(suite_type, description) for suite_type, description in self.SUITES],
             "latest_results": self._results(limit=20),
+            "high_risk_domains": self.high_risk_domains.summary(),
         }
+
+    def evaluate_high_risk_domain(self, **fields: Any) -> dict[str, Any]:
+        result = self.high_risk_domains.evaluate(**fields)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        path = self.output_dir / f"high-risk-{new_id('eval')}.json"
+        result["artifact_path"] = str(path)
+        path.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+        return result
 
     def compact_summary(self) -> dict[str, Any]:
         payload = self.summary()

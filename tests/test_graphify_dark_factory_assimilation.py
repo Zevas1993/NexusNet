@@ -49,7 +49,8 @@ def test_context_graph_index_plan_records_graphify_patterns_without_execution(tm
     assert record["mutation_allowed"] is False
     assert record["policy_path"][0]["decision"] == "hold"
     assert record["approval_path"]["decision"] == "not_requested"
-    assert Path(record["artifact_path"]).exists()
+    assert "artifact_path" not in record
+    assert (project_root / "runtime" / "artifacts" / record["artifact_storage_ref"]).exists()
 
     passes = {item["pass_id"]: item for item in record["extraction_passes"]}
     assert passes["tree_sitter_code_graph"]["execution_location"] == "local"
