@@ -48,6 +48,35 @@ def test_runtime_pack_cli_executes_when_invoked_as_a_module(tmp_path):
     }
 
 
+def test_hardware_discovery_import_does_not_require_optional_torch():
+    script = """
+import importlib.abc
+import sys
+
+class RejectTorch(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "torch" or fullname.startswith("torch."):
+            raise ModuleNotFoundError("optional torch rejected by clean-core probe")
+        return None
+
+sys.meta_path.insert(0, RejectTorch())
+from nexusnet.runtime.evolutionary_inference.hardware import HardwareCapabilityDiscoverer
+from nexusnet.runtime.evolutionary_inference import HardwareCapabilityDiscoverer as ExportedDiscoverer
+assert ExportedDiscoverer is HardwareCapabilityDiscoverer
+print("clean-core-import-passed")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "clean-core-import-passed"
+
+
 def test_runtime_pack_cli_dispatches_all_lifecycle_commands_with_sanitized_receipts(
     tmp_path,
     manifest_factory,
