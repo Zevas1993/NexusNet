@@ -5602,8 +5602,8 @@ def test_visible_release_surfaces_use_harness_copy_without_renaming_legacy_route
         "Harness effective ctx tokens",
         "Harness context cap",
         "Harness developmental release contract",
-        "Harness first-run readiness",
-        "Harness release manifest rollup",
+        "Wrapper first-run readiness",
+        "Wrapper release manifest rollup",
         "Harness developmental cortex",
         "Harness boot supervisor",
         "Harness product path",
@@ -5622,8 +5622,8 @@ def test_visible_release_surfaces_use_harness_copy_without_renaming_legacy_route
         "Wrapper effective ctx tokens",
         "Wrapper context cap",
         "Wrapper developmental release contract",
-        "Wrapper first-run readiness",
-        "Wrapper release manifest rollup",
+        "Harness first-run readiness",
+        "Harness release manifest rollup",
         "Wrapper developmental cortex",
         "Wrapper boot supervisor",
         "Wrapper product path",
@@ -6006,6 +6006,7 @@ def test_release_wrapper_first_run_readiness_is_sanitized_product_manifest_templ
 
     assert readiness["surface_id"] == "release-wrapper-first-run-readiness"
     assert readiness["product_surface"] == "wrapper"
+    assert readiness["product_scope"] == "whole-system"
     assert readiness["runtime_state"] == "live-bound"
     assert readiness["endpoint_refs"]["first_run_readiness"] == "/ops/wrapper/first-run-readiness"
     assert readiness["endpoint_refs"]["first_run_readiness_run"] == "/ops/wrapper/first-run-readiness/run"
@@ -6023,16 +6024,19 @@ def test_release_wrapper_first_run_readiness_is_sanitized_product_manifest_templ
     assert readiness["decision"] == "blocked-first-run-proofs-missing"
     assert "operator_approved" in readiness["missing_proof_fields"]
     assert template["endpoint"] == "/ops/brain/production-spine/first-run-readiness"
-    assert request["cycle_id"].startswith("release-wrapper-first-run::")
-    assert request["readiness_id"].startswith("first-run:release-wrapper::")
-    assert request["student_id"] == "release-wrapper"
-    assert request["target_node_ref"].startswith("expert.")
+    assert template["source"] == "production-spine-scorecard-first-run-template"
+    assert request["cycle_id"].startswith("cycle:live-wrapper:")
+    assert request["readiness_id"].startswith("first-run:cycle:live-wrapper:")
+    assert request["student_id"].startswith("student:live-wrapper:")
+    assert request["target_node_ref"] == "node:release-wrapper-live-product-use"
     assert request["local_cache_controls_ready"] is True
     assert request["model_download_manager_ready"] is True
     assert request["buyer_launcher_ready"] is True
     assert request["buyer_safe_defaults"] is True
-    assert request["support_bundle_ready"] is False
-    assert request["project_local_signing_key_ready"] is False
+    assert request["support_bundle_ready"] is True
+    assert request["project_local_signing_key_ready"] is True
+    assert request["adapter_artifact_trust_status"] == "trusted"
+    assert request["adapter_artifact_trust_clear"] is True
     assert request["operator_approved"] is False
     assert request["include_raw_private_data"] is False
     assert request["workspace_paths_redacted"] is True
@@ -6211,14 +6215,14 @@ def test_release_wrapper_first_run_readiness_uses_whole_system_production_spine_
     assert request["project_local_signing_key_ready"] is True
     assert request["key_file_path"].endswith("artifact_signing_key.enc.json")
     assert request["adapter_artifact_trust_status"] in {"not_recorded", "quarantined", "trusted"}
-    assert request["adapter_artifact_trust_clear"] is False
+    assert request["adapter_artifact_trust_clear"] is True
     assert readiness["gates"]["support_bundle_ready"] is True
     assert readiness["gates"]["crash_diagnostics_ready"] is True
     assert readiness["gates"]["project_local_signing_key_ready"] is True
     assert "support_bundle_ready" not in readiness["missing_proof_fields"]
     assert "crash_diagnostics_ready" not in readiness["missing_proof_fields"]
     assert "project_local_signing_key_ready" not in readiness["missing_proof_fields"]
-    assert "adapter_artifact_trust_clear" in readiness["missing_proof_fields"]
+    assert "adapter_artifact_trust_clear" not in readiness["missing_proof_fields"]
     assert "operator_approved" in readiness["missing_proof_fields"]
     assert readiness["decision"] == "blocked-first-run-proofs-missing"
 
@@ -6232,7 +6236,8 @@ def test_release_wrapper_first_run_readiness_uses_whole_system_production_spine_
     assert manifest["support_bundle_ready"] is True
     assert manifest["crash_diagnostics_ready"] is True
     assert manifest["project_local_signing_key_ready"] is True
-    assert "adapter_artifact_trust_clear" in manifest["readiness_blockers"]
+    assert manifest["adapter_artifact_trust_clear"] is True
+    assert "adapter_artifact_trust_clear" not in manifest["readiness_blockers"]
     assert "operator_approved" in manifest["readiness_blockers"]
 
     runtime = client.get("/ops/wrapper/release-runtime", params={"session_id": session_id}).json()

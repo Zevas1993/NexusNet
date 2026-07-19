@@ -1378,7 +1378,7 @@ function renderLivePosture() {
     <div class="metric release-wrapper-context-capability"><strong>${escapeHtml(String(releaseContextCapability.host_context_cap_tokens || 0))}</strong><small>Harness context cap</small></div>
     <div class="metric release-wrapper-provider-readiness"><strong>${escapeHtml(String(releaseProviderReadiness.usable_provider_count || 0))}</strong><small>Wrapper usable providers</small></div>
     <div class="metric release-wrapper-developmental-release-contract"><strong>${escapeHtml(developmentalReleaseContract.latest_status || "not-recorded")}</strong><small>Harness developmental release contract</small></div>
-    <div class="metric release-wrapper-first-run-readiness"><strong>${escapeHtml(releaseFirstRunReadiness.decision || "not-run")}</strong><small>Harness first-run readiness</small></div>
+    <div class="metric release-wrapper-first-run-readiness"><strong>${escapeHtml(releaseFirstRunReadiness.decision || "not-run")}</strong><small>Wrapper first-run readiness</small></div>
     <div class="metric release-wrapper-first-run-scope"><strong>${escapeHtml(releaseFirstRunReadiness.product_scope || "wrapper-session")}</strong><small>Whole-system first-run scope</small></div>
     <div class="metric release-wrapper-first-run-cycle"><strong>${escapeHtml(releaseFirstRunProduction.cycle_id || "none")}</strong><small>First-run production cycle</small></div>
     <div class="metric release-wrapper-production-spine-release-lifecycle"><strong>${escapeHtml(latestProductionSpineReleaseLifecycle.status || productionSpineReleaseLifecycle.status || "not-run")}</strong><small>production-spine-release-lifecycle</small></div>
@@ -1391,7 +1391,7 @@ function renderLivePosture() {
     <div class="metric release-wrapper-release-health-heartbeat-supervisor"><strong>${escapeHtml(releaseHealthHeartbeatSupervisor.status || "disabled")}</strong><small>release health supervisor</small></div>
     <div class="metric release-wrapper-health-repair-envelopes"><strong>${escapeHtml(String(releaseHealthRepairHistory.latest_subsystem_repair_envelope_count || 0))}</strong><small>health repair envelopes</small></div>
     <div class="metric release-wrapper-native-heartbeat-recovery-governance"><strong>${escapeHtml(releaseNativeHeartbeatRecoveryGovernance.status || "not-emitted")}</strong><small>native heartbeat recovery governance</small></div>
-    <div class="metric release-wrapper-release-manifest-rollup"><strong>${escapeHtml(releaseManifestRollup.status || releaseManifestLifecycleStep.status || "not_recorded")}</strong><small>Harness release manifest rollup</small></div>
+    <div class="metric release-wrapper-release-manifest-rollup"><strong>${escapeHtml(releaseManifestRollup.status || releaseManifestLifecycleStep.status || "not_recorded")}</strong><small>Wrapper release manifest rollup</small></div>
     <div class="metric release-wrapper-release-manifest-mutation"><strong>${escapeHtml(releaseManifestMutationLabel)}</strong><small>release-manifest-rollup</small></div>
     <div class="metric release-wrapper-developmental-cortex"><strong>${escapeHtml(latestDevelopmentalAssessment.request_id || "none")}</strong><small>Harness developmental cortex</small></div>
     <div class="metric release-wrapper-boot-supervisor"><strong>${escapeHtml(String(releaseBootSupervisor.pass_count || 0))}/${escapeHtml(String(releaseBootSupervisor.check_count || 0))}</strong><small>Harness boot supervisor</small></div>
