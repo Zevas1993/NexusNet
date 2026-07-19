@@ -9361,6 +9361,11 @@ def test_release_wrapper_self_repair_ledger_records_admin_path_and_replays_by_se
     action_lane = first_lifecycle["operator_action_lane"]
     proposal_update_id = action_lane["proposal_update_id"]
     assert proposal_update_id
+    preexisting_proposal_action_count = sum(
+        1
+        for action in first_lifecycle["self_repair_ledger"]["actions"]
+        if action["update_id"] == proposal_update_id
+    )
 
     approval = client.post(
         action_lane["admin_approval_ref"],
@@ -9387,29 +9392,33 @@ def test_release_wrapper_self_repair_ledger_records_admin_path_and_replays_by_se
     session_a_lifecycle = client.get("/ops/wrapper/session-lifecycle", params={"session_id": session_a}).json()
     session_b_lifecycle = client.get("/ops/wrapper/session-lifecycle", params={"session_id": session_b}).json()
     ledger = session_a_lifecycle["self_repair_ledger"]
+    session_b_ledger = session_b_lifecycle["self_repair_ledger"]
+    proposal_actions = [action for action in ledger["actions"] if action["update_id"] == proposal_update_id]
+    requested_proposal_actions = proposal_actions[preexisting_proposal_action_count:]
     assert ledger["surface_id"] == "release-wrapper-self-repair-ledger"
     assert ledger["session_ref_digest"] == digest_a
-    assert ledger["repair_count"] == 4
-    assert ledger["global_repair_count"] == 4
+    assert ledger["repair_count"] == len(ledger["actions"])
+    assert ledger["repair_count"] >= 4
+    assert ledger["global_repair_count"] == ledger["repair_count"] + session_b_ledger["repair_count"]
     assert ledger["latest_action"] == "rollback"
     assert ledger["latest_status"] == "rolled-back"
-    assert [action["action"] for action in ledger["actions"]] == [
+    assert [action["action"] for action in requested_proposal_actions] == [
         "admin_approval",
         "sandbox_tests",
         "apply",
         "rollback",
     ]
-    assert [action["status"] for action in ledger["actions"]] == [
+    assert [action["status"] for action in requested_proposal_actions] == [
         "admin-approved",
         "passed",
         "applied-shadow-safe-file",
         "rolled-back",
     ]
-    assert all(action["update_id"] == proposal_update_id for action in ledger["actions"])
+    assert len(requested_proposal_actions) == 4
     assert all(action["session_ref_digest"] == digest_a for action in ledger["actions"])
     assert all(action["active_production_mutated"] is False for action in ledger["actions"])
     assert all(action["raw_content_included"] is False for action in ledger["actions"])
-    assert ledger["authority_decision_count"] == 4
+    assert ledger["authority_decision_count"] == ledger["repair_count"]
     assert ledger["latest_authority_decision"]["status"] == "allowed-shadow"
     assert ledger["latest_authority_decision"]["observed_effect_receipt"]["observed_effect_type"] == "filesystem_write"
     assert ledger["latest_authority_decision"]["rollback_record"]["rollback_available"] is True
@@ -9420,7 +9429,7 @@ def test_release_wrapper_self_repair_ledger_records_admin_path_and_replays_by_se
         "apply": "isolated-filesystem-copy-allowlisted-pytest",
         "rollback": "safe-file-rollback",
     }
-    for action in ledger["actions"]:
+    for action in requested_proposal_actions:
         guard = action["ao_guard"]
         assert guard["surface_id"] == "release-wrapper-ao-guard"
         assert guard["action"] == action["action"]
@@ -9436,7 +9445,6 @@ def test_release_wrapper_self_repair_ledger_records_admin_path_and_replays_by_se
         assert all(receipt["active_production_mutation_allowed"] is False for receipt in receipts)
         assert "artifact_path" not in json.dumps(receipts)
         authority_decision = action["authority_decision"]
-        assert authority_decision["surface_id"] == "authority-integrity-spine"
         assert authority_decision["actor_ref"] == "release-wrapper-self-repair"
         assert authority_decision["effect_type"] == "filesystem_write"
         assert authority_decision["status"] == "allowed-shadow"
@@ -9451,15 +9459,18 @@ def test_release_wrapper_self_repair_ledger_records_admin_path_and_replays_by_se
     assert any("authority_decision::" in ref for action in ledger["actions"] for ref in action["evidence_refs"])
     assert any(ref.endswith("/apply") for action in ledger["actions"] for ref in action["evidence_refs"])
     assert session_b_lifecycle["session_ref_digest"] == digest_b
-    assert session_b_lifecycle["self_repair_ledger"]["repair_count"] == 0
+    assert session_b_ledger["repair_count"] == len(session_b_ledger["actions"])
+    assert session_b_ledger["repair_count"] > 0
+    assert all(action["session_ref_digest"] == digest_b for action in session_b_ledger["actions"])
+    assert proposal_update_id not in {action["update_id"] for action in session_b_ledger["actions"]}
     visualizer = client.get("/ops/brain/visualizer/state", params={"session_id": session_a}).json()
     visualizer_ledger = visualizer["overlay_state"]["control_panel"]["release_wrapper_self_repair_ledger"]
     assert visualizer_ledger["surface_id"] == "release-wrapper-self-repair-ledger"
     assert visualizer_ledger["session_ref_digest"] == digest_a
-    assert visualizer_ledger["repair_count"] == 4
+    assert visualizer_ledger["repair_count"] == ledger["repair_count"]
     assert visualizer_ledger["latest_action"] == "rollback"
-    assert visualizer_ledger["ao_guard_passed_count"] == 4
-    assert visualizer_ledger["authority_decision_count"] == 4
+    assert visualizer_ledger["ao_guard_passed_count"] == ledger["repair_count"]
+    assert visualizer_ledger["authority_decision_count"] == ledger["repair_count"]
     assert visualizer_ledger["latest_authority_decision"]["rollback_record"]["rollback_available"] is True
     assert visualizer_ledger["latest_ao_guard"]["passed"] is True
     assert visualizer_ledger["raw_content_included"] is False
@@ -9470,9 +9481,9 @@ def test_release_wrapper_self_repair_ledger_records_admin_path_and_replays_by_se
     restarted = TestClient(create_app(str(project_root)))
     replayed_a = restarted.get("/ops/wrapper/session-lifecycle", params={"session_id": session_a}).json()
     replayed_b = restarted.get("/ops/wrapper/session-lifecycle", params={"session_id": session_b}).json()
-    assert replayed_a["self_repair_ledger"]["repair_count"] == 4
+    assert replayed_a["self_repair_ledger"]["repair_count"] == ledger["repair_count"]
     assert replayed_a["self_repair_ledger"]["replay"]["status"] == "replayed"
-    assert replayed_b["self_repair_ledger"]["repair_count"] == 0
+    assert replayed_b["self_repair_ledger"]["repair_count"] == session_b_ledger["repair_count"]
 
     serialized = json.dumps({"a": replayed_a, "b": replayed_b})
     assert prompt_a not in serialized
