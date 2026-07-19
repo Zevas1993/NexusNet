@@ -133,8 +133,8 @@
 - Consumes: all closure commits.
 - Produces: clean Git state, current GitNexus graph, local integration merge, and fast-forward `origin/main` publication.
 
-- [ ] Run all accelerator-pack tests, Windows discovery tests, runtime-mode/API tests, provider-growth and release-wrapper regression tests, AST vendor-import guards, and compileall.
-- [ ] Run the literal full suite again if Tasks 2-6 changed executable code.
+- [x] Run all accelerator-pack tests, Windows discovery tests, runtime-mode/API tests, provider-growth and release-wrapper regression tests, AST vendor-import guards, and compileall.
+- [x] Run the literal full suite again if Tasks 2-6 changed executable code (2,147 passed, 1 intentional environment skip, 0 failed in 1:52:15).
 - [ ] Run `git diff --check`, `npx gitnexus analyze --skip-agents-md`, and `gitnexus detect-changes --scope all`; require risk `none` after commit.
 - [ ] Merge `codex/windows-accelerator-release-closure` into `codex/all-worktrees-integration` without touching parent-generated artifacts.
 - [ ] Rerun the focused release matrix in the merged integration checkout.

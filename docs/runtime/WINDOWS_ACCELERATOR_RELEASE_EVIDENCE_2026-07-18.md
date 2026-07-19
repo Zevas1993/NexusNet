@@ -164,7 +164,24 @@ converted to passes or attributed to the accelerator implementation.
   matrix passed 51 tests. Windows ROCm Torch candidates are now suppressed by
   default until SDK-prerequisite readiness is explicitly verified.
 
-A final full traversal remains required after the production-isolated pack
-installation, packaged lifecycle soak, and DirectML/private-provider work in
-the release-closure train. Therefore this section does not yet claim the
-entire seven-item release closure is complete.
+## Final closure verification — 2026-07-19
+
+- With Docker 29.6.1 live and the CUDA interpreter reporting Torch
+  2.11.0+cu128, CUDA 12.8, and the RTX 5070 Ti, the literal full suite
+  collected 2,148 tests and completed with 2,147 passed, 1 skipped, 3 warnings,
+  and 0 failures in 6,735.92 seconds (1:52:15).
+- The sole skip was
+  `test_forced_gpu_plan_fails_before_attachment_when_cuda_runtime_is_unavailable`,
+  which intentionally requires a runtime without CUDA. That node and the
+  telemetry-aware visualizer node both passed under the system interpreter:
+  2 passed in 32.30 seconds. Thus the union executes both sides of the
+  mutually exclusive CUDA-available/CUDA-unavailable environment gate.
+- `compileall` passed for `core`, `nexus`, `nexusnet`, `recursive_dreamer`, and
+  `tests`; both Canon capture scripts passed Node syntax checks; and
+  `git diff --check` reported no whitespace errors.
+
+Publication still requires the final GitNexus reindex/change inspection,
+merge verification in the integration checkout, and non-force pushes. External
+AMD, Intel, Windows ML, hybrid, and production-model certification gates remain
+open exactly as listed above; they are not implied by the passing repository
+suite.

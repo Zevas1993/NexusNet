@@ -217,8 +217,8 @@
 - [x] Run every test under `tests/runtime/accelerator_packs`, Windows discovery tests, evolutionary-inference tests, runtime registry/model registry tests, release-wrapper runtime tests, and new API/control-surface guards.
 - [x] Run `python -m compileall -q` for every touched Python package and AST guards proving vendor libraries are imported only by worker modules.
 - [ ] Run `git diff --check`, full branch GitNexus compare, and inspect every affected execution flow.
-- [ ] Run live Windows hardware discovery and the installed CPU/NVIDIA vertical smoke from the private/worker environments; capture exact output and artifact hashes.
-- [ ] Confirm the base integration checkout, global Python, global Torch, system `PATH`, and unrelated files are unchanged.
+- [x] Run live Windows hardware discovery and the installed CPU/NVIDIA vertical smoke from the private/worker environments; capture exact output and artifact hashes.
+- [x] Confirm the base integration checkout, global Python, global Torch, system `PATH`, and unrelated files are unchanged.
 - [x] Request an independent whole-branch code review, fix every Critical/Important finding with TDD, and rerun the complete verification matrix (repair series through `87596fd4`, plus closure fix `38ed01b`).
 - [ ] Use `superpowers:finishing-a-development-branch` and present the verified local-merge/PR/keep/discard choices.
 
