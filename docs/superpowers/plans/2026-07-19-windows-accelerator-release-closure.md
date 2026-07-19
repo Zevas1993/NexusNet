@@ -138,5 +138,5 @@
 - [x] Run `git diff --check`, `npx gitnexus analyze --skip-agents-md`, and `gitnexus detect-changes --scope all`; require risk `none` after commit.
 - [x] Merge `codex/windows-accelerator-release-closure` into `codex/all-worktrees-integration` without touching parent-generated artifacts (`12043675`).
 - [x] Rerun the focused release matrix in the merged integration checkout (416 passed, 0 failed in 42:01).
-- [ ] Fast-forward `main` to the verified integration commit and push `main` to `origin` without force.
-- [ ] Push the integration branch for durable provenance, then remove only the release-closure worktree and branch after merge and push are verified.
+- [x] Fast-forward `main` to the verified integration commit and push `main` to `origin` without force (`e713872`).
+- [x] Push the integration branch for durable provenance, then remove only the release-closure worktree and branch after merge and push are verified.
