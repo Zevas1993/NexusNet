@@ -27,6 +27,10 @@ Thumbs.db
 .claude/
 AGENTS.md
 CLAUDE.md
+/.codex-remote-attachments/
+/.superpowers/
+/video-watch-output/
+/.release-evidence/
 
 # Local models & cache
 models/

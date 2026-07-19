@@ -89,7 +89,7 @@
 - [x] Run `install/windows/bootstrap.ps1 -NexusNetHome <disposable-root> -DeveloperEditable` with the current Python 3.11 interpreter.
 - [x] Prove the private core `pyvenv.cfg` disables system-site packages and global package/PATH snapshots are unchanged.
 - [x] Exercise CPU reference install, status reload in a fresh process, deliberate quarantine/repair, compatible update/rollback fixture, and uninstall.
-- [ ] Remove only the verified disposable root after recording digests and sanitized outcomes.
+- [x] Remove only the verified disposable root after recording digests and sanitized outcomes.
 - [x] Update the release report and rerun bootstrap/lifecycle tests.
 
 ### Task 5: Probe additional hardware lanes honestly
@@ -118,10 +118,10 @@
 - Consumes: the parent checkout's untracked-path inventory and existing stash metadata.
 - Produces: ignored watcher/tool-generated paths without deleting local evidence.
 
-- [ ] Add `/video-watch-output/`, `/.superpowers/`, `/.codex-remote-attachments/`, and `/.release-evidence/` to `.gitignore` if equivalent rules are absent.
+- [x] Add `/video-watch-output/`, `/.superpowers/`, `/.codex-remote-attachments/`, and `/.release-evidence/` to `.gitignore` if equivalent rules are absent.
 - [ ] Verify the parent checkout retains all generated files but `git status` no longer lists them.
-- [ ] Inspect `stash@{0}` names and file lists; retain it unless every path and commit is proven redundant.
-- [ ] Run `git check-ignore -v` for each generated root and `git diff --check`.
+- [x] Inspect `stash@{0}` names and file lists; its only `.gitnexus` addition was already in `HEAD`, so the proven-redundant stash was dropped.
+- [x] Run `git check-ignore -v` for each generated root and `git diff --check`.
 - [ ] Stage `.gitignore` and the final evidence-report update, run staged GitNexus detection, and commit `chore: isolate generated release evidence`.
 
 ### Task 7: Final verification, merge, and publication
