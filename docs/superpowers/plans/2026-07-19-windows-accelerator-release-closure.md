@@ -119,10 +119,10 @@
 - Produces: ignored watcher/tool-generated paths without deleting local evidence.
 
 - [x] Add `/video-watch-output/`, `/.superpowers/`, `/.codex-remote-attachments/`, and `/.release-evidence/` to `.gitignore` if equivalent rules are absent.
-- [ ] Verify the parent checkout retains all generated files but `git status` no longer lists them.
+- [x] Verify the parent checkout retains all generated files but `git status` no longer lists them.
 - [x] Inspect `stash@{0}` names and file lists; its only `.gitnexus` addition was already in `HEAD`, so the proven-redundant stash was dropped.
 - [x] Run `git check-ignore -v` for each generated root and `git diff --check`.
-- [ ] Stage `.gitignore` and the final evidence-report update, run staged GitNexus detection, and commit `chore: isolate generated release evidence`.
+- [x] Stage `.gitignore` and the final evidence-report update, run staged GitNexus detection, and commit `chore: isolate generated release evidence` (`14fc433`).
 
 ### Task 7: Final verification, merge, and publication
 
@@ -135,8 +135,8 @@
 
 - [x] Run all accelerator-pack tests, Windows discovery tests, runtime-mode/API tests, provider-growth and release-wrapper regression tests, AST vendor-import guards, and compileall.
 - [x] Run the literal full suite again if Tasks 2-6 changed executable code (2,147 passed, 1 intentional environment skip, 0 failed in 1:52:15).
-- [ ] Run `git diff --check`, `npx gitnexus analyze --skip-agents-md`, and `gitnexus detect-changes --scope all`; require risk `none` after commit.
-- [ ] Merge `codex/windows-accelerator-release-closure` into `codex/all-worktrees-integration` without touching parent-generated artifacts.
-- [ ] Rerun the focused release matrix in the merged integration checkout.
+- [x] Run `git diff --check`, `npx gitnexus analyze --skip-agents-md`, and `gitnexus detect-changes --scope all`; require risk `none` after commit.
+- [x] Merge `codex/windows-accelerator-release-closure` into `codex/all-worktrees-integration` without touching parent-generated artifacts (`12043675`).
+- [x] Rerun the focused release matrix in the merged integration checkout (416 passed, 0 failed in 42:01).
 - [ ] Fast-forward `main` to the verified integration commit and push `main` to `origin` without force.
 - [ ] Push the integration branch for durable provenance, then remove only the release-closure worktree and branch after merge and push are verified.
