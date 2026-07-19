@@ -2890,6 +2890,18 @@ def test_successful_coding_chat_runs_domain_expert_growth_admin_replay_from_live
         },
     )
     assert chat.status_code == 200
+    admin_replay = client.post(
+        "/ops/wrapper/domain-expert-growth/admin-replay",
+        json={
+            "session_id": session_id,
+            "domain_ao": "CodingAO",
+            "approved_by": "release-wrapper-test-admin",
+            "approval_ref": "test-admin::successful-coding-domain-growth",
+            "requested_decision": "approved",
+        },
+    )
+    assert admin_replay.status_code == 200
+    assert admin_replay.json()["status"] == "recorded"
 
     runtime = client.get("/ops/wrapper/release-runtime", params={"session_id": session_id}).json()
     status_card = client.get("/ops/wrapper/status-card", params={"session_id": session_id}).json()
